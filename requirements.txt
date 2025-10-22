@@ -1,0 +1,11 @@
+# SolaraAlpha Requirements
+# Minimal dependencies for GitHub issue orchestration
+
+# GitHub API communication
+requests>=2.31.0
+
+# Standard library (no install needed):
+# - subprocess (worker management)
+# - os, sys (environment and system)
+# - time, datetime (timing and scheduling)
+# - typing (type hints)
