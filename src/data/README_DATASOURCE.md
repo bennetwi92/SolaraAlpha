@@ -106,6 +106,24 @@ time.sleep(1)  # Rate limit protection between tickers
 - **Rate Limits**: No errors with 1-second delays between tickers
 - **Multi-Symbol Fetch**: Successfully validated 5 symbols sequentially
 
+## Legal Considerations
+
+**IMPORTANT**: Yahoo Finance API is intended for personal use only per Yahoo's Terms of Service. The yfinance library is not affiliated with, endorsed by, or vetted by Yahoo, Inc., and may violate Yahoo's terms of service for commercial applications.
+
+**Current Status**:
+- ✅ Acceptable for research, educational purposes, and personal backtesting
+- ❌ Production/live trading requires migration to commercial-friendly alternative
+
+**Commercial Use Restriction**:
+Yahoo Finance's unofficial API is explicitly limited to "personal use only." SolaraAlpha's commercial trading operations require a data provider with proper commercial licensing.
+
+**Phase 1 (Current)**: Yahoo Finance suitable for prototype development and strategy backtesting (non-commercial research).
+
+**Production Deployment**: Must migrate to commercial-friendly alternative before live trading:
+- **Twelve Data**: Institutional-grade, 99.95% SLA, commercial licensing available
+- **Alpaca Markets**: Designed for trading firms, free tier available with proper TOS
+- **Legal Review**: Recommended before any commercial deployment
+
 ## Configuration
 
 **No API credentials required** - yfinance accesses Yahoo Finance's public API.
@@ -223,7 +241,7 @@ for symbol in symbols:
 
 **Key Insight**: Issue #2340 (reported premium subscription requirement) was caused by ad-blocking software, not Yahoo Finance paywalls. Upgrading to 0.2.66+ resolves rate limit handling.
 
-**Recommendation**: Use yfinance 0.2.66+ with 1-second delays for Phase 1 prototype. Simple, reliable, no legal/TOS concerns.
+**Recommendation**: Use yfinance 0.2.66+ with 1-second delays for Phase 1 prototype/backtesting. Simple, reliable, suitable for research and educational purposes. See "Legal Considerations" section for commercial use restrictions.
 
 ## References
 - yfinance GitHub: https://github.com/ranaroussi/yfinance
