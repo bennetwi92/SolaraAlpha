@@ -14,8 +14,8 @@ DATA_SOURCE = "yahoo_finance"
 YAHOO_FINANCE_CONFIG = {
     "min_version": "0.2.66",  # Minimum yfinance version for reliable rate limit handling
     "delay_between_requests": 1.0,  # seconds - rate limit protection
-    "retry_attempts": 3,  # TODO: implement in fetcher module
-    "retry_delay": 5.0,  # seconds - TODO: implement exponential backoff
+    "retry_attempts": 3,  # Retry logic implemented in scripts/validate_data_source.py
+    "retry_delay": 5.0,  # seconds - exponential backoff in validation script
     "cache_dir": os.getenv("YFINANCE_CACHE_DIR", str(Path.home() / ".cache" / "yfinance"))
 }
 
