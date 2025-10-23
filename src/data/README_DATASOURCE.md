@@ -17,12 +17,13 @@
 
 | Source | Free Tier Limit | Historical Data | API Key Required | Notes |
 |--------|----------------|-----------------|------------------|-------|
-| **Yahoo Finance (yfinance)** | No hard limit* | 20+ years | No | **SELECTED** |
+| **Yahoo Finance (yfinance)** | ~5-10 calls/min* | 20+ years | No | **SELECTED** - Phase 1 prototype |
+| Alpaca Markets | 200 calls/min | 10+ years | Yes (free paper account) | **FALLBACK** - More reliable for production |
 | Alpha Vantage | 500 calls/day | 20+ years | Yes | Rate limits restrictive for bulk downloads |
 | Twelve Data | 800 calls/day | Varies by market | Yes | Intraday data limited to 2022+ |
 | Polygon.io | 5 calls/min (free) | 2004+ tick data | Yes | Free tier too restrictive |
 
-*Yahoo Finance enforces rate limiting but manageable with 2-second delays between requests.
+*Yahoo Finance rate limits are IP-based, undocumented, and variable. Historical instability: API breaking changes in Feb 2025, Oct 2024, and early 2024.
 
 ## API Access Approach
 
@@ -109,11 +110,22 @@ No configuration file needed. Rate limiting handled at application level via del
 - Real-time data limited to 15-minute delay
 - No guaranteed SLA or uptime (educational/personal use)
 
+### Known Risks
+**CRITICAL**: Yahoo Finance has history of breaking changes (Feb 2025, Oct 2024, early 2024). Unofficial API with no SLA or stability guarantees.
+
+**Impact**: Complete data ingestion failure possible. Rate limits worsen under load (5-10min pauses may be required for bulk downloads).
+
+**Mitigation Strategy**:
+- **Phase 1 (current)**: Acceptable for prototype with acknowledged risk
+- **Production**: Migrate to Alpaca Markets (200 calls/min, stable API, free paper trading account)
+- **Immediate**: Implement local caching to reduce API dependency
+- **Monitoring**: Add data freshness checks to detect API failures early
+
 ### Risk Mitigation
-- Implement caching layer to minimize API dependency
-- Add retry logic with exponential backoff
+- Implement caching layer to minimize API dependency (REQUIRED before production)
+- Add retry logic with exponential backoff (config defined, not yet implemented)
 - Monitor for API changes or deprecation
-- Consider fallback sources for critical production deployment
+- **Fallback plan**: Alpaca Markets as production alternative (evaluated, documented)
 
 ## References
 - yfinance GitHub: https://github.com/ranaroussi/yfinance
