@@ -15,15 +15,25 @@
 
 ### Comparison to Alternatives
 
+**Research Conducted**: 2025-10-23
+
 | Source | Free Tier Limit | Historical Data | API Key Required | Notes |
 |--------|----------------|-----------------|------------------|-------|
-| **Yahoo Finance (yfinance)** | ~5-10 calls/min* | 20+ years | No | **SELECTED** - Phase 1 prototype |
+| **Yahoo Finance (yfinance)** | Unlimited with curl_cffi* | 20+ years | No | **SELECTED** - Phase 1 prototype |
 | Alpaca Markets | 200 calls/min | 10+ years | Yes (free paper account) | **FALLBACK** - More reliable for production |
-| Alpha Vantage | 500 calls/day | 20+ years | Yes | Rate limits restrictive for bulk downloads |
-| Twelve Data | 800 calls/day | Varies by market | Yes | Intraday data limited to 2022+ |
-| Polygon.io | 5 calls/min (free) | 2004+ tick data | Yes | Free tier too restrictive |
+| Alpha Vantage | 5 calls/min, 500/day | 20+ years | Yes | Too restrictive for bulk downloads |
+| Twelve Data | 8 calls/min, 800/day | Varies, intraday from 2022+ | Yes | Insufficient for rapid data collection |
+| Polygon.io | 5 calls/min | 2 years (free tier) | Yes | Historical depth insufficient |
 
-*Yahoo Finance rate limits are IP-based, undocumented, and variable. Historical instability: API breaking changes reported in Oct 2024 and early 2024.
+*Yahoo Finance rate limits bypassed via curl_cffi browser impersonation (TLS fingerprint spoofing). Without curl_cffi, rate limits are IP-based, undocumented, and aggressive (~5-10 calls/min). Historical instability: API breaking changes reported in Oct 2024 and early 2024.
+
+**Evaluation Criteria**:
+- **Cost**: Must be free (no paid subscriptions)
+- **Historical Depth**: 3+ years required for backtesting
+- **Symbol Coverage**: 5+ liquid symbols (SPY, QQQ, major stocks)
+- **Data Quality**: Complete OHLCV with minimal gaps
+- **Rate Limits**: Sufficient for initial bulk download
+- **Reliability**: Stable API with active maintenance
 
 ## API Access Approach
 
@@ -120,21 +130,41 @@ No configuration file needed. Rate limiting handled at application level via del
 ### Known Risks
 **Yahoo Finance Stability**: Unofficial API with history of breaking changes (Oct 2024, early 2024). No SLA or stability guarantees.
 
+**Legal/Ethical Considerations**:
+- curl_cffi browser impersonation evades Yahoo Finance rate limiting by spoofing TLS fingerprints
+- This approach may violate Yahoo Finance terms of service (educational/personal use only)
+- **SHAREHOLDER ACKNOWLEDGMENT REQUIRED**: Explicitly accept risk before capital deployment
+- **Phase 1 Status**: Acceptable for prototype and educational backtesting
+- **Production Recommendation**: Migrate to Alpaca Markets (free tier, no TOS violations) before live trading
+
 **Current Status (2025-10-23)**:
 - Rate limiting bypassed via curl_cffi browser impersonation
 - Data access confirmed working for 5 symbols, 3.5 years each
 - No rate limit errors observed in testing
+- **Peer Review**: Approved for Phase 1 prototype use with conditions (see below)
 
 **Residual Risks**:
 - Yahoo Finance may change API endpoints or data structure
 - curl_cffi impersonation may be detected in future
 - No guaranteed uptime or data accuracy
+- Legal risk if Yahoo Finance enforces TOS violations
+- Production-scale testing incomplete (only 5 symbols tested, not 50+)
 
 **Mitigation Strategy**:
 - **Phase 1 (current)**: Acceptable for prototype with curl_cffi solution
-- **Production**: Evaluate Alpaca Markets if Yahoo Finance breaks
+- **Before Production**: Complete Alpaca Markets validation (see Recommendations below)
 - **Immediate**: Implement local caching to reduce API dependency
 - **Monitoring**: Add data freshness checks to detect API failures early
+
+**Peer Review Recommendations (2025-10-23)**:
+1. **Required Before Production**:
+   - Validate Alpaca Markets fallback (test script, rate limits, data quality)
+   - Production-scale testing (20+ symbols, parallel downloads, 10-year periods)
+   - Legal risk assessment (TOS review, shareholder acknowledgment)
+2. **Quality Improvements**:
+   - Empirical testing of alternatives (Alpha Vantage, Twelve Data)
+   - Data quality comparison across sources
+   - Automated monitoring and fallback to Alpaca
 
 ### Risk Mitigation
 - curl_cffi session impersonation eliminates rate limiting (IMPLEMENTED)
