@@ -15,19 +15,23 @@
 
 ### Comparison to Alternatives
 
-**Research Conducted**: 2025-10-23
+**Research Conducted**: 2025-10-23 (updated with latest market research)
 
-| Source | Free Tier Limit | Historical Data | API Key Required | Notes |
-|--------|----------------|-----------------|------------------|-------|
-| **Yahoo Finance (yfinance)** | Rate limited (1s delays recommended) | 20+ years | No | **SELECTED** - Works with v0.2.66+ |
-| Alpaca Markets | 200 calls/min (Basic tier) | 7+ years | Yes (free paper account) | **FALLBACK** - 15-min delay for free historical |
-| Alpha Vantage | 5 calls/min, 25/day | 20+ years | Yes | Too restrictive for bulk downloads |
-| Twelve Data | 8 calls/min, 800/day | Varies, intraday from 2022+ | Yes | Insufficient for rapid data collection |
-| Polygon.io | 5 calls/min | 2 years (free tier) | Yes | Historical depth insufficient |
+| Source | Free Tier Limit | Historical Data | API Key Required | Data Quality | Notes |
+|--------|----------------|-----------------|------------------|--------------|-------|
+| **Yahoo Finance (yfinance)** | Rate limited (1s delays recommended) | 20+ years | No | Good, widely-used | **SELECTED** - Works with v0.2.66+, zero config |
+| Twelve Data | 8 calls/min, 800/day | 30+ years | Yes | Institutional-grade, 99.95% SLA | **STRONG ALTERNATIVE** - Best quality/reliability for free tier |
+| Alpaca Markets | 200 calls/min (Basic tier) | 7+ years | Yes (free paper account) | Good | **FALLBACK** - 15-min delay for free historical |
+| Alpha Vantage | 5 calls/min, 500/day | 20+ years | Yes | Good | Rate limits acceptable but requires API key |
+| Polygon.io | 5 calls/min | 2 years (free tier) | Yes | Good | Historical depth insufficient (only 2 years) |
 
 *Yahoo Finance validated 2025-10-23 with yfinance 0.2.66. Previous rate limit issues resolved in recent versions. Use 1-second delays between ticker requests for stability.
 
-**Alpha Vantage 2025 update: Free tier reduced to 25 calls/day (down from 500/day previously).
+**Key Updates (2025-10-23 Research)**:
+- **Twelve Data** emerged as strong alternative: 30+ years data, institutional-grade quality (99.95% SLA), 800 calls/day free tier
+- **Alpha Vantage** maintains 500 calls/day free tier (earlier reports of 25/day appear to be outdated)
+- **Yahoo Finance** remains selected for simplicity (no API key), but Twelve Data recommended for production upgrade
+- **Polygon.io** free tier limited to 2 years historical data (insufficient for 3+ year requirement)
 
 **Evaluation Criteria**:
 - **Cost**: Must be free (no paid subscriptions)
@@ -160,7 +164,32 @@ No configuration file needed. Rate limiting handled at application level via del
 - Implement caching layer to minimize API dependency
 - Add retry logic with exponential backoff for network errors
 - Monitor for API changes or deprecation
-- **Fallback option**: Alpaca Markets (free tier, API key required)
+- **Primary Fallback**: Twelve Data (institutional-grade, 99.95% SLA, 800 calls/day free tier)
+- **Secondary Fallback**: Alpaca Markets (free tier, API key required)
+
+### Future Migration Path
+
+**Twelve Data as Production Upgrade**:
+If Yahoo Finance becomes unreliable or SolaraAlpha scales beyond prototyping, Twelve Data offers superior production characteristics:
+
+**Advantages**:
+- Institutional-grade data quality (99.95% SLA)
+- 30+ years historical depth (vs 20+ for Yahoo Finance)
+- Official API with stability guarantees (vs unofficial Yahoo Finance)
+- 800 calls/day free tier (sufficient for regular updates after initial bulk load)
+
+**Migration Steps**:
+1. Sign up at https://twelvedata.com/ (free Basic plan)
+2. Install Python client: `pip install twelvedata`
+3. Configure API key via environment variable: `TWELVE_DATA_API_KEY`
+4. Update `src/data/config.py` to support `DATA_SOURCE = "twelve_data"`
+5. Implement rate limiting: 8 calls/min, 800 calls/day
+6. Test with same validation script approach
+
+**Free Tier Considerations**:
+- 800 calls/day allows ~160 symbols @ 5 days each, or ~26 symbols @ 30 days each (with 1 call = 1 symbol/timeframe)
+- Best for incremental updates after initial bulk load
+- Cache aggressively to minimize API usage
 
 ## 2025-10-23 Final Validation Results
 
