@@ -8,3 +8,4 @@ dependencies:
   - pip
   - pip:
     - yfinance>=0.2.54
+    - curl_cffi>=0.13.0
