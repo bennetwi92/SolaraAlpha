@@ -29,6 +29,9 @@ Maximize shareholder wealth through AI-driven trading systems.
 ### Objective
 Build profitable, risk-managed trading systems through AI-to-AI workflow automation.
 
+**Constraints**:
+- All technologies, data sources, and services must be free (no paid APIs, subscriptions, or commercial data)
+
 Human involvement only for:
 - Trading strategy approval
 - Risk limit authorization
