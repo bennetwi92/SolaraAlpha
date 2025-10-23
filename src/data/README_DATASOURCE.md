@@ -21,11 +21,13 @@
 |--------|----------------|-----------------|------------------|-------|
 | **Yahoo Finance (yfinance)** | Unlimited with curl_cffi* | 20+ years | No | **SELECTED** - Phase 1 prototype |
 | Alpaca Markets | 200 calls/min | 10+ years | Yes (free paper account) | **FALLBACK** - More reliable for production |
-| Alpha Vantage | 5 calls/min, 500/day | 20+ years | Yes | Too restrictive for bulk downloads |
+| Alpha Vantage | 5 calls/min, 25/day** | 20+ years | Yes | Too restrictive for bulk downloads |
 | Twelve Data | 8 calls/min, 800/day | Varies, intraday from 2022+ | Yes | Insufficient for rapid data collection |
 | Polygon.io | 5 calls/min | 2 years (free tier) | Yes | Historical depth insufficient |
 
 *Yahoo Finance rate limits bypassed via curl_cffi browser impersonation (TLS fingerprint spoofing). Without curl_cffi, rate limits are IP-based, undocumented, and aggressive (~5-10 calls/min). Historical instability: API breaking changes reported in Oct 2024 and early 2024.
+
+**Alpha Vantage 2025 update: Official documentation shows 25 calls/day for free tier (reduced from previous 500/day). Third-party sources still cite 500/day, suggesting recent change.
 
 **Evaluation Criteria**:
 - **Cost**: Must be free (no paid subscriptions)
@@ -87,15 +89,15 @@ Yahoo Finance detects scripts via headers like 'User-Agent: python-requests'. cu
 
 ### Data Validation
 
-Successfully validated on 2025-10-23 with 3.5 years of data using curl_cffi:
-- **Symbols**: SPY, QQQ, AAPL, MSFT, TSLA
-- **Data Points**: 877 rows per symbol (3.5 years)
-- **Date Range**: 2022-04-27 to 2025-10-23
-- **Columns**: Open, High, Low, Close, Volume, Dividends, Stock Splits
-- **Data Quality**: Zero missing values, zero volume days: 0
+Successfully validated on 2025-10-23 with 3+ years of data using curl_cffi:
+- **Symbols**: SPY, QQQ, AAPL, MSFT, GOOGL
+- **Data Points**: 753 rows per symbol (3 years)
+- **Date Range**: 2022-10-24 to 2025-10-23
+- **Columns**: Open, High, Low, Close, Volume, Dividends, Stock Splits, Capital Gains
+- **Data Quality**: Zero missing values across all symbols
 - **Multi-Symbol Fetch**: Validated 5 symbols sequentially without rate limits
 
-**Note**: See test_yahoo_cffi.py for validation script.
+**Note**: Earlier validation (877 rows from 2022-04-27) also successful. See test_yahoo_cffi.py for validation script.
 
 ## Configuration
 
