@@ -7,5 +7,4 @@ dependencies:
   - gh  # GitHub CLI from conda-forge
   - pip
   - pip:
-    - yfinance>=0.2.54
-    - curl_cffi>=0.13.0
+    - yfinance>=0.2.66

@@ -9,12 +9,11 @@ from pathlib import Path
 DATA_SOURCE = "yahoo_finance"
 
 # Yahoo Finance configuration
-# UPDATE 2025-10-23: curl_cffi REQUIRED (rate limits confirmed active)
-# Yahoo Finance has history of breaking changes (Oct 2024, early 2024) - Alpaca Markets documented as fallback
+# UPDATE 2025-10-23 FINAL: yfinance 0.2.66+ works reliably without curl_cffi
+# Requires version 0.2.66+ and 1-second delays between ticker requests
 YAHOO_FINANCE_CONFIG = {
-    "use_curl_cffi": True,  # REQUIRED 2025-10-23: Rate limits confirmed active
-    "browser_impersonate": "chrome",  # TLS fingerprint impersonation for rate limit bypass
-    "delay_between_requests": 0.0,  # No delay needed with curl_cffi
+    "min_version": "0.2.66",  # Minimum yfinance version for reliable rate limit handling
+    "delay_between_requests": 1.0,  # seconds - rate limit protection
     "retry_attempts": 3,  # TODO: implement in fetcher module
     "retry_delay": 5.0,  # seconds - TODO: implement exponential backoff
     "cache_dir": os.getenv("YFINANCE_CACHE_DIR", str(Path.home() / ".cache" / "yfinance"))
