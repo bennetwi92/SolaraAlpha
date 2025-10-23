@@ -19,6 +19,7 @@ import sys
 import time
 from datetime import datetime
 from typing import Dict, List
+from urllib.parse import quote
 
 try:
     import requests
@@ -132,7 +133,9 @@ def remove_status_labels(issue_num: int) -> bool:
         ]
 
         for label in status_labels:
-            delete_url = f"{BASE_URL}/issues/{issue_num}/labels/{label}"
+            # URL-encode label name (colon in "status:in-progress" needs encoding)
+            encoded_label = quote(label, safe='')
+            delete_url = f"{BASE_URL}/issues/{issue_num}/labels/{encoded_label}"
             response = requests.delete(delete_url, headers=HEADERS)
             response.raise_for_status()
 

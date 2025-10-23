@@ -62,6 +62,7 @@ Human involvement only for:
 - Dynamic refresh after task completion
 - Always update GitHub state on error
 - Simplicity over complex state machines
+- **CRITICAL: Commit work at end of EVERY task** - orchestrator requires git state for coordination
 
 **Environment**:
 - Conda: `source ~/anaconda3/etc/profile.d/conda.sh && conda activate solaraalpha`
