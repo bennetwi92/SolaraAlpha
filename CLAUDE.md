@@ -28,12 +28,12 @@ Maximize shareholder wealth through AI-driven trading systems.
 - task-builder uses AI judgment to decompose complex requests into atomic tasks
 - Each task: single, clear objective; independently executable
 - No parent/child hierarchy - just logical sequence of atomic tasks
-- Types: `type:task` (agent), `type:intervention` (human)
+- All issues are `type:task`
 
-**Human Intervention**:
-- Agents create `type:intervention` for critical approvals (risk, strategy, security)
-- Interventions are non-blocking - orchestrator continues with other work
-- Human reviews → adds comment → closes intervention
+**Human Oversight**:
+- Review via normal code review, commit history, GitHub interface
+- Re-open closed issues if problems found, create new tasks for fixes
+- No intervention workflow - simpler, more pragmatic
 
 ## Core Principles
 
@@ -86,24 +86,21 @@ Human involvement only for:
 AI workers coordinate autonomously via orchestrator (`src/orchestrator/orchestrator.py`):
 - Fetches open issues from GitHub
 - Selects issues with `priority:high|medium`, `type:task`, NO `status:*` labels
-- Skips `type:intervention` (human-only, non-blocking)
 - Spawns Claude Code worker subprocesses
 - Tracks state via GitHub labels (simple workflow)
 - Dynamic refresh after each completion (FIFO within priority tier)
 
 **Configuration**: Set `REPO_OWNER` and `REPO_NAME` in orchestrator source.
 
-**State Flows**:
+**State Flow**:
 ```
-Task:
 [No status] → status:in-progress → [No status] → closed     (success)
                                  → status:blocked            (failure/timeout)
-
-Intervention (human-managed, orchestrator unaware):
-[No status] → (human reviews) → closed (human action)
 ```
 
 Orchestrator processes one task at a time, refreshing the queue after each completion to ensure highest-priority work is always selected next.
+
+**Human oversight**: Review commits/code, re-open closed issues if problems found.
 
 ## Issue Standards
 
@@ -111,8 +108,7 @@ See `.claude/GITHUB_ISSUES.md` for complete issue creation standards.
 
 **Quick summary**:
 - Title format: `{Component} - {Action}`
-- Required labels: One priority, one type
-- Types: `type:task` (agent), `type:intervention` (human)
+- Required labels: `priority:*`, `type:task`
 - Required sections: Context (why needed), Acceptance Criteria (testable conditions)
 - Never add `status:*` labels on creation (orchestrator manages these)
 - task-builder decomposes complex requests into atomic tasks using AI judgment
