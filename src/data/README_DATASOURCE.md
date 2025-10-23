@@ -15,23 +15,24 @@
 
 ### Comparison to Alternatives
 
-**Research Conducted**: 2025-10-23 (updated with latest market research)
+**Research Conducted**: 2025-10-23 (updated with latest market research - REVISED)
 
 | Source | Free Tier Limit | Historical Data | API Key Required | Data Quality | Notes |
 |--------|----------------|-----------------|------------------|--------------|-------|
 | **Yahoo Finance (yfinance)** | Rate limited (1s delays recommended) | 20+ years | No | Good, widely-used | **SELECTED** - Works with v0.2.66+, zero config |
 | Twelve Data | 8 calls/min, 800/day | 30+ years | Yes | Institutional-grade, 99.95% SLA | **STRONG ALTERNATIVE** - Best quality/reliability for free tier |
+| Alpha Vantage | 5 calls/min, 25/day | 20+ years | Yes | Good | **REVISED 2025**: Free tier reduced to 25 calls/day (insufficient) |
 | Alpaca Markets | 200 calls/min (Basic tier) | 7+ years | Yes (free paper account) | Good | **FALLBACK** - 15-min delay for free historical |
-| Alpha Vantage | 5 calls/min, 500/day | 20+ years | Yes | Good | Rate limits acceptable but requires API key |
 | Polygon.io | 5 calls/min | 2 years (free tier) | Yes | Good | Historical depth insufficient (only 2 years) |
 
 *Yahoo Finance validated 2025-10-23 with yfinance 0.2.66. Previous rate limit issues resolved in recent versions. Use 1-second delays between ticker requests for stability.
 
-**Key Updates (2025-10-23 Research)**:
+**Key Updates (2025-10-23 Research - REVISED)**:
 - **Twelve Data** emerged as strong alternative: 30+ years data, institutional-grade quality (99.95% SLA), 800 calls/day free tier
-- **Alpha Vantage** maintains 500 calls/day free tier (earlier reports of 25/day appear to be outdated)
+- **Alpha Vantage** free tier **reduced to 25 calls/day** in 2025 (previously 500/day) - insufficient for historical data ingestion
 - **Yahoo Finance** remains selected for simplicity (no API key), but Twelve Data recommended for production upgrade
 - **Polygon.io** free tier limited to 2 years historical data (insufficient for 3+ year requirement)
+- **Yahoo Finance reliability concerns**: While currently working (validated 2025-10-23), web reports indicate ongoing issues (HTTP 401 errors, IP bans, premium subscription requirements) - monitor closely and prepare Twelve Data migration if reliability degrades
 
 **Evaluation Criteria**:
 - **Cost**: Must be free (no paid subscriptions)
@@ -164,11 +165,18 @@ No configuration file needed. Rate limiting handled at application level via del
 - No rate limit errors with 1-second delays between requests
 - Suitable for Phase 1 prototype and backtesting
 
+**2025 Reliability Concerns (Web Research)**:
+- Multiple reports of HTTP 401 errors and IP bans (early-mid 2025)
+- Some users experiencing premium subscription requirements for historical data
+- yfinance is unofficial scraper, vulnerable to Yahoo's anti-scraping measures
+- Current validation (2025-10-23) shows working status, but monitor closely
+
 **Residual Risks**:
 - Yahoo Finance may change API endpoints or data structure without notice
 - No guaranteed uptime or data accuracy (educational/personal use only)
 - Rate limiting behavior may change (historically inconsistent)
 - Production-scale testing incomplete (only 5 symbols tested)
+- Scraper-based approach vulnerable to Yahoo site changes or aggressive rate limiting
 
 **Mitigation Strategy**:
 - Use yfinance 0.2.66+ with 1-second delays between ticker requests
@@ -197,7 +205,7 @@ If Yahoo Finance becomes unreliable or SolaraAlpha scales beyond prototyping, Tw
 - 800 calls/day free tier (sufficient for regular updates after initial bulk load)
 
 **Migration Steps**:
-1. Sign up at https://twelvedata.com/ (free Basic plan)
+1. Sign up at https://twelvedata.com/register (free Basic plan - no credit card required)
 2. Install Python client: `pip install twelvedata`
 3. Configure API key via environment variable: `TWELVE_DATA_API_KEY`
 4. Update `src/data/config.py` to support `DATA_SOURCE = "twelve_data"`
@@ -206,8 +214,27 @@ If Yahoo Finance becomes unreliable or SolaraAlpha scales beyond prototyping, Tw
 
 **Free Tier Considerations**:
 - 800 calls/day allows ~160 symbols @ 5 days each, or ~26 symbols @ 30 days each (with 1 call = 1 symbol/timeframe)
+- Time series endpoint allows 1-5000 data points per request (optimize by fetching larger date ranges per call)
 - Best for incremental updates after initial bulk load
 - Cache aggressively to minimize API usage
+
+**Sample Twelve Data Code**:
+```python
+from twelvedata import TDClient
+import os
+
+# Initialize client (requires API key)
+td = TDClient(apikey=os.getenv('TWELVE_DATA_API_KEY'))
+
+# Fetch historical data
+ts = td.time_series(
+    symbol="SPY",
+    interval="1day",
+    outputsize=5000,  # Max data points per request
+    timezone="America/New_York"
+)
+df = ts.as_pandas()
+```
 
 ## 2025-10-23 Final Validation Results
 
