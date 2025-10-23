@@ -12,7 +12,7 @@ DATA_SOURCE = "yahoo_finance"
 # NOTE: retry_attempts and retry_delay defined but not yet implemented in fetcher module
 # Yahoo Finance has history of breaking changes (Feb 2025, Oct 2024) - Alpaca Markets documented as fallback
 YAHOO_FINANCE_CONFIG = {
-    "delay_between_requests": 2.0,  # seconds (may need 5-10s for bulk downloads)
+    "delay_between_requests": 5.0,  # seconds - conservative default for bulk downloads to avoid rate limits
     "retry_attempts": 3,  # TODO: implement in fetcher module
     "retry_delay": 5.0,  # seconds - TODO: implement exponential backoff
     "cache_dir": os.getenv("YFINANCE_CACHE_DIR", str(Path.home() / ".cache" / "yfinance"))
@@ -28,4 +28,4 @@ MIN_SYMBOLS_REQUIRED = 5
 REQUIRED_OHLCV_COLUMNS = ["Open", "High", "Low", "Close", "Volume"]
 
 # Default symbols for validation/testing
-TEST_SYMBOLS = ["SPY", "QQQ", "AAPL", "MSFT", "GOOGL"]
+TEST_SYMBOLS = ["SPY", "QQQ", "AAPL", "MSFT", "TSLA", "GOOGL"]
