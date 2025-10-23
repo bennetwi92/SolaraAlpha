@@ -9,12 +9,12 @@ from pathlib import Path
 DATA_SOURCE = "yahoo_finance"
 
 # Yahoo Finance configuration
-# CRITICAL: Uses curl_cffi browser impersonation to bypass rate limits (confirmed 2025-10-23)
+# UPDATE 2025-10-23: Standard yfinance works without curl_cffi (rate limits appear relaxed)
 # Yahoo Finance has history of breaking changes (Oct 2024, early 2024) - Alpaca Markets documented as fallback
 YAHOO_FINANCE_CONFIG = {
-    "use_curl_cffi": True,  # REQUIRED: Browser impersonation to bypass rate limits
-    "browser_impersonate": "chrome",  # TLS fingerprint impersonation target
-    "delay_between_requests": 0.0,  # No delay needed with curl_cffi
+    "use_curl_cffi": False,  # UPDATE 2025-10-23: No longer required (rate limits relaxed)
+    "browser_impersonate": "chrome",  # Legacy: TLS fingerprint impersonation (no longer needed)
+    "delay_between_requests": 0.0,  # No delay needed
     "retry_attempts": 3,  # TODO: implement in fetcher module
     "retry_delay": 5.0,  # seconds - TODO: implement exponential backoff
     "cache_dir": os.getenv("YFINANCE_CACHE_DIR", str(Path.home() / ".cache" / "yfinance"))
