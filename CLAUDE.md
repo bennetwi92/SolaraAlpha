@@ -24,6 +24,17 @@ Maximize shareholder wealth through AI-driven trading systems.
 **Never**: CEO or other agents create issues directly (task-builder optimizes prompts)
 **Agent/Skill Creation**: Issues must reference appropriate Skill (`create-agent`, `create-skill`)
 
+**Issue Sizing**:
+- All issues estimated in story points (1/2/3/5/8/13/21)
+- Target: ≤5 points (~10-15 min work)
+- Issues ≥8 points MUST be decomposed into sub-tasks by task-builder
+- Types: `task` (standard), `sub-task` (child), `intervention` (human review)
+
+**Human Intervention**:
+- Agents create `type:intervention` issues when requiring human approval
+- Human reviews → adds comment → sets `status:ready`
+- Blocked tasks unblock when intervention resolved
+
 ## Core Principles
 
 ### Objective
@@ -74,17 +85,22 @@ Human involvement only for:
 
 AI workers coordinate autonomously via orchestrator (`src/orchestrator/orchestrator.py`):
 - Fetches open issues from GitHub
-- Selects issues with `priority:high|medium` and NO `status:*` labels
+- Selects issues with `priority:high|medium`, `type:task|sub-task`, NO `status:*` labels
 - Spawns Claude Code worker subprocesses
-- Tracks state via GitHub labels (simple 2-state workflow)
+- Tracks state via GitHub labels (simple workflow)
 - Dynamic refresh after each completion (FIFO within priority tier)
+- Skips `type:intervention` (human-only)
 
 **Configuration**: Set `REPO_OWNER` and `REPO_NAME` in orchestrator source.
 
-**State Flow**:
+**State Flows**:
 ```
+Task/Sub-task:
 [No status] → status:in-progress → [No status]     (success)
                                  → status:blocked   (failure/timeout)
+
+Intervention (human-managed):
+[No status] → (human reviews) → status:ready → (unblocks dependent work)
 ```
 
 Orchestrator processes one issue at a time, refreshing the queue after each completion to ensure highest-priority work is always selected next.
@@ -94,8 +110,10 @@ Orchestrator processes one issue at a time, refreshing the queue after each comp
 See `.claude/GITHUB_ISSUES.md` for complete issue creation standards.
 
 **Quick summary**:
-- Title format: `{Type}: {Component} - {Action}`
-- Required labels: One priority, one type
+- Title format: `{Component} - {Action}`
+- Required labels: One priority, one type, one size
+- Types: `type:task` (agent), `type:sub-task` (agent), `type:intervention` (human)
+- Size: Story points (1/2/3/5 workable, 8/13/21 parent tracking)
 - Required sections: Context (why needed), Acceptance Criteria (testable conditions)
 - Never add `status:*` labels on creation (orchestrator manages these)
 
