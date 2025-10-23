@@ -1,0 +1,7 @@
+name: solaraalpha
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - gh  # GitHub CLI from conda-forge

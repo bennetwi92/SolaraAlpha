@@ -7,6 +7,7 @@ Automatically processes GitHub issues by:
 2. Sorting FIFO (oldest first) within priority tier
 3. Spawning Claude Code workers to process issues
 4. Updating GitHub labels to track state
+5. Poking CEO for strategic assessment when queue is empty
 
 Usage:
     export GITHUB_TOKEN="ghp_..."
@@ -28,19 +29,19 @@ except ImportError:
 # Configuration
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 REPO_OWNER = "bennetwi92"
-REPO_NAME = "tradepilot"
+REPO_NAME = "SolaraAlpha"
 BASE_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}"
 HEADERS = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
 
 # Worker configuration
-WORKER_TIMEOUT = 3600  # 1 hour
+WORKER_TIMEOUT = 1200  # 20 minutes
 IDLE_SLEEP_SECONDS = 300  # 5 minutes
 
 
 def fetch_prioritized_issues() -> List[Dict]:
     """
     Fetch open issues from GitHub with priority:high or priority:medium labels.
-    Excludes issues with blocking status labels.
+    Excludes issues with any status:* labels (already being processed).
 
     Returns:
         List of issue dictionaries sorted by priority (high first) then creation date (FIFO)
@@ -65,17 +66,7 @@ def fetch_prioritized_issues() -> List[Dict]:
         all_issues = response.json()
 
         # Filter for priority labels
-        priority_labels = {"priority:high", "priority:medium", "priority:low"}
-        # Labels that indicate issue is already being processed or completed
-        blocked_labels = {
-            "status:backlog",  # Not scheduled yet
-            "status:awaiting-estimation",  # Already selected, being analyzed
-            "status:in-progress",  # Already being worked on
-            "status:blocked",  # Blocked by dependency
-            "status:in-review",  # PR in review
-            "status:ready-to-merge",  # Approved, awaiting merge
-            "status:in-develop",  # Already merged to develop
-        }
+        priority_labels = {"priority:high", "priority:medium"}
 
         filtered_issues = []
         for issue in all_issues:
@@ -83,13 +74,13 @@ def fetch_prioritized_issues() -> List[Dict]:
 
             # Check if has priority label
             has_priority = bool(issue_labels & priority_labels)
-            # ONLY process issues with status:ready (explicitly scheduled)
-            is_ready = "status:ready" in issue_labels
+            # Skip if ANY status:* label exists (already being processed)
+            has_status = any(label.startswith("status:") for label in issue_labels)
             # Skip pull requests (they have pull_request field)
             is_pr = "pull_request" in issue
 
-            # Include ONLY if: has priority AND status:ready AND not a PR
-            if has_priority and is_ready and not is_pr:
+            # Include ONLY if: has priority AND no status labels AND not a PR
+            if has_priority and not has_status and not is_pr:
                 filtered_issues.append(issue)
 
         # Sort: priority:high first, then by created_at (already sorted by API)
@@ -103,13 +94,8 @@ def fetch_prioritized_issues() -> List[Dict]:
             for i in filtered_issues
             if "priority:medium" in {l["name"] for l in i["labels"]}
         ]
-        low_priority = [
-            i
-            for i in filtered_issues
-            if "priority:low" in {l["name"] for l in i["labels"]}
-        ]
 
-        sorted_issues = high_priority + medium_priority + low_priority
+        sorted_issues = high_priority + medium_priority
 
         print(
             f"[FETCH] Found {len(sorted_issues)} issues ({len(high_priority)} high, {len(medium_priority)} medium)"
@@ -184,6 +170,178 @@ def update_issue_status(issue_num: int, new_status: str) -> bool:
         return False
 
 
+def fetch_recent_commits(count: int = 10) -> List[str]:
+    """
+    Fetch recent commits from the repository.
+
+    Args:
+        count: Number of recent commits to fetch
+
+    Returns:
+        List of commit strings in format "hash: message"
+    """
+    try:
+        url = f"{BASE_URL}/commits"
+        params = {"per_page": count}
+        response = requests.get(url, headers=HEADERS, params=params)
+        response.raise_for_status()
+        commits = response.json()
+
+        commit_list = []
+        for commit in commits:
+            sha = commit["sha"][:7]
+            message = commit["commit"]["message"].split("\n")[0]  # First line only
+            commit_list.append(f"{sha}: {message}")
+
+        return commit_list
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] Failed to fetch commits: {e}")
+        return []
+
+
+def fetch_all_open_issues() -> List[Dict]:
+    """
+    Fetch ALL open issues from GitHub (regardless of priority/status).
+
+    Returns:
+        List of all open issue dictionaries
+    """
+    try:
+        params = {
+            "state": "open",
+            "per_page": 100,
+            "sort": "created",
+            "direction": "desc",
+        }
+        response = requests.get(f"{BASE_URL}/issues", headers=HEADERS, params=params)
+        response.raise_for_status()
+        all_issues = response.json()
+
+        # Filter out pull requests
+        issues = [i for i in all_issues if "pull_request" not in i]
+        return issues
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] Failed to fetch all open issues: {e}")
+        return []
+
+
+def fetch_blocked_issues() -> List[Dict]:
+    """
+    Fetch issues with status:blocked label.
+
+    Returns:
+        List of blocked issue dictionaries
+    """
+    try:
+        params = {
+            "state": "open",
+            "labels": "status:blocked",
+            "per_page": 100,
+        }
+        response = requests.get(f"{BASE_URL}/issues", headers=HEADERS, params=params)
+        response.raise_for_status()
+        issues = response.json()
+
+        # Filter out pull requests
+        issues = [i for i in issues if "pull_request" not in i]
+        return issues
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] Failed to fetch blocked issues: {e}")
+        return []
+
+
+def spawn_ceo_poke() -> bool:
+    """
+    Poke CEO to assess organizational state when queue is empty.
+
+    CEO receives context:
+    - Recent commits (what work was completed)
+    - All open issues (current backlog)
+    - Blocked issues (red flags)
+
+    CEO decides whether to create new issues (via task-builder) or report no action needed.
+
+    Returns:
+        True if CEO completed successfully, False otherwise
+    """
+    print("\n[CEO POKE] Queue empty - spawning CEO assessment...")
+
+    # Gather context
+    recent_commits = fetch_recent_commits(count=10)
+    open_issues = fetch_all_open_issues()
+    blocked_issues = fetch_blocked_issues()
+
+    # Format context for CEO
+    commits_text = "\n".join(f"  - {c}" for c in recent_commits) if recent_commits else "  (No recent commits)"
+
+    open_issues_text = ""
+    if open_issues:
+        for issue in open_issues[:20]:  # Limit to 20 to avoid prompt overflow
+            labels = ", ".join(l["name"] for l in issue["labels"])
+            open_issues_text += f"  - #{issue['number']}: {issue['title']} [{labels}]\n"
+    else:
+        open_issues_text = "  (No open issues)\n"
+
+    blocked_text = ""
+    if blocked_issues:
+        for issue in blocked_issues:
+            blocked_text += f"  - #{issue['number']}: {issue['title']}\n"
+    else:
+        blocked_text = "  (No blocked issues)\n"
+
+    # Build CEO prompt
+    prompt = f"""Review organizational state and assess if new work is needed.
+
+Recent completions (last 10 commits):
+{commits_text}
+
+Current open issues:
+{open_issues_text}
+
+Blocked issues (require attention):
+{blocked_text}
+
+Evaluate:
+- Are blocked issues preventing progress?
+- Is critical infrastructure missing?
+- Are we working on highest-value opportunities?
+- Should low-priority work be escalated?
+
+If valuable work identified: Use task-builder agent to create issues
+If backlog is healthy: Report "MONITOR: No action required"
+
+Only create issues if genuinely valuable. "No action" is a valid outcome.
+"""
+
+    try:
+        print("[CEO] Starting CEO assessment...")
+        start_time = time.time()
+
+        result = subprocess.run(
+            ["claude", "-p", "--dangerously-skip-permissions", prompt],
+            timeout=WORKER_TIMEOUT,
+            capture_output=False,
+            text=True,
+        )
+
+        elapsed = time.time() - start_time
+        print(f"[CEO] Completed in {elapsed:.1f}s with exit code {result.returncode}")
+
+        if result.returncode == 0:
+            print("[CEO] Assessment completed successfully")
+            return True
+        else:
+            print(f"[CEO] Assessment failed with exit code {result.returncode}")
+            return False
+
+    except subprocess.TimeoutExpired:
+        print(f"[CEO] Assessment exceeded {WORKER_TIMEOUT}s timeout")
+        return False
+    except Exception as e:
+        print(f"[CEO] Assessment failed with error: {e}")
+        return False
+
+
 def spawn_claude_worker(issue: Dict) -> bool:
     """
     Spawn Claude Code CLI to process an issue.
@@ -201,14 +359,7 @@ def spawn_claude_worker(issue: Dict) -> bool:
     print(f"\n[START] Issue #{issue_num}: {issue_title}")
     print(f"[START] URL: {issue['html_url']}")
 
-    # Step 1: Update status to awaiting-estimation (orchestrator selected issue)
-    print("[LABEL] Updating status → awaiting-estimation...")
-    if not update_issue_status(issue_num, "status:awaiting-estimation"):
-        print(
-            "[WARNING] Could not update status to awaiting-estimation, continuing anyway..."
-        )
-
-    # Step 2: Update status to in-progress (beginning work)
+    # Update status to in-progress (beginning work)
     print("[LABEL] Updating status → in-progress...")
     if not update_issue_status(issue_num, "status:in-progress"):
         print("[WARNING] Could not update status to in-progress, continuing anyway...")
@@ -235,25 +386,33 @@ def spawn_claude_worker(issue: Dict) -> bool:
 
         if result.returncode == 0:
             print(f"[SUCCESS] Issue #{issue_num} completed successfully")
-            # Step 3: Update status to in-review (PR created, awaiting review)
-            print("[LABEL] Updating status → in-review...")
-            update_issue_status(issue_num, "status:in-review")
+            # Remove status label (issue complete, returns to pool)
+            print("[LABEL] Removing status labels...")
+            remove_status_labels(issue_num)
             return True
         else:
             print(
                 f"[FAILED] Issue #{issue_num} failed with exit code {result.returncode}"
             )
-            # Leave status:in-progress for manual review
+            # Update status to blocked
+            print("[LABEL] Updating status → blocked...")
+            update_issue_status(issue_num, "status:blocked")
             return False
 
     except subprocess.TimeoutExpired:
         print(f"[TIMEOUT] Issue #{issue_num} exceeded {WORKER_TIMEOUT}s timeout")
+        # Update status to blocked
+        print("[LABEL] Updating status → blocked...")
+        update_issue_status(issue_num, "status:blocked")
         return False
     except FileNotFoundError:
         print("[ERROR] Claude Code CLI not found. Please install Claude Code first.")
         sys.exit(1)
     except Exception as e:
         print(f"[ERROR] Issue #{issue_num} failed with error: {e}")
+        # Update status to blocked
+        print("[LABEL] Updating status → blocked...")
+        update_issue_status(issue_num, "status:blocked")
         return False
 
 
@@ -262,6 +421,7 @@ def main_loop():
     Main orchestration loop.
 
     Continuously fetches and processes issues until manually stopped (Ctrl+C).
+    When queue is empty, pokes CEO once to assess organizational state.
     """
     print("=" * 80)
     print("GitHub Issue Orchestrator - Lightweight POC")
@@ -277,6 +437,7 @@ def main_loop():
         sys.exit(1)
 
     iteration = 0
+    ceo_poked_this_cycle = False  # Track whether CEO has been poked during empty queue
 
     try:
         while True:
@@ -297,23 +458,38 @@ def main_loop():
                 issues = fetch_prioritized_issues()
 
                 if not issues:
-                    print(
-                        f"[IDLE] No issues to process. Sleeping {IDLE_SLEEP_SECONDS}s..."
-                    )
-                    time.sleep(IDLE_SLEEP_SECONDS)
-                    break  # Exit inner loop, will refresh in outer loop
-
-                # Process only the FIRST issue (highest priority)
-                issue = issues[0]
-                print(f"\n[PROCESSING] Next issue: #{issue['number']}")
-                success = spawn_claude_worker(issue)
-
-                if success:
-                    total_success += 1
+                    # Queue is empty
+                    if not ceo_poked_this_cycle:
+                        # First time queue is empty - poke CEO
+                        print("[EMPTY QUEUE] No eligible issues found - poking CEO...")
+                        spawn_ceo_poke()
+                        ceo_poked_this_cycle = True
+                        # Refresh immediately to check if CEO created new issues
+                        continue
+                    else:
+                        # CEO already poked, enter idle monitoring
+                        print(
+                            f"[IDLE] No issues to process. Sleeping {IDLE_SLEEP_SECONDS}s..."
+                        )
+                        time.sleep(IDLE_SLEEP_SECONDS)
+                        break  # Exit inner loop, will refresh in outer loop
                 else:
-                    total_failed += 1
+                    # Queue has work - reset CEO poke flag
+                    if ceo_poked_this_cycle:
+                        print("[QUEUE ACTIVE] Work detected - resetting CEO poke flag")
+                        ceo_poked_this_cycle = False
 
-                # After processing one issue, loop back to refresh and get next highest priority
+                    # Process only the FIRST issue (highest priority)
+                    issue = issues[0]
+                    print(f"\n[PROCESSING] Next issue: #{issue['number']}")
+                    success = spawn_claude_worker(issue)
+
+                    if success:
+                        total_success += 1
+                    else:
+                        total_failed += 1
+
+                    # After processing one issue, loop back to refresh and get next highest priority
 
             # Print iteration summary
             if total_success > 0 or total_failed > 0:
