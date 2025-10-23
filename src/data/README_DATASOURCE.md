@@ -118,12 +118,16 @@ time.sleep(1)  # Rate limit protection between tickers
 **Commercial Use Restriction**:
 Yahoo Finance's unofficial API is explicitly limited to "personal use only." SolaraAlpha's commercial trading operations require a data provider with proper commercial licensing.
 
-**Phase 1 (Current)**: Yahoo Finance suitable for prototype development and strategy backtesting (non-commercial research).
+**Phase 1 (Current - Prototype/Pre-Commercial)**:
+Yahoo Finance acceptable for initial prototype development and strategy backtesting under research exemption. SolaraAlpha is currently in pre-commercial prototype phase - no live trading, no customer funds, no revenue generation. This qualifies as non-commercial research and development.
+
+**Transition Trigger**: Before transitioning to commercial operations (live trading with real capital), must migrate to commercial-friendly data source.
 
 **Production Deployment**: Must migrate to commercial-friendly alternative before live trading:
-- **Twelve Data**: Institutional-grade, 99.95% SLA, commercial licensing available
+- **Twelve Data**: Institutional-grade, 99.95% SLA, commercial licensing available (free tier: 800 calls/day)
 - **Alpaca Markets**: Designed for trading firms, free tier available with proper TOS
 - **Legal Review**: Recommended before any commercial deployment
+- **Migration Timeline**: Phase 1 allows 6-12 months for prototype/backtest development; migration required before Phase 2 (paper trading) or Phase 3 (live capital deployment)
 
 ## Configuration
 
