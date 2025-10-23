@@ -8,11 +8,13 @@ from pathlib import Path
 # Primary data source
 DATA_SOURCE = "yahoo_finance"
 
-# Rate limiting configuration for Yahoo Finance
-# NOTE: retry_attempts and retry_delay defined but not yet implemented in fetcher module
-# Yahoo Finance has history of breaking changes (Feb 2025, Oct 2024) - Alpaca Markets documented as fallback
+# Yahoo Finance configuration
+# CRITICAL: Uses curl_cffi browser impersonation to bypass rate limits (confirmed 2025-10-23)
+# Yahoo Finance has history of breaking changes (Oct 2024, early 2024) - Alpaca Markets documented as fallback
 YAHOO_FINANCE_CONFIG = {
-    "delay_between_requests": 5.0,  # seconds - conservative default for bulk downloads to avoid rate limits
+    "use_curl_cffi": True,  # REQUIRED: Browser impersonation to bypass rate limits
+    "browser_impersonate": "chrome",  # TLS fingerprint impersonation target
+    "delay_between_requests": 0.0,  # No delay needed with curl_cffi
     "retry_attempts": 3,  # TODO: implement in fetcher module
     "retry_delay": 5.0,  # seconds - TODO: implement exponential backoff
     "cache_dir": os.getenv("YFINANCE_CACHE_DIR", str(Path.home() / ".cache" / "yfinance"))

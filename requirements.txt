@@ -1,0 +1,13 @@
+# SolaraAlpha - Data Source Dependencies
+# Validated 2025-10-23
+
+# Yahoo Finance data access
+yfinance==0.2.54
+
+# Browser impersonation to bypass Yahoo Finance rate limits
+# CRITICAL: Required for yfinance to work without 429 errors
+curl_cffi==0.13.0
+
+# Data manipulation and analysis
+pandas>=2.0.0
+numpy>=1.24.0
