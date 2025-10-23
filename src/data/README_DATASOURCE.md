@@ -72,11 +72,13 @@ df = ticker.history(start="2020-01-01", end="2023-12-31")
 
 ### Data Validation
 
-Successfully validated on 2025-10-23 with 3+ years of data:
+Successfully validated on 2025-10-23 with 5 years of data:
 - **Symbols**: SPY, QQQ, AAPL, MSFT, GOOGL
-- **Data Points**: 773 rows per symbol (~3.07 years)
-- **Date Range**: 2022-09-26 to 2025-10-23
-- **Columns**: Open, High, Low, Close, Volume, Dividends, Stock Splits
+- **Data Points**: 1255 rows per symbol (5 years)
+- **Date Range**: 2020-10-26 to 2025-10-23
+- **Columns**: Open, High, Low, Close, Volume, Dividends, Stock Splits, Capital Gains
+- **Data Quality**: Zero missing values
+- **Multi-Symbol Fetch**: Validated batch download of 5 symbols simultaneously
 
 **Note**: Validation requires waiting between test runs due to rate limiting. See test_data_source.py for validation script.
 
