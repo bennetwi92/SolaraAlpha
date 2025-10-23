@@ -7,11 +7,14 @@ Automatically processes GitHub issues by:
 2. Sorting FIFO (oldest first) within priority tier
 3. Spawning Claude Code workers to process issues
 4. Updating GitHub labels to track state
-5. Poking CEO for strategic assessment when queue is empty
+5. Optionally pokes CEO for strategic assessment when queue is empty
 
 Usage:
     export GITHUB_TOKEN="ghp_..."
-    python tools/orchestrator.py
+    python tools/orchestrator.py [--enable-ceo-poke]
+
+Options:
+    --enable-ceo-poke    Enable CEO assessment when queue is empty (default: disabled)
 """
 import os
 import subprocess
@@ -419,18 +422,22 @@ def spawn_claude_worker(issue: Dict) -> bool:
         return False
 
 
-def main_loop():
+def main_loop(enable_ceo_poke: bool = False):
     """
     Main orchestration loop.
 
     Continuously fetches and processes issues until manually stopped (Ctrl+C).
-    When queue is empty, pokes CEO once to assess organizational state.
+    When queue is empty, optionally pokes CEO once to assess organizational state.
+
+    Args:
+        enable_ceo_poke: If True, poke CEO when queue is empty (default: False)
     """
     print("=" * 80)
     print("GitHub Issue Orchestrator - Lightweight POC")
     print(f"Repository: {REPO_OWNER}/{REPO_NAME}")
     print(f"Worker timeout: {WORKER_TIMEOUT}s")
     print(f"Idle sleep: {IDLE_SLEEP_SECONDS}s")
+    print(f"CEO poke enabled: {enable_ceo_poke}")
     print("=" * 80)
     print("\nPress Ctrl+C to stop\n")
 
@@ -462,15 +469,15 @@ def main_loop():
 
                 if not issues:
                     # Queue is empty
-                    if not ceo_poked_this_cycle:
-                        # First time queue is empty - poke CEO
+                    if enable_ceo_poke and not ceo_poked_this_cycle:
+                        # First time queue is empty and CEO poke enabled - poke CEO
                         print("[EMPTY QUEUE] No eligible issues found - poking CEO...")
                         spawn_ceo_poke()
                         ceo_poked_this_cycle = True
                         # Refresh immediately to check if CEO created new issues
                         continue
                     else:
-                        # CEO already poked, enter idle monitoring
+                        # CEO already poked or CEO poke disabled, enter idle monitoring
                         print(
                             f"[IDLE] No issues to process. Sleeping {IDLE_SLEEP_SECONDS}s..."
                         )
@@ -513,4 +520,6 @@ def main_loop():
 
 
 if __name__ == "__main__":
-    main_loop()
+    # Parse command-line arguments
+    enable_ceo_poke = "--enable-ceo-poke" in sys.argv
+    main_loop(enable_ceo_poke=enable_ceo_poke)
