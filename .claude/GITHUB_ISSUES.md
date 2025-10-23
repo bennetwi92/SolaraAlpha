@@ -27,6 +27,13 @@ Quick reference for creating issues for the AI proprietary trading firm.
 - [ ] [Peer review completed via Task tool before commit]
 - [ ] [Any safety considerations]
 
+## Review Protocol
+**Agent**: [Specify agent type: general-purpose, code-reviewer, etc.]
+**Focus Areas**:
+- [What to review: e.g., "Risk calculations and edge cases"]
+- [What to review: e.g., "Integration with existing data pipeline"]
+- [What to review: e.g., "Error handling and validation logic"]
+
 ## Implementation Notes (optional)
 [Technical approach, constraints, dependencies]
 ```
@@ -48,6 +55,7 @@ Quick reference for creating issues for the AI proprietary trading firm.
 - NO `status:*` labels present
 - Context ≥ 2 sentences
 - Acceptance criteria ≥ 1 testable condition
+- Review Protocol specifies agent and focus areas
 
 ## Example
 
@@ -68,4 +76,12 @@ Trading firm needs market data to develop strategies. Must ingest real-time quot
 - [ ] Data quality validation detects edge cases
 - [ ] Unit and E2E tests included
 - [ ] Peer review completed via Task tool before commit
+
+## Review Protocol
+**Agent**: general-purpose
+**Focus Areas**:
+- Data validation logic and edge case handling
+- Latency requirements (<1s) verification
+- Error handling for connection failures
+- Test coverage completeness
 ```
