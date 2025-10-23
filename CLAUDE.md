@@ -62,6 +62,7 @@ Human involvement only for:
 - Dynamic refresh after task completion
 - Always update GitHub state on error
 - Simplicity over complex state machines
+- **CRITICAL: Peer review before commit** - use Task tool to spawn review agent (catches bugs, validates implementation)
 - **CRITICAL: Commit AND push work at end of EVERY task** - orchestrator requires remote git state for coordination
 
 **Environment**:

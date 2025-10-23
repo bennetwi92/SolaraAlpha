@@ -24,6 +24,7 @@ Quick reference for creating issues for the AI proprietary trading firm.
 ## Acceptance Criteria
 - [ ] [Testable completion condition]
 - [ ] [Test coverage if code changes]
+- [ ] [Peer review completed via Task tool before commit]
 - [ ] [Any safety considerations]
 
 ## Implementation Notes (optional)
@@ -66,4 +67,5 @@ Trading firm needs market data to develop strategies. Must ingest real-time quot
 - [ ] Real-time quotes stored successfully
 - [ ] Data quality validation detects edge cases
 - [ ] Unit and E2E tests included
+- [ ] Peer review completed via Task tool before commit
 ```
