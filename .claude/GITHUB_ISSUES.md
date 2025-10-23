@@ -28,7 +28,7 @@ Quick reference for creating issues for the AI proprietary trading firm.
 - [ ] [Any safety considerations]
 
 ## Review Protocol
-**Agent**: [Specify agent type: general-purpose, code-reviewer, etc.]
+**Agent**: [Specify agent type: general-purpose, code-reviewer, etc. - must be existing agent]
 **Focus Areas**:
 - [What to review: e.g., "Risk calculations and edge cases"]
 - [What to review: e.g., "Integration with existing data pipeline"]
