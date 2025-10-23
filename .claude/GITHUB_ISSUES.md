@@ -7,41 +7,24 @@ Quick reference for creating issues for the AI proprietary trading firm.
 | Category | Valid Labels | Orchestrator Rules |
 |----------|-------------|-------------------|
 | **Priority** (required) | `priority:high`, `priority:medium`, `priority:low` | Processes high→medium FIFO. `priority:low` skipped |
-| **Type** (required) | `type:task`, `type:sub-task`, `type:intervention` | Determines workflow and assignee |
-| **Size** (required) | `size:1`, `size:2`, `size:3`, `size:5`, `size:8`, `size:13`, `size:21` | Story points. ≥8 requires decomposition |
+| **Type** (required) | `type:task`, `type:intervention` | Determines workflow and assignee |
 | **Status** (orchestrator-managed) | `status:in-progress`, `status:blocked`, `status:ready` | **Never add on creation. Orchestrator manages these.** |
-| **Assignee** | `agent` (tasks/sub-tasks), `human` (interventions) | Determines who processes the issue |
-
-## Story Point Guidelines
-
-| Points | Time Estimate | Complexity | When to Use |
-|--------|--------------|------------|-------------|
-| 1-2 | ~5-10 min | Simple, isolated | Config changes, minor fixes, single-file edits |
-| 3 | ~10-15 min | Standard | Clear feature, well-defined scope |
-| 5 | ~15-20 min | Moderate | Multiple components, some complexity |
-| **8+** | >20 min | **MUST DECOMPOSE** | Split into sub-tasks ≤5 points |
-| 13-21 | N/A | Epic/Parent | Tracking only, not worked directly |
-
-**Rule**: Issues ≥8 points MUST be decomposed by task-builder into sub-tasks.
 
 ## Issue Types
 
 ### type:task (assignee: agent)
-Standard work item. Can be standalone or parent to sub-tasks.
-
-### type:sub-task (assignee: agent)
-Child of parent task. Must reference parent in title or body. Size ≤5 points.
+Atomic work item for orchestrator. Should be scoped to a single, well-defined objective. task-builder naturally decomposes complex requests into multiple atomic tasks.
 
 ### type:intervention (assignee: human)
-Requires human review/input. Blocks dependent work until resolved.
+Requires human review/decision. Created by agents when critical approval needed (risk limits, strategy validation, regulatory). Non-blocking - orchestrator continues with other work while human reviews.
 
 ## Issue Structure
 
 **Title**: `{Component} - {Specific action}`
 
-**Required Labels**: One priority, one type, one size
+**Required Labels**: One priority, one type
 
-**Body** (tasks/sub-tasks):
+**Body** (tasks):
 ```markdown
 ## Context
 [Why needed? 2-4 sentences explaining business impact or necessity]
@@ -54,7 +37,6 @@ Requires human review/input. Blocks dependent work until resolved.
 - [ ] [Test coverage if code changes]
 - [ ] [Peer review completed via Task tool before commit]
 - [ ] [Commit AND push work (required for orchestrator)]
-- [ ] [Create intervention issue if human review needed]
 
 ## Review Protocol
 **Agent**: [Specify agent type: general-purpose, code-reviewer, etc. - must be existing agent]
@@ -65,79 +47,84 @@ Requires human review/input. Blocks dependent work until resolved.
 
 ## Implementation Notes (optional)
 [Technical approach, constraints, dependencies]
-[Parent issue: #N (if sub-task)]
 ```
 
 **Body** (interventions):
 ```markdown
 ## Context
-Completed work on #[parent-issue] requires human review before proceeding.
+[What work was completed that needs review? Reference specific issue #]
 
 ## Review Required
 - [Specific aspect needing validation]
 - [Decision point or trade-off assessment]
-- [Risk evaluation]
+- [Risk evaluation or regulatory concern]
 
-## Blocking Issues
-- Issue #[parent-issue] (status:blocked until review)
-- Issue #[dependent-issue] (cannot start until resolved)
+## Related Work
+- Completed in issue #[N]
+- If changes needed: create new task with specific rework requirements
 
 ## Human Actions
 1. Review completed work
-2. Add comment with feedback/decision
-3. Change label to `status:ready` when resolved
+2. Add comment with decision/feedback
+3. Close this intervention when resolved (orchestrator continues automatically)
 ```
 
 ## Orchestrator Workflow
 
-**Selection**: Issues with `priority:high|medium`, `type:task|sub-task` (not intervention), and NO `status:*` labels
+**Selection**: Issues with `priority:high|medium`, `type:task`, and NO `status:*` labels
+- Skips `type:intervention` (human-only, non-blocking)
+- Processes tasks in priority order (high→medium), FIFO within tier
 
 **Execution**:
 1. Adds `status:in-progress`
 2. Spawns worker (Claude Code subprocess)
 3. On completion:
-   - Success: Removes status (returns to pool)
+   - Success: Removes status, closes issue
    - Failure: Changes to `status:blocked`
 
 **State Flows**:
 ```
-Task/Sub-task:
-[No status] → status:in-progress → [No status]     (success)
-                                 → status:blocked   (failure/timeout)
+Task:
+[No status] → status:in-progress → [No status] → closed     (success)
+                                 → status:blocked            (failure/timeout)
 
-Intervention:
-[No status] → (human reviews) → status:ready → (unblocks dependent tasks)
+Intervention (human-managed):
+[No status] → (human reviews) → closed (human action, orchestrator unaware)
 ```
 
-**Task Decomposition**:
-When task-builder estimates ≥8 points:
-1. Create parent issue (type:task, size:X, priority:Y)
-2. Create sub-tasks (type:sub-task, size:≤5, priority:Y)
-3. Parent tracks progress, sub-tasks are worked by orchestrator
+## Task Decomposition
+
+**task-builder philosophy**: Use AI judgment to naturally decompose complex requests into atomic tasks.
+
+**Guidelines**:
+- Create multiple small tasks rather than one large task
+- Each task should have a single, clear objective
+- Tasks should be independently executable where possible
+- Use descriptive titles to show relationship (e.g., "DataPipeline - Connect to source", "DataPipeline - Add validation")
+- No need for parent/child hierarchy - just create logical sequence
+
+**When to create interventions**:
+- Risk model validation (affects capital)
+- Trading strategy approval (regulatory/financial impact)
+- Production deployment decisions
+- Security-sensitive changes
 
 ## Validation
 
 **Orchestrator-ready when**:
 - Has `priority:high` OR `priority:medium`
-- Has `type:task` OR `type:sub-task` (interventions skipped by orchestrator)
-- Has `size:*` label (1/2/3/5 for workable issues, 8/13/21 for parent tracking)
+- Has `type:task` (interventions are human-only)
 - NO `status:*` labels present
 - Context ≥ 2 sentences
 - Acceptance criteria ≥ 1 testable condition
 - Review Protocol specifies agent and focus areas
 
-**task-builder validation**:
-- Estimates story points on ALL issues
-- Decomposes issues ≥8 points into sub-tasks ≤5 points
-- Sets appropriate type label (task/sub-task/intervention)
-- Links sub-tasks to parent issue
-
 ## Examples
 
-### Example 1: Simple Task (3 points)
+### Example 1: Simple Atomic Task
 ```
 Title: Config - Add risk limit constants
-Labels: priority:medium, type:task, size:3
+Labels: priority:medium, type:task
 
 ## Context
 Trading system needs configurable risk limits for position sizing and drawdown protection.
@@ -158,28 +145,16 @@ Trading system needs configurable risk limits for position sizing and drawdown p
 - Value reasonableness for trading context
 ```
 
-### Example 2: Decomposed Task (Parent = 13 points)
-```
-Title: [PARENT] DataPipeline - Real-time market data system
-Labels: priority:high, type:task, size:13
+### Example 2: Complex Request Decomposed by task-builder
 
-## Context
-Trading firm needs complete market data infrastructure for strategy development. Requires ingestion, validation, and storage.
+**User request**: "Build real-time market data pipeline"
 
-## Sub-tasks
-- #[N+1]: DataPipeline - Connect to data source (size:3)
-- #[N+2]: DataPipeline - Implement quote validation (size:5)
-- #[N+3]: DataPipeline - Add storage layer (size:5)
+**task-builder creates 3 atomic tasks**:
 
-## Completion Criteria
-All sub-tasks completed and integrated.
-```
-
-**Sub-task Example** (from above parent):
+**Task 1**:
 ```
 Title: DataPipeline - Connect to data source
-Labels: priority:high, type:sub-task, size:3
-Parent: #[N]
+Labels: priority:high, type:task
 
 ## Context
 Establish connection to free market data API for quote ingestion.
@@ -203,6 +178,9 @@ Establish connection to free market data API for quote ingestion.
 - Retry logic edge cases
 ```
 
+**Task 2**: DataPipeline - Implement quote validation (priority:high, type:task)
+**Task 3**: DataPipeline - Add storage layer (priority:high, type:task)
+
 ### Example 3: Intervention
 ```
 Title: Intervention - Risk model validation review
@@ -210,19 +188,19 @@ Labels: priority:high, type:intervention
 Assignee: @human
 
 ## Context
-Completed risk model implementation in #[N]. Model calculates position limits based on volatility and account balance. Requires validation before enabling in production.
+Completed risk model implementation in #42. Model calculates position limits based on volatility and account balance. Requires validation before enabling in production.
 
 ## Review Required
 - Verify risk calculation logic matches trading strategy requirements
 - Assess edge cases (zero volatility, max drawdown scenarios)
 - Approve risk parameters (conservative enough?)
 
-## Blocking Issues
-- Issue #[N] (status:blocked - awaiting risk approval)
-- Issue #[N+1] (cannot start live trading until model validated)
+## Related Work
+- Completed in issue #42
+- If changes needed: human will create new task issue with specific rework requirements
 
 ## Human Actions
 1. Review risk model code and test results
-2. Add comment with approval/adjustments needed
-3. Change label to `status:ready` when validated
+2. Add comment with decision/feedback
+3. Close this intervention when resolved
 ```

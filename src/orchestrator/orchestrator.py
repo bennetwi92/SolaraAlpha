@@ -46,7 +46,9 @@ MAX_COMMENT_LENGTH = 65000  # GitHub limit is 65,536; leave buffer for formattin
 def fetch_prioritized_issues() -> List[Dict]:
     """
     Fetch open issues from GitHub with priority:high or priority:medium labels.
-    Excludes issues with any status:* labels (already being processed).
+    Only processes type:task issues. Excludes:
+    - Issues with any status:* labels (already being processed)
+    - type:intervention issues (human-only)
 
     Returns:
         List of issue dictionaries sorted by priority (high first) then creation date (FIFO)
@@ -70,7 +72,7 @@ def fetch_prioritized_issues() -> List[Dict]:
         response.raise_for_status()
         all_issues = response.json()
 
-        # Filter for priority labels
+        # Filter for priority and type labels
         priority_labels = {"priority:high", "priority:medium"}
 
         filtered_issues = []
@@ -79,13 +81,15 @@ def fetch_prioritized_issues() -> List[Dict]:
 
             # Check if has priority label
             has_priority = bool(issue_labels & priority_labels)
+            # Must have type:task (skip interventions)
+            has_task_type = "type:task" in issue_labels
             # Skip if ANY status:* label exists (already being processed)
             has_status = any(label.startswith("status:") for label in issue_labels)
             # Skip pull requests (they have pull_request field)
             is_pr = "pull_request" in issue
 
-            # Include ONLY if: has priority AND no status labels AND not a PR
-            if has_priority and not has_status and not is_pr:
+            # Include ONLY if: has priority AND type:task AND no status labels AND not a PR
+            if has_priority and has_task_type and not has_status and not is_pr:
                 filtered_issues.append(issue)
 
         # Sort: priority:high first, then by created_at (already sorted by API)
