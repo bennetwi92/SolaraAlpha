@@ -4,8 +4,8 @@
 set -e
 
 gh issue create --repo bennetwi92/SolaraAlpha \
-  --title "Feature: Organization - Initialize SolaraAlpha trading firm" \
-  --label "priority:high,feature" \
+  --title "Organization - Initialize SolaraAlpha trading firm" \
+  --label "priority:high,type:task" \
   --body "$(cat <<'EOF'
 ## Context
 
@@ -38,6 +38,16 @@ The CEO has full autonomy to decide:
 - [ ] Strategic priorities identified and documented with rationale
 - [ ] Next set of issues created via task-builder for immediate work
 - [ ] Clear path established from current state to wealth-generating trading systems
+- [ ] Commit AND push work
+
+## Review Protocol
+
+**Agent**: ceo-orchestrator
+**Focus Areas**:
+- Strategic alignment with wealth maximization objective
+- Risk management prioritization
+- Feasibility of chosen approach
+- Quality of task decomposition via task-builder
 
 ## Implementation Notes
 
