@@ -40,6 +40,7 @@ HEADERS = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
 # Worker configuration
 WORKER_TIMEOUT = 1200  # 20 minutes
 IDLE_SLEEP_SECONDS = 300  # 5 minutes
+MAX_COMMENT_LENGTH = 65000  # GitHub limit is 65,536; leave buffer for formatting
 
 
 def fetch_prioritized_issues() -> List[Dict]:
@@ -173,6 +174,27 @@ def update_issue_status(issue_num: int, new_status: str) -> bool:
         print(
             f"[ERROR] Failed to update status label '{new_status}' on issue #{issue_num}: {e}"
         )
+        return False
+
+
+def post_issue_comment(issue_num: int, comment: str) -> bool:
+    """
+    Post a comment to a GitHub issue.
+
+    Args:
+        issue_num: Issue number
+        comment: Comment text to post
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        url = f"{BASE_URL}/issues/{issue_num}/comments"
+        response = requests.post(url, headers=HEADERS, json={"body": comment})
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] Failed to post comment to issue #{issue_num}: {e}")
         return False
 
 
@@ -381,7 +403,7 @@ def spawn_claude_worker(issue: Dict) -> bool:
         result = subprocess.run(
             ["claude", "-p", "--dangerously-skip-permissions", prompt],
             timeout=WORKER_TIMEOUT,
-            capture_output=False,  # Let output go to console
+            capture_output=True,  # Capture output to post as comment
             text=True,
         )
 
@@ -389,6 +411,39 @@ def spawn_claude_worker(issue: Dict) -> bool:
         print(
             f"[WORKER] Completed in {elapsed:.1f}s with exit code {result.returncode}"
         )
+
+        # Combine stdout and stderr for complete log
+        output_log = ""
+        if result.stdout:
+            output_log += result.stdout
+        if result.stderr:
+            if output_log:
+                output_log += "\n\n--- STDERR ---\n\n"
+            output_log += result.stderr
+
+        # Truncate if exceeds GitHub comment limit
+        if len(output_log) > MAX_COMMENT_LENGTH:
+            output_log = output_log[:MAX_COMMENT_LENGTH] + "\n\n[OUTPUT TRUNCATED - exceeded GitHub comment size limit]"
+
+        # Post output as comment to issue
+        if output_log.strip():
+            comment_body = f"""## Orchestrator Execution Log
+
+**Duration**: {elapsed:.1f}s
+**Exit Code**: {result.returncode}
+**Status**: {'✅ Success' if result.returncode == 0 else '❌ Failed'}
+
+<details>
+<summary>View full execution log</summary>
+
+```
+{output_log}
+```
+
+</details>
+"""
+            print(f"[COMMENT] Posting execution log to issue #{issue_num}...")
+            post_issue_comment(issue_num, comment_body)
 
         if result.returncode == 0:
             print(f"[SUCCESS] Issue #{issue_num} completed successfully")
@@ -407,6 +462,15 @@ def spawn_claude_worker(issue: Dict) -> bool:
 
     except subprocess.TimeoutExpired:
         print(f"[TIMEOUT] Issue #{issue_num} exceeded {WORKER_TIMEOUT}s timeout")
+        # Post timeout comment
+        timeout_comment = f"""## Orchestrator Execution Log
+
+**Duration**: {WORKER_TIMEOUT}s (timeout)
+**Status**: ⏱️ Timeout
+
+Worker exceeded maximum execution time of {WORKER_TIMEOUT}s and was terminated.
+"""
+        post_issue_comment(issue_num, timeout_comment)
         # Update status to blocked
         print("[LABEL] Updating status → blocked...")
         update_issue_status(issue_num, "status:blocked")
@@ -416,6 +480,17 @@ def spawn_claude_worker(issue: Dict) -> bool:
         sys.exit(1)
     except Exception as e:
         print(f"[ERROR] Issue #{issue_num} failed with error: {e}")
+        # Post error comment
+        error_comment = f"""## Orchestrator Execution Log
+
+**Status**: ❌ Error
+
+Worker failed with exception:
+```
+{str(e)}
+```
+"""
+        post_issue_comment(issue_num, error_comment)
         # Update status to blocked
         print("[LABEL] Updating status → blocked...")
         update_issue_status(issue_num, "status:blocked")
