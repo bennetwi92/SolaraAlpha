@@ -1,12 +1,30 @@
 """
 Data source configuration for SolaraAlpha.
+
+IMPORTANT LEGAL NOTICE:
+Yahoo Finance is for RESEARCH AND DEVELOPMENT ONLY (Phase 1 prototype).
+Yahoo Finance's Terms of Service restrict usage to "personal use only."
+Commercial trading operations require migration to a commercial-friendly data source.
+
+See DEPLOYMENT_READINESS.md before deploying to production.
 """
 
 import os
 from pathlib import Path
 
+# Environment: development, staging, production
+ENVIRONMENT = os.getenv("SOLARA_ENV", "development")
+
 # Primary data source
 DATA_SOURCE = "yahoo_finance"
+
+# LEGAL SAFEGUARD: Prevent production deployment with Yahoo Finance
+if ENVIRONMENT == "production" and DATA_SOURCE == "yahoo_finance":
+    raise ValueError(
+        "Yahoo Finance is not authorized for production use due to Terms of Service restrictions. "
+        "Migrate to Twelve Data or another commercial-friendly source before production deployment. "
+        "See /src/data/README_DATASOURCE.md 'Legal Considerations' section."
+    )
 
 # Yahoo Finance configuration
 # UPDATE 2025-10-23 FINAL: yfinance 0.2.66+ works reliably without curl_cffi

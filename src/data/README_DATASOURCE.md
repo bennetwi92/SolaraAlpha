@@ -95,6 +95,16 @@ time.sleep(1)  # Rate limit protection between tickers
 - 1-second delay between ticker requests recommended for stability
 - Issue #2340 (premium subscription requirement) was resolved - caused by ad-blockers, not paywalls
 
+**Scaling Considerations**:
+- **Small portfolios (5-10 symbols)**: 1s delays = ~10s per fetch cycle (negligible)
+- **Medium portfolios (50 symbols)**: 1s delays = ~50s per fetch cycle (1 min/update)
+- **Large portfolios (100 symbols)**: 1s delays = ~100s per fetch cycle (1.7 min/update)
+- **Initial bulk load**: For 100 symbols × 3 years, expect ~3-5 minutes total (data cached locally after first fetch)
+- **Incremental updates**: Daily updates take seconds (only fetch new bars since last update)
+- **Failure modes**: If rate limited despite 1s delays, implement exponential backoff starting at 5s
+- **Circuit breaker**: Stop after 3 consecutive failures and alert for manual review
+- **Concurrent access**: Multiple backtests sharing same IP may trigger rate limits - serialize data fetches
+
 ### Data Validation
 
 **Latest Validation (2025-10-23 FINAL)**: yfinance 0.2.66 works reliably without curl_cffi
@@ -218,8 +228,13 @@ If Yahoo Finance becomes unreliable or SolaraAlpha scales beyond prototyping, Tw
 6. Test with same validation script approach
 
 **Free Tier Considerations**:
-- 800 calls/day allows ~160 symbols @ 5 days each, or ~26 symbols @ 30 days each (with 1 call = 1 symbol/timeframe)
-- Time series endpoint allows 1-5000 data points per request (optimize by fetching larger date ranges per call)
+- **Call accounting**: 1 API call = 1 request (regardless of date range or data points returned)
+- **Examples**:
+  - Fetching SPY for 30 days = 1 call (returns 30 data points)
+  - Fetching SPY for 3 years = 1 call (returns up to 5000 data points, ~753 trading days)
+- **Daily budget**: 800 calls/day allows 800 symbols with full 3-year history (1 call per symbol)
+- **Optimization**: Fetch maximum date range per call (up to 5000 data points) to minimize API usage
+- **Strategy**: Initial bulk load uses ~100-200 calls for diversified portfolio, leaving 600+ calls for daily updates
 - Best for incremental updates after initial bulk load
 - Cache aggressively to minimize API usage
 
