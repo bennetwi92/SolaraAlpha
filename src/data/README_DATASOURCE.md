@@ -97,7 +97,7 @@ time.sleep(1)  # Rate limit protection between tickers
 - **Symbols**: SPY, QQQ, AAPL, MSFT, GOOGL
 - **Data Points**: 753 days per symbol (3 years)
 - **Date Range**: 2022-10-24 to 2025-10-23
-- **Columns**: Open, High, Low, Close, Volume
+- **Columns**: Open, High, Low, Close, Volume (plus Dividends, Stock Splits, Capital Gains for ETFs)
 - **Data Quality**: Zero missing values across all symbols
 - **Rate Limits**: No errors with 1-second delays between tickers
 - **Multi-Symbol Fetch**: Successfully validated 5 symbols sequentially
@@ -127,7 +127,7 @@ No configuration file needed. Rate limiting handled at application level via del
 - Widely adopted library with strong community support
 
 ### Limitations
-- Rate limiting requires delays (2s recommended between symbols)
+- Rate limiting requires delays (1s recommended between symbols)
 - Yahoo Finance API unofficial, subject to change without notice
 - Real-time data limited to 15-minute delay
 - No guaranteed SLA or uptime (educational/personal use)
@@ -187,7 +187,7 @@ for symbol in symbols:
 **Results**:
 - **All 5 symbols**: Successfully retrieved 753 days each (2022-10-24 to 2025-10-23)
 - **Rate Limits**: No errors with 1-second delays between requests
-- **Columns**: Open, High, Low, Close, Volume
+- **Columns**: Open, High, Low, Close, Volume (plus Dividends, Stock Splits, Capital Gains for ETFs)
 - **Data Quality**: Zero missing values
 
 **Finding**: yfinance 0.2.66 works reliably without curl_cffi or browser impersonation. Previous rate limit issues resolved in recent versions.
