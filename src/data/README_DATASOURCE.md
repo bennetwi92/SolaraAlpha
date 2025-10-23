@@ -165,11 +165,12 @@ No configuration file needed. Rate limiting handled at application level via del
 - No rate limit errors with 1-second delays between requests
 - Suitable for Phase 1 prototype and backtesting
 
-**2025 Reliability Concerns (Web Research)**:
-- Multiple reports of HTTP 401 errors and IP bans (early-mid 2025)
-- Some users experiencing premium subscription requirements for historical data
+**2025 Reliability Concerns (Web Research - RE-VALIDATED 2025-10-23)**:
+- Web reports (Q1-Q3 2025) mentioned HTTP 401 errors, IP bans, and premium subscription requirements
+- **Ground truth validation (2025-10-23)**: Successfully retrieved 752 days of SPY data with yfinance 0.2.66
+- Premium subscription concerns appear to be user-specific (ad-blockers, regional restrictions, or individual IP bans)
 - yfinance is unofficial scraper, vulnerable to Yahoo's anti-scraping measures
-- Current validation (2025-10-23) shows working status, but monitor closely
+- **Current status**: Working reliably as of 2025-10-23, but monitor closely for future changes
 
 **Residual Risks**:
 - Yahoo Finance may change API endpoints or data structure without notice
