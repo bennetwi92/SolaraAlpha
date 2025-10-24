@@ -181,6 +181,26 @@ def update_issue_status(issue_num: int, new_status: str) -> bool:
         return False
 
 
+def close_issue(issue_num: int) -> bool:
+    """
+    Close a GitHub issue.
+
+    Args:
+        issue_num: Issue number
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        url = f"{BASE_URL}/issues/{issue_num}"
+        response = requests.patch(url, headers=HEADERS, json={"state": "closed"})
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] Failed to close issue #{issue_num}: {e}")
+        return False
+
+
 def post_issue_comment(issue_num: int, comment: str) -> bool:
     """
     Post a comment to a GitHub issue.
@@ -451,9 +471,14 @@ def spawn_claude_worker(issue: Dict) -> bool:
 
         if result.returncode == 0:
             print(f"[SUCCESS] Issue #{issue_num} completed successfully")
-            # Remove status label (issue complete, returns to pool)
+            # Remove status label and close issue
             print("[LABEL] Removing status labels...")
             remove_status_labels(issue_num)
+            print("[CLOSE] Closing issue...")
+            if close_issue(issue_num):
+                print(f"[CLOSE] Issue #{issue_num} closed successfully")
+            else:
+                print(f"[WARNING] Could not close issue #{issue_num}, but task completed")
             return True
         else:
             print(
