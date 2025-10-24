@@ -665,30 +665,101 @@ But the **key advantage**: Only pay for actual work time!
 
 ---
 
-#### Option C: Lambda + Step Functions (For Short Tasks Only)
+#### Option C: Step Functions + Fargate (Advanced Orchestration)
 
 **Architecture**:
 ```
-EventBridge → Lambda → Step Functions → Multiple Lambda invocations
+┌─────────────────────────────────────────────────────┐
+│ EventBridge Rule (free)                              │
+│ • Trigger: rate(5 minutes)                          │
+└─────────────────┬───────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────┐
+│ Step Functions Standard Workflow                     │
+│ • Lambda: Check GitHub for priority issues           │
+│ • Choice: Work found?                                │
+│   - Yes: ECS RunTask.sync (launch Fargate)          │
+│   - No: Exit (no cost)                               │
+└─────────────────┬───────────────────────────────────┘
+                  │
+                  │ ecs:runTask.sync
+                  ▼
+┌─────────────────────────────────────────────────────┐
+│ ECS Fargate Spot Task                                │
+│ • Step Functions waits for completion (.sync)        │
+│ • No timeout limits                                   │
+│ • Automatic retry on failure                         │
+└──────────────────────────────────────────────────────┘
 ```
 
-**Viability**: ❌ Not recommended
-- Each Lambda still has 15-minute timeout
-- Step Functions don't solve timeout issue
-- Added complexity with no benefit for this use case
+**Free Tier**:
+- Step Functions: 4,000 state transitions/month (always free)
+
+**Cost Calculation**:
+
+| Component | Usage | Cost/Month |
+|-----------|-------|------------|
+| **EventBridge** | 8,640 triggers | $0.00 (free) |
+| **Lambda (GitHub check)** | 8,640 invocations @ 128MB, 3 sec | $0.00 (free tier) |
+| **Step Functions** | 17,280 transitions (2 per workflow) | $0.33 |
+| **Fargate Spot** | 50 hours/month @ 1 vCPU + 4GB | $2.04 |
+| **Total** | | **$2.37/month** |
+
+**Step Functions Cost Breakdown**:
+- 8,640 workflows/month
+- 2 state transitions per workflow: (1) Lambda check + (2) Fargate task
+- Total: 17,280 state transitions
+- Free tier: 4,000 transitions
+- Paid: 13,280 transitions × $0.000025 = **$0.33/month**
+
+**Benefits**:
+- ✅ Visual workflow designer (easy to understand and debug)
+- ✅ Built-in error handling and retry logic
+- ✅ Native ECS integration with `.sync` (waits for completion)
+- ✅ Execution history and monitoring in console
+- ✅ Can add complex branching logic easily
+
+**Tradeoffs**:
+- ⚠️ Adds $0.33/month cost vs pure Lambda + Fargate
+- ⚠️ More components to configure (EventBridge → Step Functions → Lambda → Fargate)
+- ⚠️ Slightly more complex than direct Lambda → Fargate
+- ⚠️ Only useful if you need advanced orchestration features
+
+**Verdict**: 🟡 **Viable but overkill for simple orchestration**
+- Use if you want visual workflows and built-in retry logic
+- Skip if you want simplest architecture (Lambda + Fargate is simpler)
+- The $0.33/month cost is negligible, but adds complexity
+
+**When to use Step Functions**:
+- Need complex multi-step workflows
+- Want visual monitoring and debugging
+- Require sophisticated error handling branching
+- Team prefers low-code workflow design
+
+**When to skip Step Functions**:
+- Simple orchestration (just spawn worker)
+- Prefer code-based logic over visual workflows
+- Want fewest moving parts
 
 ---
 
 ### Serverless Cost Comparison
 
-| Architecture | Monthly Cost | Best For | Timeout Limit |
-|--------------|--------------|----------|---------------|
-| **Pure Lambda** | $0.59/month | N/A | ❌ 15 minutes |
-| **Lambda + Fargate Spot** | $2-20/month | Bursty workloads | ✅ None |
-| **EC2 Spot (t3.medium)** | $9.87/month | 24/7 operation | ✅ None |
-| **EC2 On-Demand (t3.medium)** | $31.04/month | Stable, predictable | ✅ None |
+| Architecture | Monthly Cost | Best For | Timeout Limit | Complexity |
+|--------------|--------------|----------|---------------|------------|
+| **Pure Lambda** | $0.59/month | N/A | ❌ 15 minutes | Low |
+| **Lambda + Fargate Spot** | $2-20/month | Bursty workloads | ✅ None | Medium |
+| **Step Functions + Fargate Spot** | $2.37-20.73/month | Visual workflows, complex orchestration | ✅ None | High |
+| **EC2 Spot (t3.medium)** | $9.87/month | 24/7 operation | ✅ None | Low |
+| **EC2 On-Demand (t3.medium)** | $31.04/month | Stable, predictable | ✅ None | Low |
 
-**Winner for Serverless**: Lambda + Fargate Spot ($2-6/month for typical Phase 1 workload)
+**Cost comparison at different activity levels**:
+- **10 tasks/day**: Lambda + Fargate = $2.04, Step Functions + Fargate = $2.37 (+16%)
+- **30 tasks/day**: Lambda + Fargate = $6.12, Step Functions + Fargate = $6.45 (+5%)
+- **100 tasks/day**: Lambda + Fargate = $20.40, Step Functions + Fargate = $20.73 (+2%)
+
+**Winner for Serverless**: Lambda + Fargate Spot ($2-6/month, simplest serverless architecture)
 
 ---
 
