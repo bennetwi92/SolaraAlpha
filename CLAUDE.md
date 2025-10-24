@@ -5,116 +5,66 @@ Maximize shareholder wealth through AI-driven trading systems.
 
 **Priority**: Risk Management > Profitability > Operational Efficiency
 
-## Organizational Structure
+## Roles
 
-### Human (Shareholder)
-- Approves trading strategies
-- Sets risk limits and constraints
-- Authorizes capital deployment
-- Reviews regulatory compliance
+**Human**: observer
+**AI**: Strategy development, infrastructure, orchestrator operations, performance monitoring, Strategy approval, risk limits, capital allocation, compliance review
 
-### AI (Organization)
-- Develops trading strategies (backtest, validate, optimize)
-- Builds infrastructure (data pipelines, execution systems, risk monitors)
-- Operates orchestrator for autonomous task coordination
-- Monitors performance and reports to shareholder
+## Workflow
+**Task Creation**: CEO → task-builder (GitHub issues) → Orchestrator
+- task-builder decomposes requests into atomic, independently executable tasks
+- All issues: `type:task`, `priority:*` labels; orchestrator manages `status:*`
+- Agent/Skill creation: Issues reference `create-agent` or `create-skill` Skills
 
-### Workflow Protocol
-**Task Creation**: CEO identifies need → **task-builder** creates GitHub issue(s) → Orchestrator processes
-**Never**: CEO or other agents create issues directly (task-builder optimizes prompts)
-**Agent/Skill Creation**: Issues must reference appropriate Skill (`create-agent`, `create-skill`)
+**Human Oversight**: Code review, commit history; re-open issues if problems found
 
-**Task Decomposition**:
-- task-builder uses AI judgment to decompose complex requests into atomic tasks
-- Each task: single, clear objective; independently executable
-- No parent/child hierarchy - just logical sequence of atomic tasks
-- All issues are `type:task`
+## Constraints
+- All technologies, data sources, services must be free
 
-**Human Oversight**:
-- Review via normal code review, commit history, GitHub interface
-- Re-open closed issues if problems found, create new tasks for fixes
-- No intervention workflow - simpler, more pragmatic
+## Execution Standards
 
-## Core Principles
+**Tool Selection** (maximize efficiency):
+- **Task[agent] > Direct tools** - Use sub-agents for multi-step workflows (reduces context loading)
+- `Task[Explore]`: Codebase navigation, pattern discovery (NEVER direct Grep/Glob for exploration)
+- `Task[general-purpose]`: Multi-step research, complex tasks spanning multiple files
+- `Task[task-builder]`: GitHub issue creation; `Task[skill-builder]`: Skill creation/enhancement
+- `Grep`: Known-path targeted searches only (not exploration)
+- `Read/Edit/Bash`: Single-step operations with known file paths
+- Parallel execution: Always when operations independent
 
-### Objective
-Build profitable, risk-managed trading systems through AI-to-AI workflow automation.
-
-**Constraints**:
-- All technologies, data sources, and services must be free (no paid APIs, subscriptions, or commercial data)
-
-Human involvement only for:
-- Trading strategy approval
-- Risk limit authorization
-- Regulatory compliance
-- Capital allocation
-
-### Execution Standards
-
-**Token Efficiency**:
-- **Task tool (agents) > Direct tools** for multi-step workflows - agents handle complexity without loading context
-- Grep > Read (targeted search vs full file read) - but use Task[Explore] for exploration
-- Parallel calls when operations independent (multiple Task calls in single message)
+**Implementation Philosophy**:
+- Research novel approaches; prefer existing packages when functionally equivalent
+- **Data Access**: leverage existing MCP servers if available; otherwise build in-house MCPs for integrations; 
+- Simple > Complex; Cutting-edge > Legacy; Real scenarios > Abstract tests
 - Read existing code for patterns, not documentation
-
-**Lightweight Implementation**:
-- Simple > Complex architectures
-- Existing patterns > New dependencies
-- No human-aesthetic documentation
-- **NEVER create README files** - CLAUDE.md is authoritative, only doc for AI
-- Real trading scenarios > Abstract unit tests
-
-**Tool Selection**:
-- **Prefer Task tool with sub-agents** for complex workflows to reduce token usage and improve efficiency
-- `Task[Explore]`: Codebase navigation, research, pattern discovery (NEVER direct Grep/Glob for exploration)
-- `Task[general-purpose]`: Multi-step research, code search across multiple files, complex tasks
-- `Task[task-builder]`: Creating GitHub issues from requirements
-- `Task[skill-builder]`: Creating or enhancing Skills for reusable patterns
-- `Read/Edit/Grep/Bash`: Single-step operations with known file paths only
-- Parallel execution: Always when operations independent (multiple Task calls in single response)
+- CLAUDE.md is authoritative documentation (**Never** create README)
 
 **Reliability**:
-- Validate before execute
-- Single status label per issue
-- Dynamic refresh after task completion
-- Always update GitHub state on error
-- Simplicity over complex state machines
-- **CRITICAL: Commit AND push work at end of EVERY task** - orchestrator requires remote git state for coordination
+- Validate before execute; simplicity over state machines
+- **CRITICAL**: Commit AND push at end of EVERY task (orchestrator needs remote state)
+- Update GitHub labels on errors; single status label per issue
+- software testing >85% coverage
+- **Risk Mitigation**: Implement testing, monitoring, logging, alerting, and reporting for all trading systems; validate edge cases; establish clear escalation paths
 
-**Environment**:
-- Conda: `source ~/anaconda3/etc/profile.d/conda.sh && conda activate solaraalpha`
+**Environment**: `source ~/anaconda3/etc/profile.d/conda.sh && conda activate solaraalpha`
 
-## Orchestrator Tool
+**File Organization**:
+- Root: Essential configs only (CLAUDE.md, environment.yml, .gitignore)
+- Purposeful dirs: for example, `scripts/`, `src/`, `tests/`, `docs/`
+- Every directory: CLAUDE.md (~10-20 lines context)
+- CEO decides structure; always use appropriate subdirectories
 
-AI workers coordinate autonomously via orchestrator (`src/orchestrator/orchestrator.py`):
-- Fetches open issues from GitHub
-- Selects issues with `priority:high|medium`, `type:task`, NO `status:*` labels
-- Spawns Claude Code worker subprocesses
-- Tracks state via GitHub labels (simple workflow)
-- Dynamic refresh after each completion (FIFO within priority tier)
+## Orchestrator
 
-**Configuration**: Set `REPO_OWNER` and `REPO_NAME` in orchestrator source.
+**Path**: `src/orchestrator/orchestrator.py` | **Config**: Set `REPO_OWNER`, `REPO_NAME` in source
 
-**State Flow**:
-```
-[No status] → status:in-progress → [No status] → closed     (success)
-                                 → status:blocked            (failure/timeout)
-```
-
-Orchestrator processes one task at a time, refreshing the queue after each completion to ensure highest-priority work is always selected next.
-
-**Human oversight**: Review commits/code, re-open closed issues if problems found.
+**Behavior**:
+- Selects: `priority:high|medium` + `type:task` + NO `status:*` labels
+- Processes one task at a time; refreshes queue after completion (FIFO within priority)
+- State: `[No status] → status:in-progress → [No status]/closed (success) OR status:blocked (failure)`
 
 ## Issue Standards
 
-See `.claude/GITHUB_ISSUES.md` for complete issue creation standards.
-
-**Quick summary**:
-- Title format: `{Component} - {Action}`
-- Required labels: `priority:*`, `type:task`
-- Required sections: Context (why needed), Acceptance Criteria (testable conditions)
-- Never add `status:*` labels on creation (orchestrator manages these)
-- task-builder decomposes complex requests into atomic tasks using AI judgment
-
----
-**Token Budget**: ~100 lines for AI execution efficiency
+**Format**: `{Component} - {Action}` | **Labels**: `priority:*`, `type:task` (never add `status:*`)
+**Sections**: Context (why), Acceptance Criteria (testable conditions)
+**Details**: See `.claude/GITHUB_ISSUES.md`
