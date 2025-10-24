@@ -25,9 +25,6 @@ Maximize shareholder wealth through AI-driven trading systems.
 
 **Tool Selection** (maximize efficiency):
 - **Task[agent] > Direct tools** - Use sub-agents for multi-step workflows (reduces context loading)
-- `Task[Explore]`: Codebase navigation, pattern discovery (NEVER direct Grep/Glob for exploration)
-- `Task[general-purpose]`: Multi-step research, complex tasks spanning multiple files
-- `Task[task-builder]`: GitHub issue creation; `Task[skill-builder]`: Skill creation/enhancement
 - `Grep`: Known-path targeted searches only (not exploration)
 - `Read/Edit/Bash`: Single-step operations with known file paths
 - Parallel execution: Always when operations independent
