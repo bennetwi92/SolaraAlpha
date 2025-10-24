@@ -21,6 +21,7 @@ from orchestrator.orchestrator import (
     remove_status_labels,
     update_issue_status,
     post_issue_comment,
+    close_issue,
     fetch_recent_commits,
     fetch_all_open_issues,
     fetch_blocked_issues,
@@ -247,6 +248,21 @@ class TestOrchestratorLabelManagement(unittest.TestCase):
         self.assertTrue(result)
         mock_post.assert_called_once()
 
+    @patch('orchestrator.orchestrator.requests.patch')
+    def test_close_issue_success(self, mock_patch):
+        """Test successful issue closing."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_patch.return_value = mock_response
+
+        result = close_issue(1)
+
+        self.assertTrue(result)
+        # Verify PATCH called with correct state
+        mock_patch.assert_called_once()
+        call_args = mock_patch.call_args
+        self.assertEqual(call_args[1]['json']['state'], 'closed')
+
 
 class TestOrchestratorDataFetching(unittest.TestCase):
     """Test data fetching functions."""
@@ -325,10 +341,11 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
     """Test worker spawning and execution logic."""
 
     @patch('orchestrator.orchestrator.subprocess.run')
+    @patch('orchestrator.orchestrator.close_issue')
     @patch('orchestrator.orchestrator.post_issue_comment')
     @patch('orchestrator.orchestrator.remove_status_labels')
     @patch('orchestrator.orchestrator.update_issue_status')
-    def test_spawn_claude_worker_success(self, mock_update_status, mock_remove_labels, mock_post_comment, mock_subprocess):
+    def test_spawn_claude_worker_success(self, mock_update_status, mock_remove_labels, mock_post_comment, mock_close_issue, mock_subprocess):
         """Test successful worker execution."""
         # Mock subprocess success
         mock_result = MagicMock()
@@ -341,6 +358,7 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
         mock_update_status.return_value = True
         mock_remove_labels.return_value = True
         mock_post_comment.return_value = True
+        mock_close_issue.return_value = True
 
         # Create test issue
         issue = {
@@ -360,6 +378,8 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
         mock_update_status.assert_called_once_with(42, "status:in-progress")
         # Verify status removed on success
         mock_remove_labels.assert_called_once_with(42)
+        # Verify issue closed
+        mock_close_issue.assert_called_once_with(42)
         # Verify comment posted
         mock_post_comment.assert_called_once()
 
