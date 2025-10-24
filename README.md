@@ -43,7 +43,7 @@ export GITHUB_TOKEN=$(gh auth token)
 
 Run the orchestrator:
 ```bash
-python src/orchestrator/orchestrator.py
+python src/orchestrator/orchestrator.py --enable-ceo-poke
 ```
 
 Press `Ctrl+C` to stop gracefully.
