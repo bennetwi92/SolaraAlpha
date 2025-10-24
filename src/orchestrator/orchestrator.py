@@ -30,10 +30,13 @@ except ImportError:
     print("[ERROR] requests library not found. Install with: pip install requests")
     sys.exit(1)
 
+from .context_manager import ContextManager
+
 # Configuration
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 REPO_OWNER = "bennetwi92"
 REPO_NAME = "SolaraAlpha"
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BASE_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}"
 HEADERS = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
 
@@ -41,6 +44,9 @@ HEADERS = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
 WORKER_TIMEOUT = 1200  # 20 minutes
 IDLE_SLEEP_SECONDS = 300  # 5 minutes
 MAX_COMMENT_LENGTH = 65000  # GitHub limit is 65,536; leave buffer for formatting
+
+# Initialize context manager
+context_mgr = ContextManager(repo_root=REPO_ROOT)
 
 
 def fetch_prioritized_issues() -> List[Dict]:
@@ -416,8 +422,9 @@ def spawn_claude_worker(issue: Dict) -> bool:
     if not update_issue_status(issue_num, "status:in-progress"):
         print("[WARNING] Could not update status to in-progress, continuing anyway...")
 
-    # Build prompt for Claude Code
-    prompt = f"{issue_body}"
+    # Build prompt with context for Claude Code
+    print("[CONTEXT] Generating context for worker...")
+    prompt = context_mgr.generate_full_context(issue_body)
 
     try:
         # Spawn Claude Code worker
@@ -471,6 +478,23 @@ def spawn_claude_worker(issue: Dict) -> bool:
 
         if result.returncode == 0:
             print(f"[SUCCESS] Issue #{issue_num} completed successfully")
+
+            # Update context cache with success
+            print("[CONTEXT] Updating context cache with completion...")
+            context_mgr.update_cache(
+                issue_num=issue_num,
+                issue_title=issue_title,
+                outcome="success",
+                key_learning=f"Completed: {issue_title}"
+            )
+
+            # Post completion comment with context
+            completion_comment = context_mgr.generate_completion_comment(
+                outcome="success",
+                key_learning=f"Successfully completed task"
+            )
+            post_issue_comment(issue_num, completion_comment)
+
             # Remove status label and close issue
             print("[LABEL] Removing status labels...")
             remove_status_labels(issue_num)
@@ -482,6 +506,20 @@ def spawn_claude_worker(issue: Dict) -> bool:
             print(
                 f"[FAILED] Issue #{issue_num} failed with exit code {result.returncode}"
             )
+
+            # Update context cache with failure
+            print("[CONTEXT] Updating context cache with blockage...")
+            context_mgr.update_cache(
+                issue_num=issue_num,
+                issue_title=issue_title,
+                outcome="blocked",
+                blocker=f"Worker failed with exit code {result.returncode}"
+            )
+
+            # Post completion comment with context
+            completion_comment = context_mgr.generate_completion_comment(outcome="blocked")
+            post_issue_comment(issue_num, completion_comment)
+
             # Update status to blocked
             print("[LABEL] Updating status → blocked...")
             update_issue_status(issue_num, "status:blocked")
@@ -489,6 +527,15 @@ def spawn_claude_worker(issue: Dict) -> bool:
 
     except subprocess.TimeoutExpired:
         print(f"[TIMEOUT] Issue #{issue_num} exceeded {WORKER_TIMEOUT}s timeout")
+
+        # Update context cache with timeout
+        context_mgr.update_cache(
+            issue_num=issue_num,
+            issue_title=issue_title,
+            outcome="blocked",
+            blocker=f"Worker timeout after {WORKER_TIMEOUT}s"
+        )
+
         # Post timeout comment
         timeout_comment = f"""## Orchestrator Execution Log
 
@@ -498,6 +545,11 @@ def spawn_claude_worker(issue: Dict) -> bool:
 Worker exceeded maximum execution time of {WORKER_TIMEOUT}s and was terminated.
 """
         post_issue_comment(issue_num, timeout_comment)
+
+        # Post completion comment with context
+        completion_comment = context_mgr.generate_completion_comment(outcome="blocked")
+        post_issue_comment(issue_num, completion_comment)
+
         # Update status to blocked
         print("[LABEL] Updating status → blocked...")
         update_issue_status(issue_num, "status:blocked")
@@ -507,6 +559,15 @@ Worker exceeded maximum execution time of {WORKER_TIMEOUT}s and was terminated.
         sys.exit(1)
     except Exception as e:
         print(f"[ERROR] Issue #{issue_num} failed with error: {e}")
+
+        # Update context cache with error
+        context_mgr.update_cache(
+            issue_num=issue_num,
+            issue_title=issue_title,
+            outcome="blocked",
+            blocker=f"Worker exception: {str(e)}"
+        )
+
         # Post error comment
         error_comment = f"""## Orchestrator Execution Log
 
@@ -518,6 +579,11 @@ Worker failed with exception:
 ```
 """
         post_issue_comment(issue_num, error_comment)
+
+        # Post completion comment with context
+        completion_comment = context_mgr.generate_completion_comment(outcome="blocked")
+        post_issue_comment(issue_num, completion_comment)
+
         # Update status to blocked
         print("[LABEL] Updating status → blocked...")
         update_issue_status(issue_num, "status:blocked")

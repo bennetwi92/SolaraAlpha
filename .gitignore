@@ -53,3 +53,6 @@ htmlcov/
 *.tmp
 tmp/
 temp/
+
+# Orchestrator runtime state
+src/orchestrator/.context_cache.json
