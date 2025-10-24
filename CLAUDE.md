@@ -5,6 +5,11 @@ Maximize shareholder wealth through AI-driven trading systems.
 
 **Priority**: Risk Management > Profitability > Operational Efficiency
 
+## Trading Philosophy
+**Multi-Strategy**: Diversified portfolio of uncorrelated trading strategies
+**Multi-Asset**: Coverage across equities, crypto, forex, commodities, fixed income
+**Multi-Timeframe**: Strategies spanning high-frequency to long-term horizons
+
 ## Roles
 
 **Human**: observer
