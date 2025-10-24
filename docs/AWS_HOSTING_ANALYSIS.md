@@ -547,37 +547,170 @@ External Dependencies (not in AWS):
 - If not profitable: Migrate to Lambda-based scheduled execution
 - If project paused: Snapshot instance, terminate, restart when needed
 
-### Alternative: Serverless Architecture (Always Free)
+### Serverless Architectures (Detailed Analysis)
 
-If you want to stay in free tier indefinitely, consider:
+#### Option A: Pure Lambda (Limited Viability)
 
+**Architecture**:
 ```
 ┌────────────────────────────────────────────────┐
-│ EventBridge Rule (1M invocations free)         │
+│ EventBridge Rule (free)                        │
 │ • Trigger: rate(5 minutes)                     │
 │ • Target: Lambda function                      │
 └────────────────┬───────────────────────────────┘
                  │
                  ▼
 ┌────────────────────────────────────────────────┐
-│ Lambda Function (1M invocations/month free)    │
+│ Lambda Function (up to 10GB RAM)               │
 │ • orchestrator logic                           │
 │ • fetches GitHub issues                        │
-│ • spawns Claude Code workers (via API)         │
+│ • spawns Claude Code workers (subprocess)      │
 │ • updates GitHub labels                        │
 └────────────────────────────────────────────────┘
 ```
 
-**Pros**:
-- Always free (1M invocations = 2,880 per day = every 30 seconds)
-- No EC2 instance to manage
-- Automatic scaling and high availability
+**Free Tier Limits (Always Free)**:
+- 1M requests/month
+- 400,000 GB-seconds/month compute time
 
-**Cons**:
-- 15-minute Lambda timeout (need to handle long-running tasks differently)
-- Cold start latency (~1-2 seconds)
-- More complex state management
-- Claude Code CLI may not work in Lambda (investigate EFS or containerized approach)
+**Cost Calculation**:
+- Polling: 8,640 invocations/month (every 5 min) @ 128MB for 3 seconds = 3,317 GB-seconds
+- Processing: Assume 10 tasks/day @ 4GB for 5 minutes each = 14,400 GB-seconds/day × 30 = 432,000 GB-seconds/month
+- **Total**: 435,317 GB-seconds/month
+- **Exceeds free tier by**: 35,317 GB-seconds
+- **Cost**: 35,317 × $0.0000166667 = **$0.59/month** (negligible!)
+
+**Critical Blockers**:
+1. ❌ **15-minute Lambda timeout** (orchestrator tasks can take 20+ minutes)
+2. ❓ **Claude Code in Lambda**: Untested - may not work in Lambda environment
+3. ⚠️ **Container image required**: Need to package Claude Code CLI (Node.js + dependencies)
+
+**Verdict**: ❌ Not viable due to timeout limitations
+
+---
+
+#### Option B: Lambda + Fargate Spot (BEST SERVERLESS OPTION)
+
+**Architecture**:
+```
+┌─────────────────────────────────────────────────────┐
+│ EventBridge Rule (free)                              │
+│ • Trigger: rate(5 minutes)                          │
+└─────────────────┬───────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────┐
+│ Lambda Orchestrator (128MB, 5 sec runtime)           │
+│ • Check GitHub for priority issues                   │
+│ • If work found: Launch Fargate Spot task           │
+│ • If no work: Exit (minimal cost)                    │
+└─────────────────┬───────────────────────────────────┘
+                  │
+                  │ Spawns ECS Task
+                  ▼
+┌─────────────────────────────────────────────────────┐
+│ ECS Fargate Spot Task (on-demand)                   │
+│ • 1 vCPU, 4GB RAM                                    │
+│ • Runs Claude Code worker                            │
+│ • No timeout limits (can run hours if needed)        │
+│ • Updates GitHub, then terminates                    │
+│ • Only charged for actual runtime (per second)       │
+└──────────────────────────────────────────────────────┘
+```
+
+**Cost Breakdown (us-east-1)**:
+
+| Component | Usage | Cost/Month |
+|-----------|-------|------------|
+| **Lambda (orchestrator)** | 8,640 checks @ 128MB, 5 sec | $0.00 (free tier) |
+| **EventBridge** | 8,640 rules/month | $0.00 (free tier) |
+| **Fargate Spot (1 vCPU + 4GB)** | Assume 2 hours/day active | ~$6.00 |
+| **CloudWatch Logs** | 3GB/month | $0.00 (always free) |
+| **Total** | | **~$6.00/month** |
+
+**Fargate Spot Pricing** (us-east-1):
+- **CPU**: $0.04048/hour × 0.7 (Spot discount) = $0.02834/hour
+- **Memory**: $0.004445/GB/hour × 0.7 (Spot discount) = $0.003112/GB/hour
+- **1 vCPU + 4GB**: ($0.02834) + (4 × $0.003112) = $0.02834 + $0.01245 = **$0.04079/hour**
+- **2 hours/day** × 30 days = 60 hours/month
+- **Monthly cost**: 60 × $0.04079 = **$2.45/month**
+
+Actually, let me recalculate more conservatively:
+- **24/7 operation** (always running, like EC2): 720 hours/month
+- **Cost**: 720 × $0.04079 = **$29.37/month** (equivalent to t3.medium!)
+
+But the **key advantage**: Only pay for actual work time!
+- If orchestrator processes 10 tasks/day @ 10 minutes each = 100 minutes/day = 1.67 hours/day
+- 1.67 hours/day × 30 days = **50 hours/month**
+- **Cost**: 50 × $0.04079 = **$2.04/month**
+
+**Realistic Cost Estimate** (Phase 1 - low activity):
+- **10 tasks/day** @ 10 minutes each = **$2.04/month**
+- **30 tasks/day** @ 10 minutes each = **$6.12/month**
+- **100 tasks/day** @ 10 minutes each = **$20.40/month**
+
+**Benefits**:
+- ✅ No timeout limits (Fargate can run for hours)
+- ✅ Only pay for actual processing time (not idle time)
+- ✅ Lambda orchestrator always free (within 1M requests)
+- ✅ Auto-scales: Multiple Fargate tasks can run in parallel if needed
+- ✅ Production-ready: Automatic retries, health checks, integration with CloudWatch
+
+**Tradeoffs**:
+- More complex setup (need Docker container image)
+- Fargate Spot can be interrupted (2-minute warning)
+- Slightly higher complexity vs single EC2 instance
+
+**Verdict**: ✅ **BEST OPTION for bursty workloads** - cheaper than EC2 Spot if <50 hours/month of actual work
+
+---
+
+#### Option C: Lambda + Step Functions (For Short Tasks Only)
+
+**Architecture**:
+```
+EventBridge → Lambda → Step Functions → Multiple Lambda invocations
+```
+
+**Viability**: ❌ Not recommended
+- Each Lambda still has 15-minute timeout
+- Step Functions don't solve timeout issue
+- Added complexity with no benefit for this use case
+
+---
+
+### Serverless Cost Comparison
+
+| Architecture | Monthly Cost | Best For | Timeout Limit |
+|--------------|--------------|----------|---------------|
+| **Pure Lambda** | $0.59/month | N/A | ❌ 15 minutes |
+| **Lambda + Fargate Spot** | $2-20/month | Bursty workloads | ✅ None |
+| **EC2 Spot (t3.medium)** | $9.87/month | 24/7 operation | ✅ None |
+| **EC2 On-Demand (t3.medium)** | $31.04/month | Stable, predictable | ✅ None |
+
+**Winner for Serverless**: Lambda + Fargate Spot ($2-6/month for typical Phase 1 workload)
+
+---
+
+### When to Use Serverless vs EC2
+
+**Use Lambda + Fargate Spot if**:
+- ✅ Workload is bursty (<50 hours/month of actual processing)
+- ✅ Want to minimize costs during low-activity periods
+- ✅ Comfortable with Docker and ECS configuration
+- ✅ Want automatic scaling for parallel task processing
+
+**Use EC2 Spot if**:
+- ✅ Workload is continuous (many issues to process daily)
+- ✅ Want simpler deployment (single instance, systemd service)
+- ✅ Processing >100 hours/month (EC2 becomes cheaper)
+- ✅ Prefer traditional server management
+
+**Breakeven Analysis**:
+- **EC2 Spot**: $9.87/month (fixed, regardless of usage)
+- **Fargate Spot**: $0.04079/hour
+- **Breakeven**: $9.87 / $0.04079 = **242 hours/month**
+- **Conclusion**: Use Fargate if processing <242 hours/month (~8 hours/day)
 
 ---
 
@@ -630,7 +763,53 @@ If you want to stay in free tier indefinitely, consider:
 - Spot instances can be interrupted (orchestrator restarts gracefully)
 - $10-31/month is acceptable cost if system generates trading profits
 
-#### Option C: Local Deployment (ZERO COST)
+#### Option C: Lambda + Fargate Spot Serverless (BEST VALUE)
+
+✅ **Use serverless architecture for ultra-low cost ($2-6/month)**
+
+**Why**:
+- Only pay for actual processing time (not idle time)
+- Perfect for Phase 1 low-activity workloads
+- Lambda orchestrator is always free
+- Auto-scales if workload increases
+- No server management
+
+**Architecture**:
+- EventBridge triggers Lambda every 5 minutes
+- Lambda checks GitHub for issues
+- If work found: Spawns Fargate Spot task with Claude Code
+- Fargate processes task, updates GitHub, terminates
+- Lambda always free, Fargate billed per second
+
+**Cost Examples** (based on activity):
+- 10 tasks/day @ 10 min each: **$2.04/month**
+- 30 tasks/day @ 10 min each: **$6.12/month**
+- 100 tasks/day @ 10 min each: **$20.40/month**
+
+**Setup Requirements**:
+1. Create Docker image with Claude Code CLI + orchestrator
+2. Push to ECR (Elastic Container Registry)
+3. Create ECS Fargate Spot task definition
+4. Create Lambda function to spawn Fargate tasks
+5. Configure EventBridge to trigger Lambda every 5 minutes
+
+**Time Investment**: ~6-8 hours for initial setup (more complex than EC2)
+
+**Trade-offs**:
+- More complex setup (Docker, ECS, Lambda integration)
+- Requires Docker and AWS ECS knowledge
+- Fargate Spot can be interrupted (handles gracefully)
+- Not ideal for high-volume continuous processing (>8 hours/day)
+
+**Recommended for Phase 1 if**:
+- Want minimal AWS costs (<$10/month)
+- Workload is bursty (few tasks per day)
+- Comfortable with Docker and serverless architectures
+- Want to experiment with modern cloud-native patterns
+
+**Breakeven**: Use Fargate Spot if processing <8 hours/day, otherwise EC2 Spot is cheaper
+
+#### Option D: Local Deployment (ZERO COST)
 
 ✅ **Run orchestrator on local machine, defer AWS to Phase 3**
 
@@ -647,9 +826,10 @@ If you want to stay in free tier indefinitely, consider:
 - Not suitable for production, but acceptable for Phase 1 (R&D)
 
 **Recommended for Phase 1 if**:
-- Not willing to pay for AWS ($16-31/month)
+- Not willing to pay for AWS (even $2-6/month)
 - Don't have access to new AWS account ($200 credits)
 - System is not yet profitable (still in R&D)
+- Want simplest possible setup
 
 ### For Phase 2 (Paper Trading)
 
@@ -702,9 +882,16 @@ If you want to stay in free tier indefinitely, consider:
 | Your Situation | Recommended Path | Cost (Year 1) | Best For |
 |----------------|------------------|---------------|----------|
 | **New to AWS** | Create account, use $200 credits | $186 | Zero upfront cost, professional deployment |
-| **Existing AWS, profitable** | t3.medium On-Demand | $372 | Stable, predictable costs |
-| **Existing AWS, cost-conscious** | t3.medium Spot | $118 | Best value, handles interruptions |
+| **Existing AWS, bursty workload** | Lambda + Fargate Spot | $24-72 | Ultra-low cost, pay-per-use |
+| **Existing AWS, high activity** | t3.medium Spot | $118 | Best value for 24/7 operation |
+| **Existing AWS, need stability** | t3.medium On-Demand | $372 | Predictable costs, no interruptions |
 | **Early-stage R&D, no budget** | Local deployment | $0 | Zero cost, defer AWS until profitable |
+
+**Cost Breakdown by Activity Level**:
+- **Low activity** (10-30 tasks/day): Lambda + Fargate Spot = $2-6/month ✅ BEST
+- **Medium activity** (100 tasks/day): Lambda + Fargate Spot = $20/month ✅ BEST
+- **High activity** (>242 hrs/month): EC2 Spot = $10/month ✅ BEST
+- **24/7 continuous**: EC2 Spot = $10/month ✅ BEST
 
 ### Next Steps
 
@@ -735,6 +922,9 @@ If you want to stay in free tier indefinitely, consider:
 - **Blocker**: None (can deploy immediately)
 
 **Recommendation**:
-- **New AWS users**: Use $200 credits for 6 months free deployment
-- **Existing AWS users**: Use Spot Instances (~$10/month) for cost efficiency
+- **New AWS users**: Use $200 credits for 6 months free deployment (t3.medium EC2)
+- **Existing AWS users with bursty workload**: Lambda + Fargate Spot (~$2-6/month) for ultra-low cost
+- **Existing AWS users with high activity**: EC2 Spot (~$10/month) for 24/7 operation
 - **Zero budget**: Run locally during Phase 1, migrate to AWS for Phase 3 when profitable
+
+**Serverless is the winner** for most Phase 1 scenarios due to pay-per-use pricing!
