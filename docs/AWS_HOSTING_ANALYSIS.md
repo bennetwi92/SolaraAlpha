@@ -8,9 +8,44 @@
 
 ## Executive Summary
 
-SolaraAlpha is well-suited for AWS Free Tier hosting. The orchestrator is a lightweight, stateless daemon requiring minimal resources. **Total monthly cost: $0** for first 12 months if staying within limits.
+⚠️ **CRITICAL UPDATE**: AWS Free Tier EC2 instances (t2/t3.micro with 1GB RAM) are **insufficient** for running Claude Code (requires minimum 4GB RAM).
 
-**Key Finding**: Application requires ~720 hours/month compute (24/7 operation) - fits within 750-hour EC2 free tier.
+**Viable Options**:
+1. **Use $200 AWS Credits** (new accounts): Run t3.medium (4GB) for ~6 months at zero cost
+2. **Paid EC2**: t3.small (2GB) @ $15/month or t3.medium (4GB) @ $30/month
+3. **Serverless Lambda**: Always free tier, but requires architecture changes (15-min timeout limit)
+4. **Optimize Local**: Run orchestrator locally, defer AWS deployment to Phase 3 (production)
+
+**Recommendation**: Option 1 (AWS Credits) for new accounts, otherwise Option 4 (local deployment) for Phase 1.
+
+---
+
+## Critical Finding: Free Tier Limitation
+
+### The Problem
+
+| Requirement | AWS Free Tier | Match? |
+|-------------|---------------|---------|
+| **Claude Code Minimum RAM** | 4GB | ❌ |
+| **AWS Free Tier EC2** | t2/t3.micro (1GB RAM) | ❌ |
+| **Hours Required** | 720/month (24/7) | ✅ (750 hrs free) |
+
+**Conclusion**: While the 750-hour allocation is sufficient, the instance size (1GB RAM) is not. Claude Code requires minimum 4GB RAM to run reliably.
+
+### Evidence
+
+From official Claude Code documentation:
+- **Minimum System Requirements**: 4GB+ RAM
+- **Recommended**: 8GB+ RAM
+- **Node.js**: 18+ required
+
+From orchestrator analysis:
+- Spawns Claude Code CLI as subprocess (line 408)
+- Serial processing (one worker at a time)
+- Each worker inherits full Claude Code memory requirements
+- 20-minute timeout per task (WORKER_TIMEOUT = 1200s)
+
+**Real-world observation**: Current Claude Code session uses ~297MB base + context/operations memory. Under load, this can exceed 1GB easily, causing OOM errors on t3.micro.
 
 ---
 
@@ -44,15 +79,16 @@ SolaraAlpha is well-suited for AWS Free Tier hosting. The orchestrator is a ligh
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌─────────────────────────────────────────────┐            │
-│  │ EC2 Instance (t3.micro)                     │            │
+│  │ EC2 Instance (t3.medium)                    │            │
 │  │ ─────────────────────────────────────────   │            │
 │  │ • Python 3.11 runtime                       │            │
+│  │ • Node.js 18+ (for Claude Code)             │            │
 │  │ • Conda environment                         │            │
 │  │ • Claude Code CLI                           │            │
 │  │ • orchestrator.py (systemd service)         │            │
 │  │                                              │            │
 │  │ Resources:                                   │            │
-│  │   - 1 vCPU, 1GB RAM                         │            │
+│  │   - 2 vCPU, 4GB RAM (Claude Code minimum)   │            │
 │  │   - 10GB EBS (gp3)                          │            │
 │  │   - Amazon Linux 2023 or Ubuntu 22.04       │            │
 │  └──────────────┬──────────────────────────────┘            │
@@ -117,39 +153,92 @@ External Dependencies (not in AWS):
 
 ## Cost Analysis
 
-### Scenario 1: Within Free Tier (First 12 Months)
+⚠️ **NOTE**: t3.micro (1GB RAM) is insufficient for Claude Code. Minimum viable instance is t3.small (2GB RAM), though t3.medium (4GB RAM) is recommended.
 
-| Service | Usage | Free Tier Limit | Cost |
-|---------|-------|-----------------|------|
-| EC2 (t3.micro) | 720 hrs/month | 750 hrs/month | **$0** |
-| EBS (gp3) | 10GB | 30GB | **$0** |
-| S3 Storage | 2GB | 5GB | **$0** |
-| S3 Requests | 500 PUT, 5K GET/month | 2K PUT, 20K GET | **$0** |
-| CloudWatch Logs | 3GB/month | 5GB ingestion, 5GB storage | **$0** |
-| CloudWatch Alarms | 5 alarms | 10 alarms | **$0** |
-| SNS Notifications | 50 emails/month | 1,000 emails/month | **$0** |
-| Data Transfer Out | 10GB/month | 100GB/month | **$0** |
-| **TOTAL** | | | **$0.00/month** |
+### Scenario 1: New AWS Account with $200 Credits (Months 1-6)
 
-**Duration**: 12 months for most services
+**New accounts get up to $200 in credits** ($100 base + $100 from onboarding tasks). This covers a t3.medium for ~6 months.
 
-### Scenario 2: After Free Tier Expires (Month 13+)
+| Service | Usage | Monthly Cost | Credit Coverage |
+|---------|-------|--------------|-----------------|
+| EC2 (t3.medium) | 720 hrs/month | $30.24 | ✅ ~6.6 months |
+| EBS (gp3) | 10GB | $0.80 | ✅ Negligible |
+| S3 Storage | 2GB | $0.00 | Free tier |
+| CloudWatch Logs | 3GB/month | $0.00 | Always free |
+| SNS Notifications | 50 emails/month | $0.00 | Always free |
+| Data Transfer Out | 10GB/month | $0.00 | Free tier (12 months) |
+| **TOTAL** | | **~$31/month** | **~6 months at $0 cost** |
+
+**After credits expire** (Month 7): Pay $31/month or migrate to alternative architecture.
+
+### Scenario 2: Standard Free Tier (INSUFFICIENT - DO NOT USE)
+
+| Service | Usage | Free Tier Limit | Cost | Viable? |
+|---------|-------|-----------------|------|---------|
+| EC2 (t3.micro) | 720 hrs/month | 750 hrs/month | $0 | ❌ Only 1GB RAM |
+
+**Conclusion**: While technically free, **t3.micro cannot run Claude Code reliably**. Expect OOM errors and system instability.
+
+### Scenario 3: Paid EC2 (Minimal Viable - t3.small)
 
 | Service | Usage | Monthly Cost (us-east-1) |
 |---------|-------|--------------------------|
-| EC2 (t3.micro) | 720 hrs/month | $7.50 |
+| EC2 (t3.small) | 720 hrs/month | $15.12 |
 | EBS (gp3) | 10GB | $0.80 |
-| S3 Storage | 2GB | $0.05 |
-| S3 Requests | 500 PUT, 5K GET/month | $0.03 |
-| CloudWatch Logs | 3GB/month | $1.51 (ingestion) + $0.09 (storage) |
+| S3 Storage | 2GB | $0.00 (free tier 12 months) |
+| CloudWatch Logs | 3GB/month | $0.00 (always free) |
 | SNS Notifications | 50 emails/month | $0.00 (always free) |
-| Data Transfer Out | 10GB/month | $0.90 |
-| **TOTAL** | | **~$10.88/month** |
+| Data Transfer Out | 10GB/month | $0.00 (free tier 12 months) |
+| **TOTAL** | | **~$15.92/month** |
 
-**Cost Optimization After Free Tier**:
-- Consider Spot Instances: ~70% discount (EC2 → $2.25/month)
-- Use Lambda instead of EC2 if workload can be scheduled (always free tier)
-- Archive old logs to S3 Glacier Deep Archive ($0.00099/GB/month)
+**Notes**:
+- t3.small has 2GB RAM (50% of Claude Code minimum)
+- May still experience memory pressure under load
+- Recommended for cost-conscious deployments only
+
+### Scenario 4: Paid EC2 (Recommended - t3.medium)
+
+| Service | Usage | Monthly Cost (us-east-1) |
+|---------|-------|--------------------------|
+| EC2 (t3.medium) | 720 hrs/month | $30.24 |
+| EBS (gp3) | 10GB | $0.80 |
+| S3 Storage | 2GB | $0.00 (free tier 12 months) |
+| CloudWatch Logs | 3GB/month | $0.00 (always free) |
+| SNS Notifications | 50 emails/month | $0.00 (always free) |
+| Data Transfer Out | 10GB/month | $0.00 (free tier 12 months) |
+| **TOTAL** | | **~$31.04/month** |
+
+**Notes**:
+- t3.medium has 4GB RAM (meets Claude Code minimum)
+- Stable, reliable operation expected
+- Best choice for production deployment
+
+### Scenario 5: Cost Optimization (Spot Instances)
+
+| Service | Usage | Monthly Cost (us-east-1) | Savings |
+|---------|-------|--------------------------|---------|
+| EC2 (t3.medium Spot) | 720 hrs/month | $9.07 (~70% off) | ~$21/month |
+| EBS (gp3) | 10GB | $0.80 | - |
+| Other services | Same as above | $0.00 | - |
+| **TOTAL** | | **~$9.87/month** | **~$21/month** |
+
+**Tradeoffs**:
+- Can be interrupted with 2-minute warning
+- Orchestrator is stateless, restarts gracefully
+- Must handle interruptions (checkpoint work, save state to GitHub)
+- 90%+ availability expected in most regions
+
+### Cost Comparison: All Scenarios
+
+| Scenario | Monthly Cost | Duration | Total 12-Month Cost |
+|----------|--------------|----------|---------------------|
+| **1. AWS Credits (New Account)** | $0 (months 1-6), $31 (months 7-12) | 12 months | **$186** |
+| **2. Free Tier (t3.micro)** | $0 | 12 months | **$0** (but ❌ insufficient) |
+| **3. Paid (t3.small)** | $15.92 | 12 months | **$191** |
+| **4. Paid (t3.medium)** | $31.04 | 12 months | **$372** |
+| **5. Spot (t3.medium)** | $9.87 | 12 months | **$118** |
+
+**Winner**: Scenario 1 (AWS Credits for new accounts) or Scenario 5 (Spot for existing accounts)
 
 ---
 
@@ -161,11 +250,19 @@ External Dependencies (not in AWS):
 
 1. **EC2 Setup**
    ```bash
-   # Launch t3.micro instance (Amazon Linux 2023)
+   # Launch t3.medium instance (Amazon Linux 2023)
+   # ⚠️ NOTE: t3.micro (1GB RAM) is insufficient for Claude Code
    # User data script to install dependencies
    #!/bin/bash
    yum update -y
    yum install -y git python3.11 python3.11-pip
+
+   # Install Node.js 18+ (required for Claude Code)
+   curl -fsSL https://rpm.nodesource.com/setup_18.x | bash -
+   yum install -y nodejs
+
+   # Install Claude Code CLI
+   npm install -g @anthropic-ai/claude-code
 
    # Install Miniconda
    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
@@ -179,6 +276,9 @@ External Dependencies (not in AWS):
    /opt/miniconda/bin/conda env create -f environment.yml
    /opt/miniconda/bin/conda activate solaraalpha
    pip install -r requirements.txt
+
+   # Configure Claude Code (requires manual authentication)
+   # Run: claude --login
    ```
 
 2. **Secrets Management**
@@ -485,64 +585,156 @@ If you want to stay in free tier indefinitely, consider:
 
 ### For Phase 1 (Current - Development)
 
-✅ **Deploy on AWS Free Tier immediately**
+⚠️ **AWS Free Tier is NOT viable** due to Claude Code's 4GB RAM requirement (free tier only offers 1GB).
+
+#### Option A: New AWS Account (RECOMMENDED)
+
+✅ **Use $200 AWS Credits for ~6 months at zero cost**
 
 **Why**:
-- Zero cost for 12 months
-- Better uptime than local machine
+- New accounts get $200 credits ($100 base + $100 onboarding)
+- Covers t3.medium (4GB RAM) for 6+ months
+- Zero cost during development phase
+- Professional infrastructure and monitoring
 - Practice for production deployment
-- CloudWatch monitoring adds visibility
-- Stateless design = easy to restart anytime
 
 **Quick Start**:
-1. Launch t3.micro EC2 instance (Amazon Linux 2023)
-2. Clone repo, install dependencies
-3. Store GITHUB_TOKEN in Parameter Store
-4. Create systemd service
-5. Configure CloudWatch Logs
-6. Set up billing alerts
+1. Create new AWS account (get $200 credits)
+2. Complete 5 onboarding tasks for additional $100
+3. Launch t3.medium EC2 instance (Amazon Linux 2023)
+4. Clone repo, install dependencies (Python 3.11, Node.js 18+, Claude Code CLI)
+5. Store GITHUB_TOKEN in Parameter Store
+6. Create systemd service
+7. Configure CloudWatch Logs and alarms
+8. Set up billing alerts
 
-**Time Investment**: ~4 hours for initial setup
+**Time Investment**: ~4-6 hours for initial setup
+
+**After Credits Expire (Month 7)**:
+- Option 1: Pay $31/month (acceptable if trading is profitable)
+- Option 2: Migrate to Spot Instances (~$10/month)
+- Option 3: Migrate to local deployment
+- Option 4: Explore Lambda-based architecture
+
+#### Option B: Existing AWS Account
+
+🟡 **Pay $16-31/month or use Spot Instances (~$10/month)**
+
+**Cost Options**:
+- t3.small (2GB RAM): $16/month - minimal viable, may have memory pressure
+- t3.medium (4GB RAM): $31/month - recommended for stable operation
+- t3.medium Spot: $10/month - best value, handles interruptions gracefully
+
+**Trade-offs**:
+- t3.small may still experience OOM under load
+- Spot instances can be interrupted (orchestrator restarts gracefully)
+- $10-31/month is acceptable cost if system generates trading profits
+
+#### Option C: Local Deployment (ZERO COST)
+
+✅ **Run orchestrator on local machine, defer AWS to Phase 3**
+
+**Why**:
+- Zero cost during development
+- Local machine likely has 8GB+ RAM (sufficient for Claude Code)
+- Orchestrator is stateless (easy to migrate later)
+- AWS deployment can wait until Phase 3 (production trading)
+
+**Trade-offs**:
+- No 24/7 uptime (requires local machine running)
+- No CloudWatch monitoring (manual log review)
+- Manual restart if machine reboots
+- Not suitable for production, but acceptable for Phase 1 (R&D)
+
+**Recommended for Phase 1 if**:
+- Not willing to pay for AWS ($16-31/month)
+- Don't have access to new AWS account ($200 credits)
+- System is not yet profitable (still in R&D)
 
 ### For Phase 2 (Paper Trading)
 
-✅ **Continue on AWS Free Tier with enhanced monitoring**
+🟡 **Continue current deployment with enhanced monitoring**
 
-**Additions**:
-- Separate staging instance (still within 750 hr limit if single instance)
-- Enhanced CloudWatch alarms for paper trading P&L
-- S3 storage for simulated trade history
-- SNS alerts for large simulated losses
+**If on AWS**:
+- Keep current instance (t3.medium or t3.medium Spot)
+- Add enhanced CloudWatch alarms for paper trading P&L
+- Configure S3 storage for simulated trade history
+- Set up SNS alerts for large simulated losses
 
-### For Phase 3 (Live Trading)
+**If on Local**:
+- Consider migrating to AWS at this stage
+- Paper trading benefits from 24/7 uptime
+- Use Spot Instances (~$10/month) for cost efficiency
+
+### For Phase 3 (Live Trading - PRODUCTION)
 
 ⚠️ **Critical Blockers Must Be Resolved First**:
-1. **Data Migration**: Yahoo Finance → Twelve Data (highest priority)
+1. **Data Migration**: Yahoo Finance → Twelve Data (HIGHEST PRIORITY)
 2. **Risk Management**: Implement position limits, stop-loss, circuit breakers
 3. **Regulatory Compliance**: Ensure legal to operate as proprietary trading firm
 4. **Capital Approval**: Shareholder authorization for real money deployment
 
-✅ **Upgrade to Paid Tier** (~$11/month is negligible for live trading)
+✅ **Deploy on AWS with production-grade infrastructure**
 
-**Additions**:
-- Multi-AZ deployment for high availability
-- RDS for trade history persistence (db.t3.micro free tier)
-- Enhanced monitoring (CloudWatch Contributor Insights)
-- Automated backups (AWS Backup)
-- Consider professional-grade infrastructure once profitable
+**Requirements**:
+- t3.medium or larger (4GB+ RAM)
+- Consider Spot Instances (~$10/month) if handling interruptions
+- Multi-AZ deployment for high availability (optional)
+- Enhanced monitoring and alerting
+- Automated backups
+- Professional-grade error handling
+
+**Cost Expectations**:
+- Basic (Spot): $10/month
+- Standard (On-Demand): $31/month
+- High Availability (Multi-AZ): $62/month
+
+**Decision Point**: If system is profitable, $10-62/month is negligible compared to trading operations.
 
 ---
 
 ## Conclusion
 
-**TL;DR**: SolaraAlpha is perfectly suited for AWS Free Tier hosting. Deploy now for zero cost, 24/7 uptime, and professional monitoring. After 12 months, costs are ~$11/month - trivial compared to trading operations.
+**TL;DR**: AWS Free Tier alone is insufficient for SolaraAlpha due to Claude Code's 4GB RAM requirement. However, multiple viable paths exist depending on your situation.
 
-**Next Steps**:
+### Decision Matrix
+
+| Your Situation | Recommended Path | Cost (Year 1) | Best For |
+|----------------|------------------|---------------|----------|
+| **New to AWS** | Create account, use $200 credits | $186 | Zero upfront cost, professional deployment |
+| **Existing AWS, profitable** | t3.medium On-Demand | $372 | Stable, predictable costs |
+| **Existing AWS, cost-conscious** | t3.medium Spot | $118 | Best value, handles interruptions |
+| **Early-stage R&D, no budget** | Local deployment | $0 | Zero cost, defer AWS until profitable |
+
+### Next Steps
+
+**If pursuing AWS deployment**:
 1. ✅ Review this document with shareholder
-2. ✅ Approve AWS account creation (if needed)
-3. ✅ Execute Phase 1 deployment (4 hours)
-4. ✅ Monitor for 1 week, validate stability
-5. ⏳ Plan Phase 2 (paper trading) in parallel with strategy development
-6. ❌ Phase 3 (live trading) blocked on data migration + risk management
+2. ✅ Decide on deployment path (credits, paid, or local)
+3. ✅ Create AWS account (if new) and claim $200 credits
+4. ✅ Execute deployment (4-6 hours)
+5. ✅ Monitor for 1 week, validate stability
+6. ⏳ Plan Phase 2 (paper trading) in parallel with strategy development
+7. ❌ Phase 3 (live trading) blocked on data migration + risk management
 
-**Risk Assessment**: Low risk, high value. AWS Free Tier provides professional-grade infrastructure at zero cost for 12 months, with minimal ongoing costs thereafter.
+**If deferring AWS deployment**:
+1. ✅ Continue running orchestrator locally
+2. ✅ Focus on strategy development and backtesting
+3. ⏳ Revisit AWS deployment at Phase 2 (paper trading) or Phase 3 (production)
+
+### Risk Assessment
+
+**AWS Deployment**:
+- **Risk**: Low to Medium (depends on cost tolerance)
+- **Value**: High (professional monitoring, 24/7 uptime, practice for production)
+- **Blocker**: Cost ($0-31/month depending on approach)
+
+**Local Deployment**:
+- **Risk**: Low (zero financial risk)
+- **Value**: Medium (no monitoring, manual operation, not production-ready)
+- **Blocker**: None (can deploy immediately)
+
+**Recommendation**:
+- **New AWS users**: Use $200 credits for 6 months free deployment
+- **Existing AWS users**: Use Spot Instances (~$10/month) for cost efficiency
+- **Zero budget**: Run locally during Phase 1, migrate to AWS for Phase 3 when profitable
