@@ -52,9 +52,9 @@ Human involvement only for:
 ### Execution Standards
 
 **Token Efficiency**:
-- Grep > Read (targeted search vs full file read)
-- Direct tools > Agents (single-step vs multi-step workflows)
-- Parallel calls when operations independent
+- **Task tool (agents) > Direct tools** for multi-step workflows - agents handle complexity without loading context
+- Grep > Read (targeted search vs full file read) - but use Task[Explore] for exploration
+- Parallel calls when operations independent (multiple Task calls in single message)
 - Read existing code for patterns, not documentation
 
 **Lightweight Implementation**:
@@ -65,10 +65,13 @@ Human involvement only for:
 - Real trading scenarios > Abstract unit tests
 
 **Tool Selection**:
-- `Read/Edit/Grep/Bash`: Single-step operations
-- `Task` (agents): Multi-step workflows only
-- `Task[Explore]`: Codebase navigation (never direct Grep/Glob for exploration)
-- Parallel execution: Always when operations independent
+- **Prefer Task tool with sub-agents** for complex workflows to reduce token usage and improve efficiency
+- `Task[Explore]`: Codebase navigation, research, pattern discovery (NEVER direct Grep/Glob for exploration)
+- `Task[general-purpose]`: Multi-step research, code search across multiple files, complex tasks
+- `Task[task-builder]`: Creating GitHub issues from requirements
+- `Task[skill-builder]`: Creating or enhancing Skills for reusable patterns
+- `Read/Edit/Grep/Bash`: Single-step operations with known file paths only
+- Parallel execution: Always when operations independent (multiple Task calls in single response)
 
 **Reliability**:
 - Validate before execute
