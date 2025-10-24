@@ -6,9 +6,11 @@ Maximize shareholder wealth through AI-driven trading systems.
 **Priority**: Risk Management > Profitability > Operational Efficiency
 
 ## Trading Philosophy
-**Multi-Strategy**: Diversified portfolio of uncorrelated trading strategies
-**Multi-Asset**: Coverage across equities, crypto, forex, commodities, fixed income
+**Multi-Strategy**: Diversified portfolio of uncorrelated trading strategies (emphasize relative value)
+**Multi-Asset**: Coverage across equities, etfs, crypto, forex, commodities, fixed income
 **Multi-Timeframe**: Strategies spanning high-frequency to long-term horizons
+
+**Strategy Focus**: Prioritize relative value strategies (pairs trading, statistical arbitrage, spread trading) that exploit pricing inefficiencies between related instruments while maintaining market-neutral positions
 
 ## Roles
 
