@@ -5,3 +5,12 @@ channels:
 dependencies:
   - python=3.11
   - gh  # GitHub CLI from conda-forge
+  - pip
+  - pip:
+    - yfinance
+    - alpha-vantage
+    - fredapi
+    - pandas
+    - requests
+    - pytest
+    - pytest-cov
