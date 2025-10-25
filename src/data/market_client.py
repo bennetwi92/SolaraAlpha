@@ -28,6 +28,8 @@ from alpha_vantage.fundamentaldata import FundamentalData
 from alpha_vantage.foreignexchange import ForeignExchange
 from fredapi import Fred
 
+from src.data.validation import DataValidator, ValidationConfig
+
 
 @dataclass
 class CacheConfig:
@@ -64,7 +66,9 @@ class MarketDataClient:
         self,
         cache_config: Optional[CacheConfig] = None,
         alpha_vantage_key: Optional[str] = None,
-        fred_api_key: Optional[str] = None
+        fred_api_key: Optional[str] = None,
+        validation_config: Optional[ValidationConfig] = None,
+        enable_validation: bool = True
     ):
         """
         Initialize the market data client.
@@ -73,10 +77,13 @@ class MarketDataClient:
             cache_config: Cache configuration (uses defaults if None)
             alpha_vantage_key: Alpha Vantage API key (optional for free tier)
             fred_api_key: FRED API key (optional for basic access)
+            validation_config: Validation configuration (uses defaults if None)
+            enable_validation: Enable automatic data validation (default: True)
         """
         self.cache_config = cache_config or CacheConfig()
         self.alpha_vantage_key = alpha_vantage_key
         self.fred_api_key = fred_api_key
+        self.enable_validation = enable_validation
 
         # Initialize cache
         if self.cache_config.enabled:
@@ -84,6 +91,12 @@ class MarketDataClient:
 
         # Initialize API clients
         self._init_api_clients()
+
+        # Initialize validator
+        if self.enable_validation:
+            self.validator = DataValidator(config=validation_config)
+        else:
+            self.validator = None
 
     def _init_cache(self) -> None:
         """Initialize SQLite cache database."""
@@ -255,6 +268,30 @@ class MarketDataClient:
 
         raise last_exception
 
+    def _infer_asset_class(self, symbol: str) -> Literal['equity', 'etf', 'crypto']:
+        """
+        Infer asset class from symbol.
+
+        Args:
+            symbol: Ticker symbol
+
+        Returns:
+            Asset class type
+        """
+        symbol_upper = symbol.upper()
+
+        # Crypto indicators
+        if '-USD' in symbol_upper or 'BTC' in symbol_upper or 'ETH' in symbol_upper:
+            return 'crypto'
+
+        # Common ETF patterns (not exhaustive)
+        etf_patterns = ['SPY', 'QQQ', 'IWM', 'DIA', 'VOO', 'VTI', 'EFA', 'EEM']
+        if symbol_upper in etf_patterns:
+            return 'etf'
+
+        # Default to equity
+        return 'equity'
+
     def get_ohlcv(
         self,
         symbol: str,
@@ -336,6 +373,19 @@ class MarketDataClient:
 
         df = self._retry_with_backoff(fetch)
 
+        # Validate data before caching
+        if self.validator:
+            # Infer asset class from symbol
+            asset_class = self._infer_asset_class(symbol)
+            validation_result = self.validator.validate_ohlcv(
+                df, symbol, asset_class=asset_class, interval=interval
+            )
+
+            # Log validation summary
+            if not validation_result.is_valid:
+                # Still cache and return, but validation issues are logged
+                pass
+
         # Cache result (preserve index and frequency)
         cache_data = {
             'data': df.to_dict('list'),
@@ -413,6 +463,10 @@ class MarketDataClient:
                 raise
 
         df = self._retry_with_backoff(fetch)
+
+        # Validate data
+        if self.validator:
+            self.validator.validate_fundamentals(df, symbol, report_type)
 
         # Cache with longer TTL (fundamentals change less frequently)
         cache_data = {
@@ -497,6 +551,10 @@ class MarketDataClient:
 
         result = self._retry_with_backoff(fetch)
 
+        # Validate data
+        if self.validator:
+            self.validator.validate_forex_quote(result, from_currency, to_currency)
+
         # Cache with shorter TTL (forex rates change frequently)
         self._save_to_cache(cache_key, result, ttl=300)  # 5 minutes
 
@@ -577,6 +635,10 @@ class MarketDataClient:
                 raise
 
         series = self._retry_with_backoff(fetch)
+
+        # Validate data
+        if self.validator:
+            self.validator.validate_economic_indicator(series, series_id)
 
         # Cache with longer TTL (economic data updates infrequently)
         cache_data = {
