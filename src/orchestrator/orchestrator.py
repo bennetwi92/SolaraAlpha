@@ -40,6 +40,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 BASE_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}"
 HEADERS = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
 
+# Claude CLI configuration
+CLAUDE_CLI_PATH = os.path.expanduser("~/.claude/local/claude")
+
 # Worker configuration
 WORKER_TIMEOUT = 1200  # 20 minutes
 IDLE_SLEEP_SECONDS = 300  # 5 minutes
@@ -376,7 +379,7 @@ Only create issues if genuinely valuable. "No action" is a valid outcome.
         start_time = time.time()
 
         result = subprocess.run(
-            ["claude", "-p", "--dangerously-skip-permissions", prompt],
+            [CLAUDE_CLI_PATH, "-p", "--dangerously-skip-permissions", prompt],
             timeout=WORKER_TIMEOUT,
             capture_output=False,
             text=True,
@@ -432,7 +435,7 @@ def spawn_claude_worker(issue: Dict) -> bool:
         start_time = time.time()
 
         result = subprocess.run(
-            ["claude", "-p", "--dangerously-skip-permissions", prompt],
+            [CLAUDE_CLI_PATH, "-p", "--dangerously-skip-permissions", prompt],
             timeout=WORKER_TIMEOUT,
             capture_output=True,  # Capture output to post as comment
             text=True,
