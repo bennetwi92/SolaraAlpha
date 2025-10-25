@@ -69,6 +69,14 @@ Maximize shareholder wealth through AI-driven trading systems.
 - Processes in pure FIFO order (oldest first); refreshes queue after each completion
 - State: `[No status] → status:in-progress → [No status]/closed (success) OR status:blocked (failure)`
 
+**Blocked Issues**:
+- Issues marked `status:blocked` after failures (timeout, exit code != 0, exceptions)
+- List blocked: `python src/orchestrator/orchestrator.py --list-blocked`
+- Unblock specific: `python src/orchestrator/orchestrator.py --unblock <issue_num>`
+- Unblock all: `python src/orchestrator/orchestrator.py --unblock-all`
+- **When to unblock**: Only after root cause addressed (e.g., infrastructure fixed, session limits resolved, dependencies installed)
+- **CEO role**: Reviews blocked issues during assessment; unblocks when appropriate
+
 ## Issue Standards
 
 **Format**: `{Component} - {Action}` | **Labels**: `type:task` (never add `status:*`)

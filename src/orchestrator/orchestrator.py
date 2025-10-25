@@ -14,10 +14,13 @@ All tasks are treated equally and processed in creation order.
 
 Usage:
     export GITHUB_TOKEN="ghp_..."
-    python tools/orchestrator.py [--enable-ceo-poke]
+    python tools/orchestrator.py [OPTIONS]
 
 Options:
-    --enable-ceo-poke    Enable CEO assessment when queue is empty (default: disabled)
+    --enable-ceo-poke         Enable CEO assessment when queue is empty (default: disabled)
+    --unblock <issue_num>     Unblock a specific issue and return it to the queue
+    --unblock-all             Unblock all currently blocked issues
+    --list-blocked            List all currently blocked issues
 """
 import os
 import subprocess
@@ -294,6 +297,67 @@ def fetch_blocked_issues() -> List[Dict]:
         return []
 
 
+def unblock_issue(issue_num: int, reason: str = "") -> bool:
+    """
+    Unblock an issue by removing the status:blocked label.
+    This returns the issue to the orchestrator queue for reprocessing.
+
+    Args:
+        issue_num: Issue number to unblock
+        reason: Optional reason for unblocking (posted as comment)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    print(f"[UNBLOCK] Unblocking issue #{issue_num}...")
+
+    # Remove status:blocked label
+    if not remove_status_labels(issue_num):
+        print(f"[ERROR] Failed to remove status labels from issue #{issue_num}")
+        return False
+
+    # Post comment explaining unblock
+    comment = "## Issue Unblocked\n\n"
+    comment += "This issue has been unblocked and returned to the processing queue.\n\n"
+    if reason:
+        comment += f"**Reason**: {reason}\n"
+
+    if not post_issue_comment(issue_num, comment):
+        print(f"[WARNING] Could not post unblock comment to issue #{issue_num}")
+
+    print(f"[SUCCESS] Issue #{issue_num} has been unblocked")
+    return True
+
+
+def unblock_all_issues(reason: str = "") -> int:
+    """
+    Unblock all currently blocked issues.
+    Useful after fixing systemic problems (e.g., infrastructure issues, session limits).
+
+    Args:
+        reason: Optional reason for unblocking (posted to all issues)
+
+    Returns:
+        Number of issues successfully unblocked
+    """
+    print("[UNBLOCK ALL] Fetching all blocked issues...")
+    blocked_issues = fetch_blocked_issues()
+
+    if not blocked_issues:
+        print("[UNBLOCK ALL] No blocked issues found")
+        return 0
+
+    print(f"[UNBLOCK ALL] Found {len(blocked_issues)} blocked issue(s)")
+
+    success_count = 0
+    for issue in blocked_issues:
+        if unblock_issue(issue["number"], reason):
+            success_count += 1
+
+    print(f"[UNBLOCK ALL] Successfully unblocked {success_count}/{len(blocked_issues)} issues")
+    return success_count
+
+
 def spawn_ceo_poke() -> bool:
     """
     Poke CEO to assess organizational state when queue is empty.
@@ -351,10 +415,17 @@ Evaluate:
 - Are we working on highest-value opportunities?
 - Are there gaps in our current task queue?
 
-If valuable work identified: Use task-builder agent to create issues
-If backlog is healthy: Report "MONITOR: No action required"
+Actions available:
+- Create new issues: Use task-builder agent to create issues
+- Unblock issues: If blocked issues can now be retried (e.g., after fixing underlying problems), unblock them with:
+  `python src/orchestrator/orchestrator.py --unblock <issue_num>`  (single issue)
+  `python src/orchestrator/orchestrator.py --unblock-all`  (all blocked issues)
+- Report status: "MONITOR: No action required"
 
-Only create issues if genuinely valuable. "No action" is a valid outcome.
+Guidelines:
+- Only create issues if genuinely valuable
+- Only unblock issues if the root cause has been addressed
+- "No action" is a valid outcome
 """
 
     try:
@@ -675,5 +746,57 @@ def main_loop(enable_ceo_poke: bool = False):
 
 if __name__ == "__main__":
     # Parse command-line arguments
-    enable_ceo_poke = "--enable-ceo-poke" in sys.argv
+    args = sys.argv[1:]
+
+    # Handle unblock commands (run once and exit)
+    if "--list-blocked" in args:
+        print("=" * 80)
+        print("Blocked Issues")
+        print("=" * 80)
+        blocked_issues = fetch_blocked_issues()
+        if blocked_issues:
+            for issue in blocked_issues:
+                print(f"  #{issue['number']}: {issue['title']}")
+                print(f"    URL: {issue['html_url']}")
+        else:
+            print("  No blocked issues found")
+        print("=" * 80)
+        sys.exit(0)
+
+    if "--unblock-all" in args:
+        print("=" * 80)
+        print("Unblocking All Issues")
+        print("=" * 80)
+        reason = "Batch unblock - underlying issues resolved"
+        count = unblock_all_issues(reason)
+        print("=" * 80)
+        print(f"Unblocked {count} issue(s)")
+        sys.exit(0)
+
+    if "--unblock" in args:
+        try:
+            idx = args.index("--unblock")
+            if idx + 1 >= len(args):
+                print("[ERROR] --unblock requires an issue number")
+                print("Usage: python orchestrator.py --unblock <issue_num>")
+                sys.exit(1)
+            issue_num = int(args[idx + 1])
+            print("=" * 80)
+            print(f"Unblocking Issue #{issue_num}")
+            print("=" * 80)
+            reason = "Manual unblock - issue ready for retry"
+            if unblock_issue(issue_num, reason):
+                print("=" * 80)
+                print(f"Successfully unblocked issue #{issue_num}")
+            else:
+                print("=" * 80)
+                print(f"Failed to unblock issue #{issue_num}")
+                sys.exit(1)
+            sys.exit(0)
+        except ValueError:
+            print("[ERROR] Issue number must be an integer")
+            sys.exit(1)
+
+    # Start main orchestrator loop
+    enable_ceo_poke = "--enable-ceo-poke" in args
     main_loop(enable_ceo_poke=enable_ceo_poke)
