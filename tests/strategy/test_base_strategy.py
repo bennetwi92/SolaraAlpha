@@ -496,3 +496,116 @@ def test_balance_positions(pairs_config, sample_ohlcv_data):
     assert qty_long == 100
     assert qty_short < 0  # Short is negative
     assert abs(qty_short) > 0
+
+
+def test_lifecycle_methods(sample_config):
+    """Test strategy lifecycle methods."""
+    strategy = SimpleMovingAverageStrategy(sample_config)
+
+    assert strategy.state == StrategyState.INITIALIZED
+
+    strategy.on_start()
+    assert strategy.state == StrategyState.RUNNING
+
+    strategy.on_stop()
+    assert strategy.state == StrategyState.STOPPED
+
+
+def test_fill_handling_average_price(sample_config):
+    """Test fill event averaging entry price for same-direction trades."""
+    strategy = SimpleMovingAverageStrategy(sample_config)
+
+    # Open position with 100 shares at $150
+    fill1 = FillEvent(
+        symbol='AAPL',
+        quantity=100,
+        price=150.0,
+        timestamp=pd.Timestamp.now()
+    )
+    strategy.on_fill(fill1)
+
+    assert strategy.current_positions['AAPL'].quantity == 100
+    assert strategy.current_positions['AAPL'].entry_price == 150.0
+
+    # Add to position: 50 more shares at $160 (same direction)
+    fill2 = FillEvent(
+        symbol='AAPL',
+        quantity=50,
+        price=160.0,
+        timestamp=pd.Timestamp.now()
+    )
+    strategy.on_fill(fill2)
+
+    # Should average: (100*150 + 50*160) / 150 = 153.33
+    assert strategy.current_positions['AAPL'].quantity == 150
+    assert abs(strategy.current_positions['AAPL'].entry_price - 153.33) < 0.01
+
+
+def test_on_data_default(sample_config, sample_ohlcv_data):
+    """Test default on_data implementation."""
+    strategy = SimpleMovingAverageStrategy(sample_config)
+
+    data = {
+        'AAPL': sample_ohlcv_data,
+        'MSFT': sample_ohlcv_data
+    }
+
+    timestamp = sample_ohlcv_data.index[-1]
+
+    # Default implementation returns data unchanged
+    processed = strategy.on_data(timestamp, data)
+    assert processed is data
+
+
+def test_balance_positions_without_cached_ratio(pairs_config):
+    """Test balance_positions raises error when hedge ratio not cached."""
+    strategy = SimplePairsTradingStrategy(pairs_config)
+
+    # Attempting to balance without calculating hedge ratio first should raise error
+    with pytest.raises(ValueError, match="No hedge ratio"):
+        strategy.balance_positions('SPY', 'QQQ', 100)
+
+
+def test_calculate_spread_with_cached_ratio(pairs_config, sample_ohlcv_data):
+    """Test spread calculation uses cached hedge ratio."""
+    strategy = SimplePairsTradingStrategy(pairs_config)
+
+    data = {
+        'SPY': sample_ohlcv_data,
+        'QQQ': sample_ohlcv_data * 1.2
+    }
+
+    # Calculate and cache hedge ratio
+    strategy.calculate_hedge_ratio('SPY', 'QQQ', data)
+
+    # Calculate spread without providing ratio (should use cache)
+    spread = strategy.calculate_spread('SPY', 'QQQ', data)
+
+    assert isinstance(spread, pd.Series)
+    assert len(spread) == len(sample_ohlcv_data)
+
+
+def test_spread_zscore_insufficient_data(pairs_config):
+    """Test spread z-score raises error with insufficient data."""
+    strategy = SimplePairsTradingStrategy(pairs_config)
+
+    # Create spread with only 10 data points
+    dates = pd.date_range('2024-01-01', periods=10, freq='1D')
+    spread = pd.Series(np.random.randn(10), index=dates)
+
+    # Should raise error when lookback=30 but only 10 points
+    with pytest.raises(ValueError, match="Insufficient spread data"):
+        strategy.calculate_spread_zscore(spread, lookback=30)
+
+
+def test_spread_zscore_zero_std(pairs_config):
+    """Test spread z-score handles zero std deviation."""
+    strategy = SimplePairsTradingStrategy(pairs_config)
+
+    # Create spread with constant values (zero std)
+    dates = pd.date_range('2024-01-01', periods=50, freq='1D')
+    spread = pd.Series([100.0] * 50, index=dates)
+
+    zscore = strategy.calculate_spread_zscore(spread, lookback=30)
+
+    assert zscore == 0.0
