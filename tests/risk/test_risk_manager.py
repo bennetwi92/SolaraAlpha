@@ -616,8 +616,9 @@ class TestPreTradeValidation:
         """Test pre-trade check on empty portfolio (first trade)."""
         empty_portfolio = pd.DataFrame(columns=['symbol', 'quantity', 'price', 'value', 'sector'])
 
-        # When portfolio is empty, first trade becomes 100% of portfolio
-        # This is expected behavior - system enforces position limits even on first trade
+        # With fixed initial_portfolio_value ($100k default), first trade is evaluated
+        # against that value rather than being 100% of portfolio
+        # Small trade (10 shares * $150 = $1,500) should be well under 10% limit
         decision = self.manager.pre_trade_check(
             symbol="AAPL",
             quantity=10,
@@ -626,10 +627,8 @@ class TestPreTradeValidation:
             current_portfolio=empty_portfolio
         )
 
-        # System correctly rejects first trade if it would be 100% of portfolio
-        # This is correct risk management behavior
-        assert decision.approved is False
-        assert "Position size limit exceeded" in decision.reason
+        # First trade should be approved if within limits
+        assert decision.approved is True
 
     def test_pre_trade_checks_disabled(self):
         """Test that checks can be disabled."""

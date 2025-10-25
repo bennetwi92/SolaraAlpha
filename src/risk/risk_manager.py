@@ -72,6 +72,7 @@ class RiskConfig:
         max_gross_exposure_pct: Maximum gross exposure as % of portfolio (default: 200%)
         max_net_exposure_pct: Maximum net exposure as % of portfolio (default: 100%)
         max_correlation: Maximum correlation between positions (default: 0.70)
+        initial_portfolio_value: Default portfolio value for calculating limits on first trade (default: $100k)
         kelly_max_fraction: Maximum Kelly fraction to prevent over-leverage (default: 25%)
         fixed_fractional_pct: Fixed percentage for fixed fractional sizing (default: 2%)
         volatility_target: Target volatility for volatility-adjusted sizing (default: 15%)
@@ -88,6 +89,7 @@ class RiskConfig:
     max_gross_exposure_pct: float = 2.0  # 200%
     max_net_exposure_pct: float = 1.0  # 100%
     max_correlation: float = 0.70
+    initial_portfolio_value: float = 100000.0  # Default portfolio value for first trade
 
     # Position sizing parameters
     kelly_max_fraction: float = 0.25  # 25% cap
@@ -336,24 +338,25 @@ class RiskManager:
             logger.warning(f"Win rate is 0 for Kelly criterion, returning 0 position size")
             return 0.0
 
+        # Calculate Kelly fraction
+        lose_rate = 1 - win_rate
+        win_loss_ratio = avg_win / avg_loss
+
         if win_rate == 1:
-            # 100% win rate: use max Kelly fraction
-            kelly_fraction = self.config.kelly_max_fraction
+            # 100% win rate: mathematically kelly = 1.0
+            kelly_fraction = 1.0
         else:
-            # Calculate Kelly fraction
-            lose_rate = 1 - win_rate
-            win_loss_ratio = avg_win / avg_loss
             kelly_fraction = (win_rate * win_loss_ratio - lose_rate) / win_loss_ratio
 
-            # Cap at zero (don't trade if Kelly is negative)
-            if kelly_fraction <= 0:
-                logger.warning(
-                    f"Kelly criterion suggests no position (fraction={kelly_fraction:.3f})"
-                )
-                return 0.0
+        # Cap at zero (don't trade if Kelly is negative)
+        if kelly_fraction <= 0:
+            logger.warning(
+                f"Kelly criterion suggests no position (fraction={kelly_fraction:.3f})"
+            )
+            return 0.0
 
-            # Cap at maximum to prevent over-leverage
-            kelly_fraction = min(kelly_fraction, self.config.kelly_max_fraction)
+        # Cap at maximum to prevent over-leverage
+        kelly_fraction = min(kelly_fraction, self.config.kelly_max_fraction)
 
         # Calculate position size
         capital_to_risk = portfolio_value * kelly_fraction
@@ -545,12 +548,12 @@ class RiskManager:
             if std == 0:
                 return 0.0
 
-            # Z-score for confidence level
+            # Z-score for confidence level (e.g., -1.645 for 95%)
             from scipy import stats
-            z_score = stats.norm.ppf(1 - confidence)
+            z_score = abs(stats.norm.ppf(1 - confidence))
 
-            # VaR = -(mean + z_score * std)
-            var_return = -(mean + z_score * std)
+            # VaR represents loss: mean - z_score * std (for left tail)
+            var_return = mean - z_score * std
             return abs(var_return)
 
     def _calculate_cvar(self, returns: pd.Series, confidence: float) -> float:
@@ -665,7 +668,8 @@ class RiskManager:
         covariance = np.cov(aligned_returns, aligned_benchmark)[0, 1]
         benchmark_variance = np.var(aligned_benchmark, ddof=1)
 
-        if benchmark_variance == 0:
+        # Use tolerance for zero check to avoid floating point issues
+        if benchmark_variance < 1e-10:
             return 0.0
 
         beta = covariance / benchmark_variance
@@ -739,12 +743,13 @@ class RiskManager:
 
         # Calculate portfolio value
         if current_portfolio.empty:
-            portfolio_value = abs(trade_value)  # First position
-            abs_portfolio_value = abs(trade_value)
+            # Use configured initial portfolio value for first trade
+            abs_portfolio_value = self.config.initial_portfolio_value
         else:
-            portfolio_value = current_portfolio['value'].sum()
-            # Absolute portfolio value for percentage calculations
-            abs_portfolio_value = abs(portfolio_value) if portfolio_value != 0 else abs(trade_value)
+            # Use gross exposure (absolute values) for limit calculations
+            abs_portfolio_value = current_portfolio['value'].abs().sum()
+            if abs_portfolio_value == 0:
+                abs_portfolio_value = self.config.initial_portfolio_value
 
         # 1. Check position size limit
         position_size_check = self._check_position_size_limit(
@@ -775,13 +780,8 @@ class RiskManager:
         if not net_check.approved:
             return net_check
 
-        # 5. Check correlation limit (if returns provided)
-        if returns is not None:
-            corr_check = self._check_correlation_limit(
-                symbol, current_portfolio, returns
-            )
-            if not corr_check.approved:
-                return corr_check
+        # Note: Correlation limit check not implemented - requires multi-asset returns matrix
+        # TODO: Implement correlation-based position limits in future version
 
         # Calculate risk metrics for context
         risk_metrics = None
@@ -904,21 +904,5 @@ class RiskManager:
                 approved=False,
                 reason=f"Net exposure limit exceeded: {net_exposure_pct:.1%} > {self.config.max_net_exposure_pct:.1%}"
             )
-
-        return RiskDecision(approved=True)
-
-    def _check_correlation_limit(
-        self,
-        symbol: str,
-        current_portfolio: pd.DataFrame,
-        returns: pd.Series
-    ) -> RiskDecision:
-        """Check if new position has high correlation with existing positions."""
-        if current_portfolio.empty:
-            return RiskDecision(approved=True)
-
-        # This is a simplified check - in production would need returns matrix
-        # For now, just approve (correlation check requires multi-asset returns)
-        logger.info(f"Correlation check for {symbol} - skipped (requires returns matrix)")
 
         return RiskDecision(approved=True)
