@@ -203,7 +203,7 @@ class DataValidator:
             return result
 
         # 1. Check for missing data (gaps)
-        self._check_missing_data(data, result, interval)
+        self._check_missing_data(data, result, interval, asset_class)
 
         # 2. Statistical outlier detection
         self._check_statistical_outliers(data, result, asset_class)
@@ -258,6 +258,14 @@ class DataValidator:
                     AlertSeverity.CRITICAL
                 )
                 return result
+
+        # Validate bid/ask are positive (CRITICAL-1 fix)
+        if quote['bid'] <= 0 or quote['ask'] <= 0:
+            result.add_issue(
+                f"Invalid bid/ask prices: bid={quote['bid']}, ask={quote['ask']}",
+                AlertSeverity.CRITICAL
+            )
+            return result
 
         # Validate bid-ask spread
         self._check_bid_ask_spread(quote, result, pair)
@@ -389,26 +397,40 @@ class DataValidator:
             )
             return False
 
+        # Validate no zero or negative prices (HIGH-1 fix)
+        price_cols = ['Open', 'High', 'Low', 'Close']
+        if (data[price_cols] <= 0).any().any():
+            result.add_issue(
+                "Zero or negative prices detected",
+                AlertSeverity.CRITICAL
+            )
+            return False
+
         return True
 
     def _check_missing_data(
         self,
         data: pd.DataFrame,
         result: ValidationResult,
-        interval: str
+        interval: str,
+        asset_class: str = 'equity'
     ) -> None:
         """Check for gaps in time series data."""
         if len(data) < 2:
             return
 
-        # Determine expected frequency
-        freq_map = {
-            '1d': 'B',   # Business days
-            '1h': 'H',
-            '5m': '5T',
-            '1m': 'T'
-        }
-        expected_freq = freq_map.get(interval, 'B')
+        # Determine expected frequency (MEDIUM-1 fix: handle crypto 24/7)
+        if interval == '1d':
+            # Crypto trades 24/7, use calendar days; others use business days
+            expected_freq = 'D' if asset_class == 'crypto' else 'B'
+        else:
+            # Intraday frequencies are the same
+            freq_map = {
+                '1h': 'H',
+                '5m': '5T',
+                '1m': 'T'
+            }
+            expected_freq = freq_map.get(interval, 'B')
 
         # Create complete date range
         date_range = pd.date_range(
@@ -460,7 +482,10 @@ class DataValidator:
                 outliers[col] = outlier_count
 
         if outliers:
-            outlier_rate = sum(outliers.values()) / (len(data) * 5) * 100
+            # MEDIUM-2 fix: Use actual column count instead of hardcoded 5
+            validated_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+            total_cells = len(data) * len(validated_cols)
+            outlier_rate = sum(outliers.values()) / total_cells * 100
             result.add_metric('outlier_rate_pct', outlier_rate)
 
             if outlier_rate > 2:
