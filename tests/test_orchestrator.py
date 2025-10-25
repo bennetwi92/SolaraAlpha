@@ -28,9 +28,14 @@ from orchestrator.orchestrator import (
     spawn_claude_worker,
     spawn_ceo_poke,
     main_loop,
+    mark_issue_closed,
+    clean_recently_closed_cache,
+    recently_closed_issues,
     REPO_OWNER,
     REPO_NAME,
     WORKER_TIMEOUT,
+    POST_CLOSE_DELAY,
+    RECENTLY_CLOSED_TTL,
 )
 
 
@@ -340,12 +345,13 @@ class TestOrchestratorDataFetching(unittest.TestCase):
 class TestOrchestratorWorkerSpawning(unittest.TestCase):
     """Test worker spawning and execution logic."""
 
+    @patch('orchestrator.orchestrator.time.sleep')
     @patch('orchestrator.orchestrator.subprocess.run')
     @patch('orchestrator.orchestrator.close_issue')
     @patch('orchestrator.orchestrator.post_issue_comment')
     @patch('orchestrator.orchestrator.remove_status_labels')
     @patch('orchestrator.orchestrator.update_issue_status')
-    def test_spawn_claude_worker_success(self, mock_update_status, mock_remove_labels, mock_post_comment, mock_close_issue, mock_subprocess):
+    def test_spawn_claude_worker_success(self, mock_update_status, mock_remove_labels, mock_post_comment, mock_close_issue, mock_subprocess, mock_sleep):
         """Test successful worker execution."""
         # Mock subprocess success
         mock_result = MagicMock()
@@ -372,16 +378,16 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
 
         # Verify success
         self.assertTrue(result)
-        # Verify subprocess called with correct args
-        mock_subprocess.assert_called_once()
+        # Verify subprocess called (at least once for Claude CLI, may include git log for context)
+        self.assertTrue(mock_subprocess.called)
         # Verify status updated to in-progress
         mock_update_status.assert_called_once_with(42, "status:in-progress")
         # Verify status removed on success
         mock_remove_labels.assert_called_once_with(42)
         # Verify issue closed
         mock_close_issue.assert_called_once_with(42)
-        # Verify comment posted
-        mock_post_comment.assert_called_once()
+        # Verify comments posted (execution log + completion context)
+        self.assertEqual(mock_post_comment.call_count, 2)
 
     @patch('orchestrator.orchestrator.subprocess.run')
     @patch('orchestrator.orchestrator.post_issue_comment')
@@ -468,10 +474,13 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
         calls = mock_update_status.call_args_list
         self.assertEqual(calls[-1], call(45, "status:blocked"))
 
+    @patch('orchestrator.orchestrator.time.sleep')
+    @patch('orchestrator.orchestrator.close_issue')
+    @patch('orchestrator.orchestrator.remove_status_labels')
     @patch('orchestrator.orchestrator.subprocess.run')
     @patch('orchestrator.orchestrator.post_issue_comment')
     @patch('orchestrator.orchestrator.update_issue_status')
-    def test_spawn_claude_worker_output_truncation(self, mock_update_status, mock_post_comment, mock_subprocess):
+    def test_spawn_claude_worker_output_truncation(self, mock_update_status, mock_post_comment, mock_subprocess, mock_remove_labels, mock_close_issue, mock_sleep):
         """Test output truncation for large logs."""
         from orchestrator.orchestrator import MAX_COMMENT_LENGTH
 
@@ -484,6 +493,8 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
 
         mock_update_status.return_value = True
         mock_post_comment.return_value = True
+        mock_remove_labels.return_value = True
+        mock_close_issue.return_value = True
 
         issue = {
             "number": 46,
@@ -496,11 +507,11 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
 
         # Verify success
         self.assertTrue(result)
-        # Verify comment was posted with truncated output
+        # Verify comment was posted with truncated output (first comment is execution log)
         self.assertTrue(mock_post_comment.called)
-        posted_comment = mock_post_comment.call_args[0][1]
-        self.assertLess(len(posted_comment), MAX_COMMENT_LENGTH + 500)  # Some buffer for formatting
-        self.assertIn("TRUNCATED", posted_comment)
+        first_comment = mock_post_comment.call_args_list[0][0][1]
+        self.assertLess(len(first_comment), MAX_COMMENT_LENGTH + 500)  # Some buffer for formatting
+        self.assertIn("TRUNCATED", first_comment)
 
     @patch('orchestrator.orchestrator.subprocess.run')
     @patch('orchestrator.orchestrator.fetch_blocked_issues')
@@ -712,6 +723,159 @@ class TestOrchestratorMainLoop(unittest.TestCase):
         mock_spawn_worker.assert_any_call(issue3)
 
 
+class TestOrchestratorRaceConditionPrevention(unittest.TestCase):
+    """Test race condition prevention for duplicate issue processing."""
+
+    def setUp(self):
+        """Clear recently_closed_issues cache before each test."""
+        import orchestrator.orchestrator
+        orchestrator.orchestrator.recently_closed_issues.clear()
+
+    def test_mark_issue_closed_adds_to_cache(self):
+        """Test that mark_issue_closed adds issue to cache with timestamp."""
+        from datetime import datetime
+        import orchestrator.orchestrator
+
+        # Mark issue as closed
+        mark_issue_closed(42)
+
+        # Verify it's in the cache
+        self.assertIn(42, orchestrator.orchestrator.recently_closed_issues)
+
+        # Verify timestamp is recent (within last 5 seconds)
+        timestamp = orchestrator.orchestrator.recently_closed_issues[42]
+        age_seconds = (datetime.now() - timestamp).total_seconds()
+        self.assertLess(age_seconds, 5)
+
+    def test_clean_recently_closed_cache_removes_expired(self):
+        """Test that clean_recently_closed_cache removes old entries."""
+        from datetime import datetime, timedelta
+        import orchestrator.orchestrator
+
+        # Add a recent issue (should NOT be removed)
+        mark_issue_closed(100)
+
+        # Add an old issue manually (should be removed)
+        old_timestamp = datetime.now() - timedelta(seconds=RECENTLY_CLOSED_TTL + 10)
+        orchestrator.orchestrator.recently_closed_issues[200] = old_timestamp
+
+        # Verify both are in cache
+        self.assertIn(100, orchestrator.orchestrator.recently_closed_issues)
+        self.assertIn(200, orchestrator.orchestrator.recently_closed_issues)
+
+        # Clean cache
+        clean_recently_closed_cache()
+
+        # Verify only recent issue remains
+        self.assertIn(100, orchestrator.orchestrator.recently_closed_issues)
+        self.assertNotIn(200, orchestrator.orchestrator.recently_closed_issues)
+
+    @patch('orchestrator.orchestrator.requests.get')
+    def test_fetch_prioritized_issues_filters_recently_closed(self, mock_get):
+        """Test that fetch_prioritized_issues skips recently closed issues."""
+        import orchestrator.orchestrator
+
+        # Mock API response with two valid tasks
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            {
+                "number": 10,
+                "title": "Task 10",
+                "labels": [
+                    {"name": "priority:high"},
+                    {"name": "type:task"}
+                ],
+                "created_at": "2025-01-01T00:00:00Z"
+            },
+            {
+                "number": 20,
+                "title": "Task 20",
+                "labels": [
+                    {"name": "priority:high"},
+                    {"name": "type:task"}
+                ],
+                "created_at": "2025-01-02T00:00:00Z"
+            },
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        # Mark issue 10 as recently closed
+        mark_issue_closed(10)
+
+        # Fetch issues
+        issues = fetch_prioritized_issues()
+
+        # Verify only issue 20 is returned (issue 10 was filtered out)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0]["number"], 20)
+
+    @patch('orchestrator.orchestrator.requests.get')
+    def test_fetch_prioritized_issues_shows_skip_count(self, mock_get):
+        """Test that fetch shows count of skipped recently closed issues."""
+        import orchestrator.orchestrator
+        from io import StringIO
+        import sys
+
+        # Mock API response
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            {
+                "number": 1,
+                "title": "Task 1",
+                "labels": [
+                    {"name": "priority:high"},
+                    {"name": "type:task"}
+                ],
+                "created_at": "2025-01-01T00:00:00Z"
+            },
+            {
+                "number": 2,
+                "title": "Task 2",
+                "labels": [
+                    {"name": "priority:high"},
+                    {"name": "type:task"}
+                ],
+                "created_at": "2025-01-02T00:00:00Z"
+            },
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        # Mark both issues as recently closed
+        mark_issue_closed(1)
+        mark_issue_closed(2)
+
+        # Capture stdout
+        captured_output = StringIO()
+        sys.stdout = captured_output
+
+        try:
+            fetch_prioritized_issues()
+        finally:
+            sys.stdout = sys.__stdout__
+
+        # Verify skip count is shown in output
+        output = captured_output.getvalue()
+        self.assertIn("skipped 2 recently closed", output)
+
+    def test_mark_issue_closed_cleanup_integration(self):
+        """Test that mark_issue_closed automatically cleans up old entries."""
+        from datetime import datetime, timedelta
+        import orchestrator.orchestrator
+
+        # Add an old entry manually
+        old_timestamp = datetime.now() - timedelta(seconds=RECENTLY_CLOSED_TTL + 10)
+        orchestrator.orchestrator.recently_closed_issues[999] = old_timestamp
+
+        # Mark new issue as closed (should trigger cleanup)
+        mark_issue_closed(111)
+
+        # Verify old entry was removed and new entry exists
+        self.assertNotIn(999, orchestrator.orchestrator.recently_closed_issues)
+        self.assertIn(111, orchestrator.orchestrator.recently_closed_issues)
+
+
 class TestOrchestratorConfiguration(unittest.TestCase):
     """Test configuration and constants."""
 
@@ -738,6 +902,7 @@ def run_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestOrchestratorDataFetching))
     suite.addTests(loader.loadTestsFromTestCase(TestOrchestratorWorkerSpawning))
     suite.addTests(loader.loadTestsFromTestCase(TestOrchestratorMainLoop))
+    suite.addTests(loader.loadTestsFromTestCase(TestOrchestratorRaceConditionPrevention))
     suite.addTests(loader.loadTestsFromTestCase(TestOrchestratorConfiguration))
 
     # Run tests with verbose output
