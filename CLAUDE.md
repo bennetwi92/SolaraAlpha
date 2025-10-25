@@ -62,13 +62,15 @@ Maximize shareholder wealth through AI-driven trading systems.
 
 **Path**: `src/orchestrator/orchestrator.py` | **Config**: Set `REPO_OWNER`, `REPO_NAME` in source
 
+**Philosophy**: Trust the system (CEO + task-builder) to only create important work. All tasks treated equally.
+
 **Behavior**:
-- Selects: `priority:high|medium` + `type:task` + NO `status:*` labels
-- Processes one task at a time; refreshes queue after completion (FIFO within priority)
+- Selects: `type:task` + NO `status:*` labels
+- Processes in pure FIFO order (oldest first); refreshes queue after each completion
 - State: `[No status] → status:in-progress → [No status]/closed (success) OR status:blocked (failure)`
 
 ## Issue Standards
 
-**Format**: `{Component} - {Action}` | **Labels**: `priority:*`, `type:task` (never add `status:*`)
+**Format**: `{Component} - {Action}` | **Labels**: `type:task` (never add `status:*`)
 **Sections**: Context (why), Acceptance Criteria (testable conditions)
 **Details**: See `.claude/GITHUB_ISSUES.md`
