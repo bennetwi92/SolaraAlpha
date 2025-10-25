@@ -287,7 +287,7 @@ class TestGetOHLCV:
             'Volume': [1000000, 1100000],
             'Dividends': [0, 0],
             'Stock Splits': [0, 0]
-        })
+        }, index=pd.date_range('2024-01-01', periods=2, freq='D'))
         mock_ticker.history.return_value = mock_df
         mock_ticker_class.return_value = mock_ticker
 
@@ -308,7 +308,7 @@ class TestGetOHLCV:
             'Low': [99.0],
             'Close': [101.0],
             'Volume': [1000000],
-        })
+        }, index=pd.date_range('2024-01-01', periods=1, freq='D'))
         mock_ticker.history.return_value = mock_df
         mock_ticker_class.return_value = mock_ticker
 
@@ -337,7 +337,7 @@ class TestGetOHLCV:
             'Low': [99.0],
             'Close': [101.0],
             'Volume': [1000000],
-        })
+        }, index=pd.date_range('2024-01-01', periods=1, freq='D'))
         mock_ticker.history.return_value = mock_df
         mock_ticker_class.return_value = mock_ticker
 
@@ -476,7 +476,7 @@ class TestGetEconomicIndicator:
         mock_fred = Mock()
         mock_series = pd.Series(
             [20000.0, 20500.0, 21000.0],
-            index=pd.date_range('2024-01-01', periods=3, freq='M')
+            index=pd.date_range('2024-01-01', periods=3, freq='ME')
         )
         mock_fred.get_series.return_value = mock_series
         client.fred = mock_fred
@@ -526,7 +526,7 @@ class TestIntegration:
             mock_ticker.history.return_value = pd.DataFrame({
                 'Open': [100.0], 'High': [102.0], 'Low': [99.0],
                 'Close': [101.0], 'Volume': [1000000]
-            })
+            }, index=pd.date_range('2024-01-01', periods=1, freq='D'))
             mock_yf.return_value = mock_ticker
 
             mock_av.get_income_statement_annual.return_value = (

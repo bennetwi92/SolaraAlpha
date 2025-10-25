@@ -301,11 +301,19 @@ class MarketDataClient:
         )
         cached_data = self._get_from_cache(cache_key)
         if cached_data is not None:
-            return pd.DataFrame(
+            df = pd.DataFrame(
                 data=cached_data['data'],
-                index=cached_data['index'],
                 columns=cached_data['columns']
             )
+            # Restore the DatetimeIndex with frequency
+            df.index = pd.DatetimeIndex(pd.to_datetime(cached_data['index']))
+            if cached_data.get('index_freq'):
+                try:
+                    df.index.freq = cached_data['index_freq']
+                except (ValueError, TypeError):
+                    # Frequency might not be inferrable, that's okay
+                    pass
+            return df
 
         # Fetch from yfinance with retry
         def fetch():
@@ -316,15 +324,23 @@ class MarketDataClient:
                 raise ValueError(f"No data available for symbol: {symbol}")
 
             # Standardize column names
-            df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
+            required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+            # Check if we need to filter columns
+            if not all(col in df.columns for col in required_cols):
+                raise ValueError(f"Missing required columns for symbol: {symbol}")
+
+            # Always reorder to ensure consistent column order
+            df = df.reindex(columns=required_cols)
+
             return df
 
         df = self._retry_with_backoff(fetch)
 
-        # Cache result (preserve index)
+        # Cache result (preserve index and frequency)
         cache_data = {
             'data': df.to_dict('list'),
-            'index': df.index.tolist(),
+            'index': df.index.astype(str).tolist(),  # Convert datetime to string for JSON
+            'index_freq': df.index.freqstr if hasattr(df.index, 'freqstr') and df.index.freqstr else None,
             'columns': df.columns.tolist()
         }
         self._save_to_cache(cache_key, cache_data)
