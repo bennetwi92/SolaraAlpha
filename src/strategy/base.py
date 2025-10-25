@@ -12,6 +12,7 @@ from enum import Enum
 import pandas as pd
 import numpy as np
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +183,13 @@ class BaseStrategy(ABC):
             raise ValueError("Strategy name required")
         if not self.config.version:
             raise ValueError("Strategy version required")
+
+        # Validate version format (semver: X.Y.Z)
+        if not re.match(r'^\d+\.\d+\.\d+$', self.config.version):
+            raise ValueError(
+                f"Strategy version must follow semver format (X.Y.Z), got: {self.config.version}"
+            )
+
         if not self.config.symbols:
             raise ValueError("Strategy symbols required (must specify trading universe)")
         if self.config.max_positions <= 0:
@@ -268,6 +276,8 @@ class BaseStrategy(ABC):
 
                 pos.quantity = new_quantity
                 pos.current_price = fill.price
+                # Update unrealized PnL
+                pos.unrealized_pnl = (pos.current_price - pos.entry_price) * pos.quantity
         else:
             # New position
             self.current_positions[fill.symbol] = Position(
@@ -275,7 +285,8 @@ class BaseStrategy(ABC):
                 quantity=fill.quantity,
                 entry_price=fill.price,
                 entry_time=fill.timestamp,
-                current_price=fill.price
+                current_price=fill.price,
+                unrealized_pnl=0.0  # New position has zero unrealized PnL
             )
 
     def on_risk_rejection(
@@ -616,7 +627,7 @@ class RelativeValueStrategy(BaseStrategy):
 
             # Simple OLS: β = (X'X)^(-1) X'y
             beta = np.dot(x.T, y) / np.dot(x.T, x)
-            ratio = float(beta[0])
+            ratio = float(beta.item())  # Use .item() for 1-element arrays
 
         elif method == "ratio":
             # Simple price ratio
@@ -636,7 +647,7 @@ class RelativeValueStrategy(BaseStrategy):
             x = prices_short.values.reshape(-1, 1)
             y = prices_long.values
             beta = np.dot(x.T, y) / np.dot(x.T, x)
-            ratio = float(beta[0])
+            ratio = float(beta.item())  # Use .item() for 1-element arrays
         else:
             raise ValueError(f"Unknown hedge ratio method: {method}")
 
