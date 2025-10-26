@@ -3,12 +3,18 @@
 ## Research Objective
 Identify and evaluate optimal organizational structures for an AI-driven proprietary trading firm, with findings supported by peer-reviewed academic research. Provide multiple structural options for comparative analysis.
 
-## Firm Context
-- **Type**: AI-driven proprietary trading firm
-- **Strategy Approach**: Multi-strategy (emphasis on relative value), multi-asset, multi-timeframe
-- **Operational Model**: AI handles strategy development, infrastructure, operations, monitoring; human oversight for approval, risk limits, capital allocation, compliance
-- **Priority Hierarchy**: Risk Management > Profitability > Operational Efficiency
-- **Constraint**: All technologies, data sources, and services must be free/open-source
+## Firm Context (To Be Customized)
+
+**Instructions**: Before conducting research, customize this section with your firm's specific parameters. The research will evaluate each organizational model against these criteria.
+
+- **Type**: [e.g., AI-driven proprietary trading firm, hybrid human-AI fund, algorithmic hedge fund]
+- **Strategy Approach**: [e.g., Multi-strategy, single-strategy focus, market-making, etc.]
+- **Asset Classes**: [e.g., equities, crypto, forex, commodities, fixed income, multi-asset]
+- **Timeframe Focus**: [e.g., high-frequency, medium-frequency, long-term, multi-timeframe]
+- **Operational Model**: [e.g., AI handles X, humans handle Y; fully automated; hybrid decision-making]
+- **Priority Hierarchy**: [e.g., Risk Management > Profitability > Efficiency; or alternative priorities]
+- **Constraints**: [e.g., budget limitations, regulatory requirements, technology preferences, headcount limits]
+- **Scale**: [e.g., AUM range, number of strategies, geographic scope]
 
 ## Research Questions
 
@@ -37,7 +43,7 @@ How should risk management be integrated into organizational structure per acade
 - Should risk management be centralized or distributed across strategies?
 - What governance structures best prevent cascading failures in automated systems?
 - How do successful firms structure real-time risk monitoring vs. strategic risk oversight?
-- What organizational patterns best support the "Risk > Profit > Efficiency" priority?
+- What organizational patterns best support different priority hierarchies (e.g., risk-first vs. growth-first)?
 
 ### 4. AI-Human Collaboration Models
 What organizational patterns best leverage AI automation while maintaining effective human oversight?
@@ -74,11 +80,20 @@ For each organizational model identified, provide:
 - **Industry Validation**: Examples of successful implementations if available in academic literature
 
 ### Alignment Analysis
-- **Risk Management**: How well does structure support risk prioritization? (1-10 scale with justification)
-- **Multi-Strategy Support**: Suitability for diverse, uncorrelated strategies (1-10 scale with justification)
-- **AI-Human Balance**: How effectively balances automation with oversight (1-10 scale with justification)
-- **Scalability**: Ability to add strategies, assets, timeframes without structural redesign (1-10 scale with justification)
-- **Cost Efficiency**: Compatibility with free/open-source constraint (1-10 scale with justification)
+Rate each dimension 1-10 with evidence-based justification. Customize dimensions based on firm context.
+
+**Standard Dimensions**:
+- **Risk Management**: How well does structure support effective risk oversight and control?
+- **Strategy Flexibility**: Suitability for the firm's strategy approach (multi-strategy, single-strategy, etc.)
+- **AI-Human Balance**: How effectively balances automation with human oversight?
+- **Scalability**: Ability to grow (strategies, assets, AUM, headcount) without structural redesign?
+- **Operational Efficiency**: Resource efficiency and operational complexity?
+
+**Optional Dimensions** (add based on firm context):
+- **Cost Efficiency**: Alignment with budget constraints or cost structure preferences
+- **Speed to Market**: Ability to rapidly deploy new strategies
+- **Regulatory Compliance**: Ease of meeting regulatory requirements
+- **Technology Integration**: Compatibility with specific tech stack or preferences
 
 ### Tradeoffs
 - **Strengths**: Top 3-5 advantages supported by research
@@ -112,20 +127,22 @@ For each organizational model identified, provide:
 ## Comparative Analysis Requirements
 
 ### Cross-Model Comparison Table
-Create comparison matrix with models as rows and these columns:
+Create comparison matrix with models as rows and columns based on the firm context alignment dimensions selected above.
+
+**Suggested Columns** (customize based on firm context):
 - Risk Management Effectiveness (evidence-based rating)
 - Operational Complexity (low/medium/high)
 - AI Automation Suitability (evidence-based rating)
-- Multi-Strategy Support (evidence-based rating)
+- Strategy Flexibility (evidence-based rating)
 - Human Oversight Integration (evidence-based rating)
 - Scalability (evidence-based rating)
-- Cost Structure (evidence-based assessment)
+- Resource Requirements (evidence-based assessment)
 - Implementation Timeline (estimated)
 
 ### Synthesis
-- **Best Overall**: Which model best fits SolaraAlpha's context with justification
-- **Best for Risk**: Which model optimizes for risk management priority
-- **Best for Growth**: Which model best supports scaling strategies and assets
+- **Best Overall**: Which model best fits the firm's context with justification
+- **Best for Specific Priorities**: Which models optimize for different priorities (e.g., risk management, growth, cost efficiency)
+- **Best for Different Stages**: Which models suit different firm maturity stages (startup, scaling, mature)
 - **Hybrid Possibilities**: Can elements from multiple models be combined? What does research say about hybrid approaches?
 
 ## Deliverable Format
@@ -152,7 +169,7 @@ Create comparison matrix with models as rows and these columns:
 [Cross-model comparison table and synthesis]
 
 ## Recommendations
-[Specific recommendations for SolaraAlpha with evidence-based reasoning]
+[Specific recommendations based on firm context with evidence-based reasoning]
 
 ## References
 [APA format, organized by model]
@@ -169,7 +186,7 @@ The research is complete when:
 3. ✅ Total of 15+ peer-reviewed citations across all models
 4. ✅ All alignment analysis dimensions scored with evidence-based justification
 5. ✅ Comparative analysis table completed with evidence-based assessments
-6. ✅ Specific recommendation provided for SolaraAlpha context
+6. ✅ Specific recommendations provided based on the firm context specified
 7. ✅ All tradeoffs explicitly documented with research support
 8. ✅ Implementation considerations detailed for each model
 
