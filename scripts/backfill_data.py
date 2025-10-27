@@ -32,7 +32,7 @@ def main() -> None:
     parser.add_argument(
         "--asset-class",
         type=str,
-        choices=["equities", "crypto", "forex"],
+        choices=["equities", "crypto", "forex", "etfs", "fixed_income"],
         help="Asset class to backfill",
     )
 

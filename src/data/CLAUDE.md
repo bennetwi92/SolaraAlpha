@@ -22,6 +22,10 @@ Production-grade multi-source, multi-asset market data pipeline for SolaraAlpha 
 - Supports: BTC, ETH, USDT, BNB, SOL, XRP, USDC, ADA, AVAX, DOGE
 - Real-time streaming via `fetch_realtime_ohlcv()`
 
+**Fixed Income**: YFinance ingestor (Treasury ETFs, Yield Indices)
+- Supports: TLT, IEF, SHY (ETFs) + ^TNX, ^TYX, ^FVX, ^IRX (Yield Indices)
+- 2+ years historical data (1d frequency primary)
+
 **Crypto Validation**: Higher volatility tolerance (20%), no gaps allowed, 2-hour staleness threshold
 
 ## Usage
