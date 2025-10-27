@@ -11,6 +11,11 @@ dependencies:
     - alpha-vantage
     - fredapi
     - pandas
+    - python-dateutil
     - requests
     - pytest
     - pytest-cov
+    - pytest-mock
+    - pyyaml
+    - pyarrow
+    - ruff

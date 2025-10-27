@@ -1,0 +1,89 @@
+# SolaraAlpha Data Sources Configuration
+# Market data sources, symbols, and ingestion parameters
+
+# API Keys (set as environment variables)
+# ALPHAVANTAGE_API_KEY - Alpha Vantage API key
+# FRED_API_KEY - FRED API key (optional, yfinance is primary)
+
+data_sources:
+  yfinance:
+    enabled: true
+    rate_limit_per_second: 2
+    timeout: 30
+
+  alphavantage:
+    enabled: false  # Backup source, enable if needed
+    rate_limit_per_minute: 5  # Free tier limit
+    timeout: 30
+
+  fredapi:
+    enabled: true
+    rate_limit_per_second: 1
+    timeout: 30
+
+# Asset classes and symbols to track
+symbols:
+  equities:
+    - AAPL
+    - GOOGL
+    - MSFT
+    - AMZN
+    - TSLA
+    - JPM
+    - BAC
+    - XOM
+    - CVX
+    - KO
+
+  crypto:
+    - BTC-USD
+    - ETH-USD
+
+  forex:
+    - EURUSD=X
+    - GBPUSD=X
+    - USDJPY=X
+
+# Data ingestion parameters
+ingestion:
+  default_lookback_years: 2
+  frequencies:
+    - 1d  # Daily data
+
+  # Retry logic
+  max_retries: 3
+  retry_delay_seconds: 5
+
+  # Update schedule
+  incremental_update: true
+  update_buffer_days: 5  # Re-fetch last N days to catch corrections
+
+# Data validation rules
+validation:
+  price_spike_threshold: 0.10  # Flag if price changes >10%
+  volume_spike_multiplier: 5.0  # Flag if volume >5x average
+  max_missing_days: 5  # Flag if >5 consecutive missing days
+
+  # OHLC validation
+  ohlc_checks:
+    - high_gte_low
+    - high_gte_open
+    - high_gte_close
+    - low_lte_open
+    - low_lte_close
+    - close_between_high_low
+
+  # Staleness check
+  max_staleness_days: 7  # Flag if data >7 days old
+
+# Storage configuration
+storage:
+  base_path: data
+  format: parquet
+  compression: snappy
+
+  # Directory structure: {base_path}/{asset_class}/{symbol}/{frequency}/
+  partition_by:
+    - asset_class
+    - symbol
+    - frequency
