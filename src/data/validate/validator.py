@@ -372,11 +372,18 @@ class DataValidator:
 
         # Get most recent date in data
         latest_date = data.index.max()
+
         # Handle timezone-aware datetimes
-        now = datetime.now()
         if hasattr(latest_date, 'tzinfo') and latest_date.tzinfo is not None:
-            # Convert to timezone-naive for comparison
-            latest_date = latest_date.replace(tzinfo=None)
+            # Make now timezone-aware to match latest_date
+            import pytz
+            now = datetime.now(pytz.UTC)
+            # Convert latest_date to UTC if it has a different timezone
+            if latest_date.tzinfo != pytz.UTC:
+                latest_date = latest_date.astimezone(pytz.UTC)
+        else:
+            now = datetime.now()
+
         age = now - latest_date
 
         if age > timedelta(days=max_staleness):

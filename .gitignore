@@ -56,3 +56,6 @@ temp/
 
 # Orchestrator runtime state
 src/orchestrator/.context_cache.json
+
+# Data files (local backfills, regenerate as needed)
+data/**/*.parquet
