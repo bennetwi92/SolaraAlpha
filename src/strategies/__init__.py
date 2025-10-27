@@ -1,0 +1,1 @@
+"""SolaraAlpha trading strategies package."""
