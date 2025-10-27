@@ -1,0 +1,36 @@
+# Risk Management Configuration for SolaraAlpha
+# CRITICAL: These limits are enforced in real-time to prevent catastrophic losses
+
+# Position Limits
+position_limits:
+  per_strategy_pct: 5.0          # Max 5% of portfolio value per strategy
+  per_asset_pct: 10.0            # Max 10% of portfolio value per asset
+  gross_exposure_pct: 200.0      # Max 200% gross exposure (long + short)
+  net_exposure_pct: 20.0         # Max 20% net exposure (for market-neutral)
+
+# Drawdown Controls & Circuit Breakers
+drawdown:
+  max_drawdown_pct: 10.0         # Automatic halt at 10% drawdown from HWM
+  high_water_mark_persist: true  # Persist HWM across system restarts
+  hwm_storage_path: "data/risk/high_water_mark.json"
+
+# Risk Metrics Calculation Parameters
+risk_metrics:
+  var_confidence: 0.95           # 95% confidence level for VaR
+  var_lookback_days: 252         # 1 year of daily returns for VaR
+  cvar_confidence: 0.95          # 95% confidence for CVaR (Expected Shortfall)
+  sharpe_windows: [30, 90, 365]  # Multiple timeframes for Sharpe ratio
+  benchmark_symbol: "SPY"        # Market benchmark for beta calculation
+  benchmark_asset_class: "equities"
+  min_history_days: 30           # Minimum data required for calculations
+
+# Alerting & Logging
+alerts:
+  log_all_limit_breaches: true
+  log_risk_metrics: true
+  alert_on_circuit_breaker: true
+
+# IRM Override Authority (for future human-in-the-loop)
+irm:
+  manual_override_enabled: false  # Future: allow manual circuit breaker override
+  require_justification: true
