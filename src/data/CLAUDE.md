@@ -1,6 +1,6 @@
 # Data Infrastructure
 
-Production-grade multi-source market data pipeline for SolaraAlpha trading operations.
+Production-grade multi-source, multi-asset market data pipeline for SolaraAlpha trading operations.
 
 ## Architecture
 
@@ -8,12 +8,21 @@ Production-grade multi-source market data pipeline for SolaraAlpha trading opera
 
 **Components**:
 - `config/` - YAML-based configuration management
-- `ingest/` - Multi-source data fetching (YFinance primary, extensible)
-- `validate/` - Quality checks (OHLC, spikes, gaps, staleness)
+- `ingest/` - Multi-source data fetching (YFinance for equities/ETFs, CCXT for crypto)
+- `validate/` - Asset-specific quality checks (OHLC, spikes, gaps, staleness)
 - `storage/` - Parquet-based persistence with metadata tracking
 - `pipeline.py` - End-to-end orchestration
 
 **Storage**: `data/{asset_class}/{symbol}/{frequency}/data.parquet`
+
+## Supported Asset Classes
+
+**Equities/ETFs**: YFinance ingestor (free, no API key)
+**Crypto**: CCXT Binance ingestor (24/7 markets, 1m/5m/1h/1d intervals, 2+ years historical)
+- Supports: BTC, ETH, USDT, BNB, SOL, XRP, USDC, ADA, AVAX, DOGE
+- Real-time streaming via `fetch_realtime_ohlcv()`
+
+**Crypto Validation**: Higher volatility tolerance (20%), no gaps allowed, 2-hour staleness threshold
 
 ## Usage
 

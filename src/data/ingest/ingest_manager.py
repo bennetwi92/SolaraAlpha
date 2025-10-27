@@ -8,6 +8,7 @@ import pandas as pd
 from ..config.config_manager import ConfigManager
 from .base import DataIngestor
 from .yfinance_ingestor import YFinanceIngestor
+from .crypto_ingestor import CryptoIngestor
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ class IngestManager:
 
     def _init_ingestors(self) -> None:
         """Initialize data source ingestors based on configuration."""
-        # YFinance (primary source)
+        # YFinance (primary source for equities/ETFs)
         if self.config.is_source_enabled("yfinance"):
             yf_config = self.config.get_data_source_config("yfinance")
             rate_limit = yf_config.get("rate_limit_per_second", 2)
@@ -47,6 +48,22 @@ class IngestManager:
                 YFinanceIngestor(rate_limit=rate_limit, timeout=timeout)
             )
             logger.info("Initialized YFinance ingestor")
+
+        # CCXT (primary source for crypto)
+        if self.config.is_source_enabled("ccxt_binance"):
+            ccxt_config = self.config.get_data_source_config("ccxt_binance")
+            exchange = ccxt_config.get("exchange", "binance")
+            rate_limit = ccxt_config.get("rate_limit_per_second", 1)
+            timeout = ccxt_config.get("timeout", 30)
+
+            self.ingestors.append(
+                CryptoIngestor(
+                    exchange=exchange,
+                    rate_limit=rate_limit,
+                    timeout=timeout,
+                )
+            )
+            logger.info(f"Initialized CCXT {exchange} ingestor")
 
         if not self.ingestors:
             logger.warning("No data ingestors enabled in configuration")

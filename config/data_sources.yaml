@@ -21,6 +21,12 @@ data_sources:
     rate_limit_per_second: 1
     timeout: 30
 
+  ccxt_binance:
+    enabled: true
+    exchange: binance  # High liquidity, free API, 24/7 markets
+    rate_limit_per_second: 1
+    timeout: 30
+
 # Asset classes and symbols to track
 symbols:
   equities:
@@ -43,8 +49,17 @@ symbols:
     - IAU
 
   crypto:
-    - BTC-USD
-    - ETH-USD
+    # Top 10 by market cap (as of 2025)
+    - BTC-USD   # Bitcoin
+    - ETH-USD   # Ethereum
+    - USDT-USD  # Tether
+    - BNB-USD   # Binance Coin
+    - SOL-USD   # Solana
+    - XRP-USD   # Ripple
+    - USDC-USD  # USD Coin
+    - ADA-USD   # Cardano
+    - AVAX-USD  # Avalanche
+    - DOGE-USD  # Dogecoin
 
   forex:
     - EURUSD=X
@@ -56,6 +71,9 @@ ingestion:
   default_lookback_years: 2
   frequencies:
     - 1d  # Daily data
+    - 1h  # Hourly data
+    - 5m  # 5-minute data
+    - 1m  # 1-minute data
 
   # Retry logic
   max_retries: 3
@@ -64,6 +82,11 @@ ingestion:
   # Update schedule
   incremental_update: true
   update_buffer_days: 5  # Re-fetch last N days to catch corrections
+
+  # Crypto-specific settings
+  crypto:
+    realtime_enabled: true  # Enable real-time streaming
+    lookback_periods: 100   # Number of recent candles for streaming
 
 # Data validation rules
 validation:
@@ -82,6 +105,12 @@ validation:
 
   # Staleness check
   max_staleness_days: 7  # Flag if data >7 days old
+
+  # Crypto-specific validation (24/7 markets)
+  crypto:
+    allow_gaps: false  # Crypto trades 24/7, no gaps expected
+    price_spike_threshold: 0.20  # Higher volatility tolerance (20%)
+    max_staleness_hours: 2  # Flag if data >2 hours old (24/7 markets)
 
 # Storage configuration
 storage:
