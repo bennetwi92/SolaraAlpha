@@ -25,3 +25,4 @@ dependencies:
     - alpaca-py
     - python-dotenv
     - ccxt
+    - psutil
