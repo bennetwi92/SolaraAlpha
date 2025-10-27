@@ -3,11 +3,14 @@
 GitHub Issue Orchestrator - Lightweight POC
 
 Automatically processes GitHub issues by:
-1. Fetching open issues with priority:high or priority:medium labels
-2. Sorting FIFO (oldest first) within priority tier
+1. Fetching open issues with type:task label (no status:* labels)
+2. Processing in pure FIFO order (oldest first)
 3. Spawning Claude Code workers to process issues
 4. Updating GitHub labels to track state
 5. Optionally pokes CEO for strategic assessment when queue is empty
+
+Philosophy: Trust the system (CEO + task-builder) to only create important work.
+All tasks are treated equally and processed in creation order.
 
 Usage:
     export GITHUB_TOKEN="ghp_..."
@@ -17,11 +20,12 @@ Options:
     --enable-ceo-poke    Enable CEO assessment when queue is empty (default: disabled)
 """
 import os
+import re
 import subprocess
 import sys
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import quote
 
 try:
@@ -88,16 +92,117 @@ def mark_issue_closed(issue_num: int):
     clean_recently_closed_cache()
 
 
-def fetch_prioritized_issues() -> List[Dict]:
+def detect_session_limit(output: str) -> Optional[str]:
     """
-    Fetch open issues from GitHub with priority:high or priority:medium labels.
+    Detect if Claude CLI output indicates a session limit error.
+
+    Args:
+        output: Combined stdout/stderr from Claude CLI
+
+    Returns:
+        Session limit message if detected, None otherwise
+    """
+    # Pattern to match session limit messages like "Session limit reached ∙ resets 2pm"
+    patterns = [
+        r"Session limit reached.*resets\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))",
+        r"session limit.*resets?\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))",
+        r"rate limit.*resets?\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, output, re.IGNORECASE)
+        if match:
+            # Return the full matched line for context
+            return match.group(0)
+
+    return None
+
+
+def parse_reset_time(message: str) -> Optional[datetime]:
+    """
+    Parse reset time from session limit message.
+
+    Args:
+        message: Session limit message containing reset time
+
+    Returns:
+        datetime of when session limit resets, or None if unable to parse
+    """
+    # Extract time string like "2pm", "2:30pm", "14:00"
+    time_match = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)", message, re.IGNORECASE)
+    if not time_match:
+        return None
+
+    hour = int(time_match.group(1))
+    minute = int(time_match.group(2)) if time_match.group(2) else 0
+    period = time_match.group(3).lower()
+
+    # Convert to 24-hour format
+    if period == 'pm' and hour != 12:
+        hour += 12
+    elif period == 'am' and hour == 12:
+        hour = 0
+
+    # Get current time and construct reset time for today
+    now = datetime.now()
+    reset_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+    # If reset time is in the past, assume it's for tomorrow
+    if reset_time <= now:
+        reset_time += timedelta(days=1)
+
+    return reset_time
+
+
+def wait_for_session_reset(reset_message: str) -> bool:
+    """
+    Wait for session limit to reset.
+
+    Args:
+        reset_message: Session limit message containing reset time
+
+    Returns:
+        True if successfully waited, False if unable to parse reset time
+    """
+    reset_time = parse_reset_time(reset_message)
+
+    if not reset_time:
+        # Unable to parse reset time, wait a default period (1 hour)
+        print("[SESSION LIMIT] Unable to parse reset time, waiting 1 hour...")
+        time.sleep(3600)
+        return True
+
+    now = datetime.now()
+    wait_seconds = (reset_time - now).total_seconds()
+
+    if wait_seconds <= 0:
+        # Reset time already passed
+        print("[SESSION LIMIT] Reset time already passed, resuming immediately")
+        return True
+
+    # Add small buffer (5 minutes) to ensure session has reset
+    wait_seconds += 300
+
+    print(f"[SESSION LIMIT] Session limit reached. Pausing until {reset_time.strftime('%I:%M %p')}")
+    print(f"[SESSION LIMIT] Wait time: {wait_seconds/60:.1f} minutes ({wait_seconds/3600:.1f} hours)")
+
+    # Sleep until reset time
+    time.sleep(wait_seconds)
+
+    print(f"[SESSION LIMIT] Session limit should now be reset. Resuming operations...")
+    return True
+
+
+def fetch_ready_issues() -> List[Dict]:
+    """
+    Fetch open issues ready for processing.
     Only processes type:task issues. Excludes:
     - Issues with any status:* labels (already being processed)
     - type:intervention issues (human-only)
     - Issues in recently_closed_issues cache (race condition prevention)
 
     Returns:
-        List of issue dictionaries sorted by priority (high first) then creation date (FIFO)
+        List of issue dictionaries sorted by creation date (FIFO - oldest first)
     """
     if not GITHUB_TOKEN:
         print("[ERROR] GITHUB_TOKEN environment variable not set")
@@ -109,7 +214,7 @@ def fetch_prioritized_issues() -> List[Dict]:
     clean_recently_closed_cache()
 
     try:
-        # Fetch all open issues (GitHub API doesn't support OR in label filters)
+        # Fetch all open issues sorted by creation date (FIFO)
         params = {
             "state": "open",
             "per_page": 100,
@@ -121,17 +226,13 @@ def fetch_prioritized_issues() -> List[Dict]:
         response.raise_for_status()
         all_issues = response.json()
 
-        # Filter for priority and type labels
-        priority_labels = {"priority:high", "priority:medium"}
-
-        filtered_issues = []
+        # Filter for ready-to-process tasks
+        ready_issues = []
         skipped_recently_closed = 0
         for issue in all_issues:
             issue_num = issue["number"]
             issue_labels = {label["name"] for label in issue.get("labels", [])}
 
-            # Check if has priority label
-            has_priority = bool(issue_labels & priority_labels)
             # Must have type:task (skip interventions)
             has_task_type = "type:task" in issue_labels
             # Skip if ANY status:* label exists (already being processed)
@@ -141,32 +242,18 @@ def fetch_prioritized_issues() -> List[Dict]:
             # Skip if recently closed (race condition prevention)
             is_recently_closed = issue_num in recently_closed_issues
 
-            # Include ONLY if: has priority AND type:task AND no status labels AND not a PR AND not recently closed
-            if has_priority and has_task_type and not has_status and not is_pr and not is_recently_closed:
-                filtered_issues.append(issue)
-            elif is_recently_closed and has_priority and has_task_type and not has_status:
+            # Include ONLY if: type:task AND no status labels AND not a PR AND not recently closed
+            if has_task_type and not has_status and not is_pr and not is_recently_closed:
+                ready_issues.append(issue)
+            elif is_recently_closed and has_task_type and not has_status:
                 # Track how many we're skipping due to recent close
                 skipped_recently_closed += 1
 
-        # Sort: priority:high first, then by created_at (already sorted by API)
-        high_priority = [
-            i
-            for i in filtered_issues
-            if "priority:high" in {l["name"] for l in i["labels"]}
-        ]
-        medium_priority = [
-            i
-            for i in filtered_issues
-            if "priority:medium" in {l["name"] for l in i["labels"]}
-        ]
-
-        sorted_issues = high_priority + medium_priority
-
-        msg = f"[FETCH] Found {len(sorted_issues)} issues ({len(high_priority)} high, {len(medium_priority)} medium)"
+        msg = f"[FETCH] Found {len(ready_issues)} ready issues (FIFO order)"
         if skipped_recently_closed > 0:
             msg += f" [skipped {skipped_recently_closed} recently closed]"
         print(msg)
-        return sorted_issues
+        return ready_issues
 
     except requests.exceptions.RequestException as e:
         print(f"[ERROR] Failed to fetch issues: {e}")
@@ -359,7 +446,7 @@ def fetch_blocked_issues() -> List[Dict]:
         return []
 
 
-def spawn_ceo_poke() -> bool:
+def spawn_ceo_poke() -> Tuple[bool, Optional[str]]:
     """
     Poke CEO to assess organizational state when queue is empty.
 
@@ -371,7 +458,9 @@ def spawn_ceo_poke() -> bool:
     CEO decides whether to create new issues (via task-builder) or report no action needed.
 
     Returns:
-        True if CEO completed successfully, False otherwise
+        Tuple of (success, session_limit_message)
+        - success: True if CEO completed successfully, False otherwise
+        - session_limit_message: Session limit message if detected, None otherwise
     """
     print("\n[CEO POKE] Queue empty - spawning CEO assessment...")
 
@@ -404,7 +493,7 @@ def spawn_ceo_poke() -> bool:
 Recent completions (last 10 commits):
 {commits_text}
 
-Current open issues:
+Current open issues (processed in FIFO order):
 {open_issues_text}
 
 Blocked issues (require attention):
@@ -414,7 +503,7 @@ Evaluate:
 - Are blocked issues preventing progress?
 - Is critical infrastructure missing?
 - Are we working on highest-value opportunities?
-- Should low-priority work be escalated?
+- Are there gaps in our current task queue?
 
 If valuable work identified: Use task-builder agent to create issues
 If backlog is healthy: Report "MONITOR: No action required"
@@ -429,29 +518,37 @@ Only create issues if genuinely valuable. "No action" is a valid outcome.
         result = subprocess.run(
             [CLAUDE_CLI_PATH, "-p", "--dangerously-skip-permissions", prompt],
             timeout=WORKER_TIMEOUT,
-            capture_output=False,
+            capture_output=True,  # Changed to True to check for session limit
             text=True,
         )
 
         elapsed = time.time() - start_time
         print(f"[CEO] Completed in {elapsed:.1f}s with exit code {result.returncode}")
 
+        # Check for session limit in output
+        output_log = (result.stdout or "") + (result.stderr or "")
+        session_limit_msg = detect_session_limit(output_log)
+
+        if session_limit_msg:
+            print(f"[CEO] Session limit detected: {session_limit_msg}")
+            return False, session_limit_msg
+
         if result.returncode == 0:
             print("[CEO] Assessment completed successfully")
-            return True
+            return True, None
         else:
             print(f"[CEO] Assessment failed with exit code {result.returncode}")
-            return False
+            return False, None
 
     except subprocess.TimeoutExpired:
         print(f"[CEO] Assessment exceeded {WORKER_TIMEOUT}s timeout")
-        return False
+        return False, None
     except Exception as e:
         print(f"[CEO] Assessment failed with error: {e}")
-        return False
+        return False, None
 
 
-def spawn_claude_worker(issue: Dict) -> bool:
+def spawn_claude_worker(issue: Dict) -> Tuple[bool, Optional[str]]:
     """
     Spawn Claude Code CLI to process an issue.
 
@@ -459,7 +556,9 @@ def spawn_claude_worker(issue: Dict) -> bool:
         issue: GitHub issue dictionary
 
     Returns:
-        True if worker completed successfully, False otherwise
+        Tuple of (success, session_limit_message)
+        - success: True if worker completed successfully, False otherwise
+        - session_limit_message: Session limit message if detected, None otherwise
     """
     issue_num = issue["number"]
     issue_title = issue["title"]
@@ -506,6 +605,33 @@ def spawn_claude_worker(issue: Dict) -> bool:
         # Truncate if exceeds GitHub comment limit
         if len(output_log) > MAX_COMMENT_LENGTH:
             output_log = output_log[:MAX_COMMENT_LENGTH] + "\n\n[OUTPUT TRUNCATED - exceeded GitHub comment size limit]"
+
+        # Check for session limit BEFORE processing results
+        session_limit_msg = detect_session_limit(output_log)
+
+        if session_limit_msg:
+            print(f"[SESSION LIMIT] Detected session limit: {session_limit_msg}")
+
+            # Post session limit comment to issue
+            session_comment = f"""## Session Limit Reached
+
+**Duration**: {elapsed:.1f}s
+**Status**: ⏸️ Paused (Session Limit)
+
+The Claude CLI session limit has been reached. The orchestrator will pause and retry this issue after the session resets.
+
+**Session Limit Message**: {session_limit_msg}
+
+This issue will be retried automatically - no action required.
+"""
+            print(f"[COMMENT] Posting session limit notice to issue #{issue_num}...")
+            post_issue_comment(issue_num, session_comment)
+
+            # Remove status label so issue can be retried after session reset
+            print("[LABEL] Removing status labels (will retry after session reset)...")
+            remove_status_labels(issue_num)
+
+            return False, session_limit_msg
 
         # Post output as comment to issue
         if output_log.strip():
@@ -558,7 +684,7 @@ def spawn_claude_worker(issue: Dict) -> bool:
                 time.sleep(POST_CLOSE_DELAY)
             else:
                 print("[WARNING] Could not close issue, but task completed successfully")
-            return True
+            return True, None
         else:
             print(
                 f"[FAILED] Issue #{issue_num} failed with exit code {result.returncode}"
@@ -580,7 +706,7 @@ def spawn_claude_worker(issue: Dict) -> bool:
             # Update status to blocked
             print("[LABEL] Updating status → blocked...")
             update_issue_status(issue_num, "status:blocked")
-            return False
+            return False, None
 
     except subprocess.TimeoutExpired:
         print(f"[TIMEOUT] Issue #{issue_num} exceeded {WORKER_TIMEOUT}s timeout")
@@ -610,7 +736,7 @@ Worker exceeded maximum execution time of {WORKER_TIMEOUT}s and was terminated.
         # Update status to blocked
         print("[LABEL] Updating status → blocked...")
         update_issue_status(issue_num, "status:blocked")
-        return False
+        return False, None
     except FileNotFoundError:
         print("[ERROR] Claude Code CLI not found. Please install Claude Code first.")
         sys.exit(1)
@@ -644,7 +770,7 @@ Worker failed with exception:
         # Update status to blocked
         print("[LABEL] Updating status → blocked...")
         update_issue_status(issue_num, "status:blocked")
-        return False
+        return False, None
 
 
 def main_loop(enable_ceo_poke: bool = False):
@@ -688,16 +814,25 @@ def main_loop(enable_ceo_poke: bool = False):
             total_failed = 0
 
             while True:
-                # Fetch prioritized issues (refresh on each iteration)
+                # Fetch ready issues (refresh on each iteration)
                 print("\n[REFRESH] Fetching latest issues...")
-                issues = fetch_prioritized_issues()
+                issues = fetch_ready_issues()
 
                 if not issues:
                     # Queue is empty
                     if enable_ceo_poke and not ceo_poked_this_cycle:
                         # First time queue is empty and CEO poke enabled - poke CEO
                         print("[EMPTY QUEUE] No eligible issues found - poking CEO...")
-                        spawn_ceo_poke()
+                        ceo_success, ceo_session_limit_msg = spawn_ceo_poke()
+
+                        if ceo_session_limit_msg:
+                            # Session limit hit during CEO poke - wait for reset
+                            print("[SESSION LIMIT] Session limit hit during CEO poke")
+                            print("[SESSION LIMIT] Pausing orchestrator until session resets...")
+                            wait_for_session_reset(ceo_session_limit_msg)
+                            # After waiting, continue to retry
+                            continue
+
                         ceo_poked_this_cycle = True
                         # Refresh immediately to check if CEO created new issues
                         continue
@@ -717,7 +852,15 @@ def main_loop(enable_ceo_poke: bool = False):
                     # Process only the FIRST issue (highest priority)
                     issue = issues[0]
                     print(f"\n[PROCESSING] Next issue: #{issue['number']}")
-                    success = spawn_claude_worker(issue)
+                    success, session_limit_msg = spawn_claude_worker(issue)
+
+                    if session_limit_msg:
+                        # Session limit reached - wait for reset and retry
+                        print(f"[SESSION LIMIT] Session limit hit while processing issue #{issue['number']}")
+                        print("[SESSION LIMIT] Pausing orchestrator until session resets...")
+                        wait_for_session_reset(session_limit_msg)
+                        # After waiting, continue to retry same issue (it should have no status label now)
+                        continue
 
                     if success:
                         total_success += 1
