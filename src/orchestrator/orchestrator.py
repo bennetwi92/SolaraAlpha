@@ -25,7 +25,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 try:
@@ -51,7 +51,9 @@ CLAUDE_CLI_PATH = os.path.expanduser("~/.claude/local/claude")
 WORKER_TIMEOUT = 1200  # 20 minutes
 IDLE_SLEEP_SECONDS = 300  # 5 minutes
 MAX_COMMENT_LENGTH = 65000  # GitHub limit is 65,536; leave buffer for formatting
-POST_CLOSE_DELAY = 3  # Seconds to wait after closing issue (allows GitHub API to propagate)
+POST_CLOSE_DELAY = (
+    3  # Seconds to wait after closing issue (allows GitHub API to propagate)
+)
 RECENTLY_CLOSED_TTL = 60  # Seconds to remember closed issues in memory
 
 # Initialize context manager
@@ -138,9 +140,9 @@ def parse_reset_time(message: str) -> Optional[datetime]:
     period = time_match.group(3).lower()
 
     # Convert to 24-hour format
-    if period == 'pm' and hour != 12:
+    if period == "pm" and hour != 12:
         hour += 12
-    elif period == 'am' and hour == 12:
+    elif period == "am" and hour == 12:
         hour = 0
 
     # Get current time and construct reset time for today
@@ -183,13 +185,17 @@ def wait_for_session_reset(reset_message: str) -> bool:
     # Add small buffer (5 minutes) to ensure session has reset
     wait_seconds += 300
 
-    print(f"[SESSION LIMIT] Session limit reached. Pausing until {reset_time.strftime('%I:%M %p')}")
-    print(f"[SESSION LIMIT] Wait time: {wait_seconds/60:.1f} minutes ({wait_seconds/3600:.1f} hours)")
+    print(
+        f"[SESSION LIMIT] Session limit reached. Pausing until {reset_time.strftime('%I:%M %p')}"
+    )
+    print(
+        f"[SESSION LIMIT] Wait time: {wait_seconds/60:.1f} minutes ({wait_seconds/3600:.1f} hours)"
+    )
 
     # Sleep until reset time
     time.sleep(wait_seconds)
 
-    print(f"[SESSION LIMIT] Session limit should now be reset. Resuming operations...")
+    print("[SESSION LIMIT] Session limit should now be reset. Resuming operations...")
     return True
 
 
@@ -243,7 +249,12 @@ def fetch_ready_issues() -> List[Dict]:
             is_recently_closed = issue_num in recently_closed_issues
 
             # Include ONLY if: type:task AND no status labels AND not a PR AND not recently closed
-            if has_task_type and not has_status and not is_pr and not is_recently_closed:
+            if (
+                has_task_type
+                and not has_status
+                and not is_pr
+                and not is_recently_closed
+            ):
                 ready_issues.append(issue)
             elif is_recently_closed and has_task_type and not has_status:
                 # Track how many we're skipping due to recent close
@@ -286,7 +297,7 @@ def remove_status_labels(issue_num: int) -> bool:
 
         for label in status_labels:
             # URL-encode label name (colon in "status:in-progress" needs encoding)
-            encoded_label = quote(label, safe='')
+            encoded_label = quote(label, safe="")
             delete_url = f"{BASE_URL}/issues/{issue_num}/labels/{encoded_label}"
             response = requests.delete(delete_url, headers=HEADERS)
             response.raise_for_status()
@@ -470,7 +481,11 @@ def spawn_ceo_poke() -> Tuple[bool, Optional[str]]:
     blocked_issues = fetch_blocked_issues()
 
     # Format context for CEO
-    commits_text = "\n".join(f"  - {c}" for c in recent_commits) if recent_commits else "  (No recent commits)"
+    commits_text = (
+        "\n".join(f"  - {c}" for c in recent_commits)
+        if recent_commits
+        else "  (No recent commits)"
+    )
 
     open_issues_text = ""
     if open_issues:
@@ -488,7 +503,7 @@ def spawn_ceo_poke() -> Tuple[bool, Optional[str]]:
         blocked_text = "  (No blocked issues)\n"
 
     # Build CEO prompt - explicitly invoke ceo-orchestrator agent
-    prompt = f"""Act as the ceo-orchestrator agent. Your mission: Review organizational state and determine if new work should be created.
+    prompt = f"""Use the ceo-orchestrator agent. Their mission: Review organizational state and determine if new work should be created.
 
 **Context:**
 
@@ -501,8 +516,6 @@ Current open issues:
 Blocked issues:
 {blocked_text}
 
-**Your Task as CEO:**
-
 1. Evaluate strategic priorities:
    - Are blocked issues preventing progress?
    - Is critical infrastructure missing?
@@ -514,8 +527,7 @@ Blocked issues:
    - IF backlog is healthy → Report "MONITOR: No action required"
 
 **Critical Instructions:**
-- You are the ceo-orchestrator agent with autonomous authority
-- You MUST use the Task tool to delegate to task-builder agent if creating issues
+- You MUST use the Task tool to delegate to the ceo or to the task-builder agent (if creating issues)
 - Follow the CEO's protocol: assess → decide → delegate
 - Only create issues if genuinely valuable - "No action" is valid
 
@@ -615,7 +627,10 @@ def spawn_claude_worker(issue: Dict) -> Tuple[bool, Optional[str]]:
 
         # Truncate if exceeds GitHub comment limit
         if len(output_log) > MAX_COMMENT_LENGTH:
-            output_log = output_log[:MAX_COMMENT_LENGTH] + "\n\n[OUTPUT TRUNCATED - exceeded GitHub comment size limit]"
+            output_log = (
+                output_log[:MAX_COMMENT_LENGTH]
+                + "\n\n[OUTPUT TRUNCATED - exceeded GitHub comment size limit]"
+            )
 
         # Check for session limit BEFORE processing results
         session_limit_msg = detect_session_limit(output_log)
@@ -673,13 +688,12 @@ This issue will be retried automatically - no action required.
                 issue_num=issue_num,
                 issue_title=issue_title,
                 outcome="success",
-                key_learning=f"Completed: {issue_title}"
+                key_learning=f"Completed: {issue_title}",
             )
 
             # Post completion comment with context
             completion_comment = context_mgr.generate_completion_comment(
-                outcome="success",
-                key_learning=f"Successfully completed task"
+                outcome="success", key_learning="Successfully completed task"
             )
             post_issue_comment(issue_num, completion_comment)
 
@@ -691,10 +705,14 @@ This issue will be retried automatically - no action required.
                 # Mark issue as recently closed to prevent race condition
                 mark_issue_closed(issue_num)
                 # Brief delay to allow GitHub API to propagate the close state
-                print(f"[DELAY] Waiting {POST_CLOSE_DELAY}s for GitHub API propagation...")
+                print(
+                    f"[DELAY] Waiting {POST_CLOSE_DELAY}s for GitHub API propagation..."
+                )
                 time.sleep(POST_CLOSE_DELAY)
             else:
-                print("[WARNING] Could not close issue, but task completed successfully")
+                print(
+                    "[WARNING] Could not close issue, but task completed successfully"
+                )
             return True, None
         else:
             print(
@@ -707,11 +725,13 @@ This issue will be retried automatically - no action required.
                 issue_num=issue_num,
                 issue_title=issue_title,
                 outcome="blocked",
-                blocker=f"Worker failed with exit code {result.returncode}"
+                blocker=f"Worker failed with exit code {result.returncode}",
             )
 
             # Post completion comment with context
-            completion_comment = context_mgr.generate_completion_comment(outcome="blocked")
+            completion_comment = context_mgr.generate_completion_comment(
+                outcome="blocked"
+            )
             post_issue_comment(issue_num, completion_comment)
 
             # Update status to blocked
@@ -727,7 +747,7 @@ This issue will be retried automatically - no action required.
             issue_num=issue_num,
             issue_title=issue_title,
             outcome="blocked",
-            blocker=f"Worker timeout after {WORKER_TIMEOUT}s"
+            blocker=f"Worker timeout after {WORKER_TIMEOUT}s",
         )
 
         # Post timeout comment
@@ -759,7 +779,7 @@ Worker exceeded maximum execution time of {WORKER_TIMEOUT}s and was terminated.
             issue_num=issue_num,
             issue_title=issue_title,
             outcome="blocked",
-            blocker=f"Worker exception: {str(e)}"
+            blocker=f"Worker exception: {str(e)}",
         )
 
         # Post error comment
@@ -839,7 +859,9 @@ def main_loop(enable_ceo_poke: bool = False):
                         if ceo_session_limit_msg:
                             # Session limit hit during CEO poke - wait for reset
                             print("[SESSION LIMIT] Session limit hit during CEO poke")
-                            print("[SESSION LIMIT] Pausing orchestrator until session resets...")
+                            print(
+                                "[SESSION LIMIT] Pausing orchestrator until session resets..."
+                            )
                             wait_for_session_reset(ceo_session_limit_msg)
                             # After waiting, continue to retry
                             continue
@@ -867,8 +889,12 @@ def main_loop(enable_ceo_poke: bool = False):
 
                     if session_limit_msg:
                         # Session limit reached - wait for reset and retry
-                        print(f"[SESSION LIMIT] Session limit hit while processing issue #{issue['number']}")
-                        print("[SESSION LIMIT] Pausing orchestrator until session resets...")
+                        print(
+                            f"[SESSION LIMIT] Session limit hit while processing issue #{issue['number']}"
+                        )
+                        print(
+                            "[SESSION LIMIT] Pausing orchestrator until session resets..."
+                        )
                         wait_for_session_reset(session_limit_msg)
                         # After waiting, continue to retry same issue (it should have no status label now)
                         continue
