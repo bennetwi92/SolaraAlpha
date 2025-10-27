@@ -80,12 +80,15 @@ def test_risk_manager_initialization(risk_manager):
 
 def test_complete_trade_workflow(risk_manager):
     """Test complete workflow: validate -> record -> check."""
+    # Portfolio: $100,000, Per-strategy limit: 5% = $5,000
+    # Trade: 30 shares @ $150 = $4,500 (4.5% < 5%)
+
     # 1. Validate trade before execution
     result = risk_manager.validate_trade(
         symbol="AAPL",
         asset_class="equities",
         strategy_id="pairs_1",
-        quantity=100,
+        quantity=30,
         price=150.0,
     )
 
@@ -96,13 +99,13 @@ def test_complete_trade_workflow(risk_manager):
         symbol="AAPL",
         asset_class="equities",
         strategy_id="pairs_1",
-        quantity=100,
+        quantity=30,
         entry_price=150.0,
         current_price=150.0,
     )
 
     assert position is not None
-    assert position.quantity == 100
+    assert position.quantity == 30
 
     # 3. Check positions
     all_positions = risk_manager.get_all_positions()
@@ -110,7 +113,7 @@ def test_complete_trade_workflow(risk_manager):
 
     # 4. Get exposure
     exposure = risk_manager.get_portfolio_exposure()
-    assert exposure["gross"] == 15000.0  # 100 * 150
+    assert exposure["gross"] == 4500.0  # 30 * 150
 
 
 def test_limit_enforcement_workflow(risk_manager):
@@ -309,16 +312,24 @@ def test_circuit_breaker_reset_workflow(risk_manager):
 
 def test_multiple_assets_limit_check(risk_manager):
     """Test per-asset limit across different strategies."""
-    # Asset limit: 10% = $10,000
+    # Per-strategy limit: 5% = $5,000
+    # Per-asset limit: 10% = $10,000
 
-    # Strategy 1: $6,000 of AAPL
+    # Strategy 1: $4,500 of AAPL (4.5%, under 5% per-strategy limit)
     risk_manager.record_trade(
-        "AAPL", "equities", "strat1", 40, 150.0, 150.0
+        "AAPL", "equities", "strat1", 30, 150.0, 150.0
     )
 
-    # Strategy 2: Try to add $6,000 more AAPL (would exceed $10k limit)
+    # Strategy 2: $4,500 of AAPL (4.5%, under 5% per-strategy limit)
+    risk_manager.record_trade(
+        "AAPL", "equities", "strat2", 30, 150.0, 150.0
+    )
+
+    # Strategy 3: Try to add $3,000 more AAPL
+    # Total would be $9,000 + $3,000 = $12,000 which exceeds $10k per-asset limit
+    # But strat3 trade is only 2% which is under 5% per-strategy limit
     result = risk_manager.validate_trade(
-        "AAPL", "equities", "strat2", 40, 150.0
+        "AAPL", "equities", "strat3", 20, 150.0
     )
 
     # Should fail per-asset limit

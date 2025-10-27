@@ -14,6 +14,8 @@ SolaraAlpha's first relative value strategy - statistical arbitrage through mean
 
 **Paper Trading**: Real-time simulation with risk validation and order fill simulation
 
+**Live Execution**: Production-ready integration with StrategyRunner daemon for 24/7 operations
+
 ## Components
 
 - `cointegration.py` - Cointegration testing (Engle-Granger, Johansen, ADF)
@@ -21,6 +23,7 @@ SolaraAlpha's first relative value strategy - statistical arbitrage through mean
 - `position_sizing.py` - Volatility-based sizing with risk compliance
 - `backtest.py` - Walk-forward backtesting with transaction costs
 - `paper_trading.py` - Live simulation engine with risk integration
+- `strategy_adapter.py` - StrategyRunner interface adapter for daemon execution
 
 ## Target Pairs
 
@@ -38,13 +41,40 @@ result = backtester.backtest_pair(prices_ko, prices_pep, 'KO', 'PEP')
 print(f"Sharpe: {result.metrics['sharpe_ratio']:.2f}")
 ```
 
-### Paper Trading
+### Paper Trading (Manual)
 ```python
 from src.strategies.pairs_trading import PaperTradingEngine
 
 engine = PaperTradingEngine(portfolio_value=100000)
 engine.add_pair('SPY', 'IVV', 'etfs')
 trades = engine.run_iteration()  # Run periodically
+```
+
+### Live Execution (Daemon)
+```python
+from src.execution.strategy_runner import StrategyRunner, StrategyConfig, RunMode
+from src.strategies.pairs_trading import PaperTradingEngine, PairsStrategy
+
+# Setup engine
+engine = PaperTradingEngine(portfolio_value=100000, strategy_id='pairs_1')
+engine.add_pair('SPY', 'IVV', 'etfs')
+engine.add_pair('KO', 'PEP', 'equities')
+
+# Wrap in adapter
+strategy = PairsStrategy(engine)
+
+# Configure execution
+config = StrategyConfig(
+    strategy_id='pairs_1',
+    strategy_name='Pairs Trading - Equities/ETFs',
+    run_mode=RunMode.MARKET_HOURS,
+    interval_seconds=300,  # 5 minutes
+)
+
+# Run daemon (blocks until SIGTERM)
+runner = StrategyRunner()
+runner.register_strategy(strategy, config)
+runner.start()
 ```
 
 ## Risk Integration

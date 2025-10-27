@@ -81,11 +81,14 @@ def test_update_portfolio_value(enforcer):
 
 def test_check_trade_empty_portfolio(enforcer):
     """Test trade validation with no existing positions."""
+    # Portfolio value: $100,000
+    # Per-strategy limit: 5% = $5,000
+    # This trade is $4,500 (30 shares @ $150), which should pass
     result = enforcer.check_trade(
         symbol="AAPL",
         asset_class="equities",
         strategy_id="strat1",
-        quantity=100,
+        quantity=30,
         price=150.0,
     )
 
@@ -144,23 +147,25 @@ def test_per_asset_limit_violation(enforcer):
 def test_gross_exposure_limit_violation(enforcer):
     """Test gross exposure limit enforcement."""
     # Portfolio value: $100,000
+    # Per-strategy limit: 5% = $5,000
     # Gross exposure limit: 200% = $200,000
 
-    # Add positions totaling $195,000 gross
+    # Add positions totaling $196,500 gross (each strategy under 5% limit)
     enforcer.tracker.add_position(
-        "AAPL", "equities", "strat1", 650, 150.0, 150.0
-    )  # $97,500
+        "AAPL", "equities", "strat1", 656, 150.0, 150.0
+    )  # $98,400
     enforcer.tracker.add_position(
-        "MSFT", "equities", "strat2", -325, 300.0, 300.0
-    )  # $97,500
+        "MSFT", "equities", "strat2", -327, 300.0, 300.0
+    )  # $98,100
 
-    # Try to add $10,000 more (would breach $200k limit)
+    # Try to add $4,500 more (strat3 gets 4.5% which is under 5% per-strategy limit,
+    # but gross would be $201k > $200k limit)
     result = enforcer.check_trade(
         symbol="GOOG",
         asset_class="equities",
         strategy_id="strat3",
-        quantity=5,
-        price=2000.0,
+        quantity=2,
+        price=2250.0,
     )
 
     assert not result.passed

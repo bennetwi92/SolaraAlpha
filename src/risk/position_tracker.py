@@ -128,16 +128,31 @@ class PositionTracker:
         key = (symbol, strategy_id)
 
         if key in self._positions:
-            # Update existing position with weighted average entry price
+            # Update existing position
             existing = self._positions[key]
             total_quantity = existing.quantity + quantity
 
             if total_quantity != 0:
-                # Weighted average entry price
-                new_entry_price = (
-                    existing.quantity * existing.entry_price
-                    + quantity * entry_price
-                ) / total_quantity
+                # Check if we're adding to position or reducing it
+                same_direction = (existing.quantity > 0 and quantity > 0) or \
+                               (existing.quantity < 0 and quantity < 0)
+
+                if same_direction:
+                    # Adding to position - use weighted average entry price
+                    new_entry_price = (
+                        existing.quantity * existing.entry_price
+                        + quantity * entry_price
+                    ) / total_quantity
+                else:
+                    # Reducing or flipping position - keep original entry price
+                    # if still in same direction, otherwise use new entry price
+                    if (existing.quantity > 0 and total_quantity > 0) or \
+                       (existing.quantity < 0 and total_quantity < 0):
+                        # Reducing position - keep original entry price
+                        new_entry_price = existing.entry_price
+                    else:
+                        # Flipping position - use new entry price
+                        new_entry_price = entry_price
 
                 existing.quantity = total_quantity
                 existing.entry_price = new_entry_price

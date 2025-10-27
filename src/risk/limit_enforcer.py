@@ -170,6 +170,16 @@ class LimitEnforcer:
         current_exposure = self.tracker.get_strategy_exposure(strategy_id)
         current_gross = current_exposure["gross"]
 
+        # Check if we're reducing an existing position
+        existing_position = self.tracker.get_position(symbol, strategy_id)
+        if existing_position is not None:
+            # If trade is opposite direction or reduces position, allow it
+            same_direction = (existing_position.quantity > 0 and quantity > 0) or \
+                           (existing_position.quantity < 0 and quantity < 0)
+            if not same_direction or abs(quantity) < abs(existing_position.quantity):
+                # Reducing exposure - always pass
+                return LimitCheckResult(passed=True)
+
         # Calculate proposed exposure after trade
         trade_value = abs(quantity * price)
         proposed_gross = current_gross + trade_value
@@ -203,9 +213,16 @@ class LimitEnforcer:
         price: float,
     ) -> LimitCheckResult:
         """Check per-asset position limit across all strategies."""
-        # Get current symbol exposure
+        # Get current symbol exposure across all strategies
         current_exposure = self.tracker.get_symbol_exposure(symbol)
         current_market_value = abs(current_exposure["market_value"])
+        current_net_quantity = current_exposure["quantity"]
+
+        # Check if we're reducing overall symbol exposure
+        proposed_net_quantity = current_net_quantity + quantity
+        if abs(proposed_net_quantity) < abs(current_net_quantity):
+            # Net exposure is decreasing - always pass
+            return LimitCheckResult(passed=True)
 
         # Calculate proposed exposure after trade
         trade_value = abs(quantity * price)
