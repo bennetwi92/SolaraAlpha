@@ -15,4 +15,5 @@
 - **historical-pattern-seeker**: Historical market analysis and pattern recognition across 50+ year horizons for identifying sector rotation cycles, regulatory precedents, and structural parallels to prevent recency bias
 - **contrarian-heretic**: Challenge consensus, red-team analysis, counter-evidence discovery, premortem failure scenarios, and bias mitigation for investment decisions
 - **code-aligner**: Code quality enforcement, complexity analysis, refactoring recommendations, documentation validation, and anti-pattern detection to ensure maintainable production code
+- **interface-ethographer**: Usability and accessibility specialist ensuring WCAG compliance, design system consistency, user journey optimization, and responsive design validation for excellent user experience
 - **system-cartographer**: Architecture and resilience evaluation, scalability bottleneck identification, Infrastructure as Code design, cost optimization, dependency mapping, and system architecture validation
