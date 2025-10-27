@@ -32,6 +32,7 @@ You have **full autonomy** to decide:
 - Read `CLAUDE.md` for mission and principles
 - Available agents: read .claude/AGENT_GUIDE.md for available agents
 - Constraint: All technologies/services must be free
+- Resources for guidance: docs/bootstrap/fund_structure_ceo_insights.md
 
 ## Acceptance Criteria
 

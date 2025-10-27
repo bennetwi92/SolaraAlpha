@@ -22,6 +22,15 @@ def test_context_manager():
     repo_root = Path(__file__).parent.parent
     cm = ContextManager(repo_root=str(repo_root))
 
+    # Clean up cache file if it exists (for clean test state)
+    cache_file = Path(repo_root) / "src/orchestrator/.context_cache.json"
+    if cache_file.exists():
+        cache_file.unlink()
+        print(f"[SETUP] Removed existing cache file: {cache_file}")
+
+    # Recreate the ContextManager instance to ensure clean state
+    cm = ContextManager(repo_root=str(repo_root))
+
     # Test 1: Empty cache
     print("\n[TEST 1] Loading empty cache...")
     cache = cm.load_cache()

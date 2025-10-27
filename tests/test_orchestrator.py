@@ -17,7 +17,7 @@ import os
 os.environ['GITHUB_TOKEN'] = 'test_token_12345'
 
 from orchestrator.orchestrator import (
-    fetch_prioritized_issues,
+    fetch_ready_issues,
     remove_status_labels,
     update_issue_status,
     post_issue_comment,
@@ -43,14 +43,14 @@ class TestOrchestratorIssueFetching(unittest.TestCase):
     """Test issue fetching and filtering logic."""
 
     @patch('orchestrator.orchestrator.requests.get')
-    def test_fetch_prioritized_issues_filters_correctly(self, mock_get):
-        """Test that fetch_prioritized_issues correctly filters by priority, type, and status."""
+    def test_fetch_ready_issues_filters_correctly(self, mock_get):
+        """Test that fetch_ready_issues correctly filters by type and status."""
         # Mock API response with various issue types
         mock_response = MagicMock()
         mock_response.json.return_value = [
             {
                 "number": 1,
-                "title": "High priority task",
+                "title": "Task 1",
                 "labels": [
                     {"name": "priority:high"},
                     {"name": "type:task"}
@@ -59,7 +59,7 @@ class TestOrchestratorIssueFetching(unittest.TestCase):
             },
             {
                 "number": 2,
-                "title": "Medium priority task",
+                "title": "Task 2",
                 "labels": [
                     {"name": "priority:medium"},
                     {"name": "type:task"}
@@ -78,7 +78,7 @@ class TestOrchestratorIssueFetching(unittest.TestCase):
             },
             {
                 "number": 4,
-                "title": "Low priority task (should be filtered out)",
+                "title": "Low priority task",
                 "labels": [
                     {"name": "priority:low"},
                     {"name": "type:task"}
@@ -109,21 +109,22 @@ class TestOrchestratorIssueFetching(unittest.TestCase):
         mock_get.return_value = mock_response
 
         # Call function
-        issues = fetch_prioritized_issues()
+        issues = fetch_ready_issues()
 
-        # Verify only issues 1 and 2 are returned
-        self.assertEqual(len(issues), 2)
-        self.assertEqual(issues[0]["number"], 1)  # High priority first
-        self.assertEqual(issues[1]["number"], 2)  # Medium priority second
+        # Verify issues 1, 2, and 4 are returned (in FIFO order)
+        self.assertEqual(len(issues), 3)
+        self.assertEqual(issues[0]["number"], 1)
+        self.assertEqual(issues[1]["number"], 2)
+        self.assertEqual(issues[2]["number"], 4)
 
     @patch('orchestrator.orchestrator.requests.get')
-    def test_fetch_prioritized_issues_sorts_by_priority(self, mock_get):
-        """Test that high priority issues come before medium priority."""
+    def test_fetch_ready_issues_sorts_by_fifo(self, mock_get):
+        """Test that issues are returned in FIFO order (oldest first)."""
         mock_response = MagicMock()
         mock_response.json.return_value = [
             {
                 "number": 10,
-                "title": "Medium priority task (older)",
+                "title": "Older task",
                 "labels": [
                     {"name": "priority:medium"},
                     {"name": "type:task"}
@@ -132,7 +133,7 @@ class TestOrchestratorIssueFetching(unittest.TestCase):
             },
             {
                 "number": 11,
-                "title": "High priority task (newer)",
+                "title": "Newer task",
                 "labels": [
                     {"name": "priority:high"},
                     {"name": "type:task"}
@@ -143,32 +144,32 @@ class TestOrchestratorIssueFetching(unittest.TestCase):
         mock_response.raise_for_status = MagicMock()
         mock_get.return_value = mock_response
 
-        issues = fetch_prioritized_issues()
+        issues = fetch_ready_issues()
 
-        # High priority should come first despite being newer
+        # Older issue should come first (FIFO)
         self.assertEqual(len(issues), 2)
-        self.assertEqual(issues[0]["number"], 11)  # High priority
-        self.assertEqual(issues[1]["number"], 10)  # Medium priority
+        self.assertEqual(issues[0]["number"], 10)  # Older
+        self.assertEqual(issues[1]["number"], 11)  # Newer
 
     @patch('orchestrator.orchestrator.requests.get')
-    def test_fetch_prioritized_issues_empty_result(self, mock_get):
+    def test_fetch_ready_issues_empty_result(self, mock_get):
         """Test handling of empty issue list."""
         mock_response = MagicMock()
         mock_response.json.return_value = []
         mock_response.raise_for_status = MagicMock()
         mock_get.return_value = mock_response
 
-        issues = fetch_prioritized_issues()
+        issues = fetch_ready_issues()
 
         self.assertEqual(len(issues), 0)
 
     @patch('orchestrator.orchestrator.requests.get')
-    def test_fetch_prioritized_issues_api_error(self, mock_get):
+    def test_fetch_ready_issues_api_error(self, mock_get):
         """Test handling of API errors."""
         import requests
         mock_get.side_effect = requests.exceptions.RequestException("API Error")
 
-        issues = fetch_prioritized_issues()
+        issues = fetch_ready_issues()
 
         self.assertEqual(len(issues), 0)
 
@@ -374,10 +375,11 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
             "html_url": "https://github.com/test/test/issues/42"
         }
 
-        result = spawn_claude_worker(issue)
+        result, session_limit = spawn_claude_worker(issue)
 
         # Verify success
         self.assertTrue(result)
+        self.assertIsNone(session_limit)
         # Verify subprocess called (at least once for Claude CLI, may include git log for context)
         self.assertTrue(mock_subprocess.called)
         # Verify status updated to in-progress
@@ -411,7 +413,7 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
             "html_url": "https://github.com/test/test/issues/43"
         }
 
-        result = spawn_claude_worker(issue)
+        result, session_limit = spawn_claude_worker(issue)
 
         # Verify failure
         self.assertFalse(result)
@@ -438,7 +440,7 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
             "html_url": "https://github.com/test/test/issues/44"
         }
 
-        result = spawn_claude_worker(issue)
+        result, session_limit = spawn_claude_worker(issue)
 
         # Verify timeout handled
         self.assertFalse(result)
@@ -466,7 +468,7 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
             "html_url": "https://github.com/test/test/issues/45"
         }
 
-        result = spawn_claude_worker(issue)
+        result, session_limit = spawn_claude_worker(issue)
 
         # Verify exception handled
         self.assertFalse(result)
@@ -503,7 +505,7 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
             "html_url": "https://github.com/test/test/issues/46"
         }
 
-        result = spawn_claude_worker(issue)
+        result, session_limit = spawn_claude_worker(issue)
 
         # Verify success
         self.assertTrue(result)
@@ -529,12 +531,15 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
         # Mock subprocess success
         mock_result = MagicMock()
         mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
         mock_subprocess.return_value = mock_result
 
-        result = spawn_ceo_poke()
+        result, session_limit = spawn_ceo_poke()
 
         # Verify success
         self.assertTrue(result)
+        self.assertIsNone(session_limit)
         # Verify subprocess called
         mock_subprocess.assert_called_once()
         # Verify context gathered
@@ -556,9 +561,11 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
         # Mock subprocess failure
         mock_result = MagicMock()
         mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_result.stderr = ""
         mock_subprocess.return_value = mock_result
 
-        result = spawn_ceo_poke()
+        result, session_limit = spawn_ceo_poke()
 
         # Verify failure
         self.assertFalse(result)
@@ -578,7 +585,7 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
         # Mock subprocess timeout
         mock_subprocess.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=WORKER_TIMEOUT)
 
-        result = spawn_ceo_poke()
+        result, session_limit = spawn_ceo_poke()
 
         # Verify timeout handled
         self.assertFalse(result)
@@ -589,7 +596,7 @@ class TestOrchestratorMainLoop(unittest.TestCase):
 
     @patch('orchestrator.orchestrator.time.sleep')
     @patch('orchestrator.orchestrator.spawn_claude_worker')
-    @patch('orchestrator.orchestrator.fetch_prioritized_issues')
+    @patch('orchestrator.orchestrator.fetch_ready_issues')
     def test_main_loop_processes_single_issue(self, mock_fetch, mock_spawn_worker, mock_sleep):
         """Test main loop processes a single issue then enters idle."""
         # Mock: First call returns 1 issue, second call returns empty (idle)
@@ -605,7 +612,7 @@ class TestOrchestratorMainLoop(unittest.TestCase):
             [],            # Second fetch: empty queue (triggers sleep)
             KeyboardInterrupt()  # Exit loop
         ]
-        mock_spawn_worker.return_value = True
+        mock_spawn_worker.return_value = (True, None)
 
         # Run loop (will be interrupted by KeyboardInterrupt)
         try:
@@ -620,7 +627,7 @@ class TestOrchestratorMainLoop(unittest.TestCase):
 
     @patch('orchestrator.orchestrator.time.sleep')
     @patch('orchestrator.orchestrator.spawn_ceo_poke')
-    @patch('orchestrator.orchestrator.fetch_prioritized_issues')
+    @patch('orchestrator.orchestrator.fetch_ready_issues')
     def test_main_loop_triggers_ceo_poke_when_enabled(self, mock_fetch, mock_spawn_ceo, mock_sleep):
         """Test main loop triggers CEO poke when queue empty and enabled."""
         # Mock: Empty queue, then interrupt
@@ -629,7 +636,7 @@ class TestOrchestratorMainLoop(unittest.TestCase):
             [],  # Still empty after CEO poke
             KeyboardInterrupt()
         ]
-        mock_spawn_ceo.return_value = True
+        mock_spawn_ceo.return_value = (True, None)
 
         try:
             main_loop(enable_ceo_poke=True)
@@ -641,7 +648,7 @@ class TestOrchestratorMainLoop(unittest.TestCase):
 
     @patch('orchestrator.orchestrator.time.sleep')
     @patch('orchestrator.orchestrator.spawn_ceo_poke')
-    @patch('orchestrator.orchestrator.fetch_prioritized_issues')
+    @patch('orchestrator.orchestrator.fetch_ready_issues')
     def test_main_loop_ceo_poke_not_called_when_disabled(self, mock_fetch, mock_spawn_ceo, mock_sleep):
         """Test CEO poke not called when disabled."""
         # Mock: Empty queue, then interrupt
@@ -661,7 +668,7 @@ class TestOrchestratorMainLoop(unittest.TestCase):
     @patch('orchestrator.orchestrator.time.sleep')
     @patch('orchestrator.orchestrator.spawn_claude_worker')
     @patch('orchestrator.orchestrator.spawn_ceo_poke')
-    @patch('orchestrator.orchestrator.fetch_prioritized_issues')
+    @patch('orchestrator.orchestrator.fetch_ready_issues')
     def test_main_loop_ceo_poke_resets_on_new_work(self, mock_fetch, mock_spawn_ceo, mock_spawn_worker, mock_sleep):
         """Test CEO poke flag resets when new work appears after empty queue."""
         test_issue = {
@@ -679,8 +686,8 @@ class TestOrchestratorMainLoop(unittest.TestCase):
             [],  # Still empty: should trigger CEO poke again
             KeyboardInterrupt()
         ]
-        mock_spawn_ceo.return_value = True
-        mock_spawn_worker.return_value = True
+        mock_spawn_ceo.return_value = (True, None)
+        mock_spawn_worker.return_value = (True, None)
 
         try:
             main_loop(enable_ceo_poke=True)
@@ -694,7 +701,7 @@ class TestOrchestratorMainLoop(unittest.TestCase):
 
     @patch('orchestrator.orchestrator.time.sleep')
     @patch('orchestrator.orchestrator.spawn_claude_worker')
-    @patch('orchestrator.orchestrator.fetch_prioritized_issues')
+    @patch('orchestrator.orchestrator.fetch_ready_issues')
     def test_main_loop_processes_issues_until_empty(self, mock_fetch, mock_spawn_worker, mock_sleep):
         """Test main loop processes multiple issues until queue empty."""
         issue1 = {"number": 1, "title": "Issue 1", "body": "Body 1", "html_url": "http://test/1"}
@@ -709,7 +716,7 @@ class TestOrchestratorMainLoop(unittest.TestCase):
             [],                         # After processing issue3: empty
             KeyboardInterrupt()
         ]
-        mock_spawn_worker.return_value = True
+        mock_spawn_worker.return_value = (True, None)
 
         try:
             main_loop(enable_ceo_poke=False)
@@ -771,8 +778,8 @@ class TestOrchestratorRaceConditionPrevention(unittest.TestCase):
         self.assertNotIn(200, orchestrator.orchestrator.recently_closed_issues)
 
     @patch('orchestrator.orchestrator.requests.get')
-    def test_fetch_prioritized_issues_filters_recently_closed(self, mock_get):
-        """Test that fetch_prioritized_issues skips recently closed issues."""
+    def test_fetch_ready_issues_filters_recently_closed(self, mock_get):
+        """Test that fetch_ready_issues skips recently closed issues."""
         import orchestrator.orchestrator
 
         # Mock API response with two valid tasks
@@ -804,14 +811,14 @@ class TestOrchestratorRaceConditionPrevention(unittest.TestCase):
         mark_issue_closed(10)
 
         # Fetch issues
-        issues = fetch_prioritized_issues()
+        issues = fetch_ready_issues()
 
         # Verify only issue 20 is returned (issue 10 was filtered out)
         self.assertEqual(len(issues), 1)
         self.assertEqual(issues[0]["number"], 20)
 
     @patch('orchestrator.orchestrator.requests.get')
-    def test_fetch_prioritized_issues_shows_skip_count(self, mock_get):
+    def test_fetch_ready_issues_shows_skip_count(self, mock_get):
         """Test that fetch shows count of skipped recently closed issues."""
         import orchestrator.orchestrator
         from io import StringIO
@@ -851,7 +858,7 @@ class TestOrchestratorRaceConditionPrevention(unittest.TestCase):
         sys.stdout = captured_output
 
         try:
-            fetch_prioritized_issues()
+            fetch_ready_issues()
         finally:
             sys.stdout = sys.__stdout__
 

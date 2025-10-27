@@ -14,7 +14,7 @@ Maximize shareholder wealth through AI-driven trading systems.
 
 ## Roles
 
-**Human**: observer
+**Human**: Monitors the progress of the CEO and the ongoing tasks.
 **AI**: Strategy development, infrastructure, orchestrator operations, performance monitoring, Strategy approval, risk limits, capital allocation, compliance review
 
 ## Workflow
@@ -31,7 +31,9 @@ Maximize shareholder wealth through AI-driven trading systems.
 ## Execution Standards
 
 **Tool Selection** (maximize efficiency):
-- **Task[agent] > Direct tools** - Use sub-agents for multi-step workflows (reduces context loading)
+- Use sub-agents for specialised and/or multi-step workflows (reduces context loading)
+    - example: "use the code-aligner to review the implementation"
+    - see .claude/AGENT_GUIDE.md for what agents are available to use.
 - `Grep`: Known-path targeted searches only (not exploration)
 - `Read/Edit/Bash`: Single-step operations with known file paths
 - Parallel execution: Always when operations independent
