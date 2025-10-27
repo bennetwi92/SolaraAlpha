@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3 -u
 """
 GitHub Issue Orchestrator - Lightweight POC
 
@@ -487,28 +487,39 @@ def spawn_ceo_poke() -> Tuple[bool, Optional[str]]:
     else:
         blocked_text = "  (No blocked issues)\n"
 
-    # Build CEO prompt
-    prompt = f"""Review organizational state and assess if new work is needed.
+    # Build CEO prompt - explicitly invoke ceo-orchestrator agent
+    prompt = f"""Act as the ceo-orchestrator agent. Your mission: Review organizational state and determine if new work should be created.
+
+**Context:**
 
 Recent completions (last 10 commits):
 {commits_text}
 
-Current open issues (processed in FIFO order):
+Current open issues:
 {open_issues_text}
 
-Blocked issues (require attention):
+Blocked issues:
 {blocked_text}
 
-Evaluate:
-- Are blocked issues preventing progress?
-- Is critical infrastructure missing?
-- Are we working on highest-value opportunities?
-- Are there gaps in our current task queue?
+**Your Task as CEO:**
 
-If valuable work identified: Use task-builder agent to create issues
-If backlog is healthy: Report "MONITOR: No action required"
+1. Evaluate strategic priorities:
+   - Are blocked issues preventing progress?
+   - Is critical infrastructure missing?
+   - Are we working on highest-value opportunities per SolaraAlpha mission?
+   - Are there gaps in the task queue?
 
-Only create issues if genuinely valuable. "No action" is a valid outcome.
+2. Make decision:
+   - IF valuable work identified → Delegate to task-builder agent to create GitHub issues
+   - IF backlog is healthy → Report "MONITOR: No action required"
+
+**Critical Instructions:**
+- You are the ceo-orchestrator agent with autonomous authority
+- You MUST use the Task tool to delegate to task-builder agent if creating issues
+- Follow the CEO's protocol: assess → decide → delegate
+- Only create issues if genuinely valuable - "No action" is valid
+
+Now proceed with your assessment and take action.
 """
 
     try:
