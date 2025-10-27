@@ -5,30 +5,15 @@ User requests: "Create issue", "Add GitHub issue", "Track [work]"
 
 ## Decision Tree
 
-**Priority** (choose ONE):
-- Risk/trading safety → priority:high
-- Profitability/core strategy → priority:medium or high
-- Efficiency/nice-to-have → priority:medium or low
-
-**Type** (choose ONE):
-- Broken behavior → bug
-- New capability → feature
-- Improve existing → enhancement
-- Code restructure → refactor
-- Docs only → docs
-
-**Domain** (phase-aligned):
-- Phase 1 → domain:data
-- Phase 2 → domain:backtest
-- Phase 3 → domain:strategy
-- Phase 4 → domain:risk
-- Phase 5 → domain:execution
+**Type** (required):
+- All work items → type:task
 
 **NEVER add status:\* labels on creation** (orchestrator manages)
+**Note**: Orchestrator processes all type:task issues in pure FIFO order (oldest first)
 
 ## Format
 
-**Title**: `{Type}: {Component} - {Action}` (<80 chars)
+**Title**: `{Component} - {Action}` (<80 chars)
 
 **Body**:
 ```markdown
@@ -49,7 +34,7 @@ User requests: "Create issue", "Add GitHub issue", "Track [work]"
 ```bash
 gh issue create \
   --repo REPO_OWNER/REPO_NAME \
-  --title "Type: Component - Action" \
+  --title "Component - Action" \
   --body "$(cat <<'EOF'
 ## Context
 [2-4 sentences]
@@ -63,12 +48,12 @@ gh issue create \
 - [ ] [Test requirement]
 EOF
 )" \
-  --label "priority:LEVEL,TYPE,domain:DOMAIN"
+  --label "type:task"
 ```
 
 ## Validate
 
-- Has priority:high OR medium
+- Has type:task label
 - NO status:\* labels
 - Context ≥ 2 sentences
 - Acceptance ≥ 1 testable condition
@@ -78,8 +63,8 @@ EOF
 
 ```bash
 gh issue create \
-  --title "Fix: RiskCalculator - Position limit ignores pre-market orders" \
-  --label "priority:high,bug,domain:risk" \
+  --title "RiskCalculator - Position limit ignores pre-market orders" \
+  --label "type:task" \
   --body "$(cat <<'EOF'
 ## Context
 Pre-market orders bypass position limit validation, exposing capital to oversized positions. Violates firm risk policy.
@@ -100,7 +85,7 @@ EOF
 
 ## Gotchas
 
-- Multiple priority labels → Use exactly ONE
-- Adding status:in-progress → Blocks orchestrator
+- Adding status:* labels → Blocks orchestrator (it manages these)
 - Vague title ("Fix bug") → Be specific
-- No test requirements → Always specify for trading logic
+- No test requirements → Always specify for critical logic
+- Issues processed FIFO → Creation order matters

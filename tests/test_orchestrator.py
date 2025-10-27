@@ -52,7 +52,6 @@ class TestOrchestratorIssueFetching(unittest.TestCase):
                 "number": 1,
                 "title": "Task 1",
                 "labels": [
-                    {"name": "priority:high"},
                     {"name": "type:task"}
                 ],
                 "created_at": "2025-01-01T00:00:00Z"
@@ -61,7 +60,6 @@ class TestOrchestratorIssueFetching(unittest.TestCase):
                 "number": 2,
                 "title": "Task 2",
                 "labels": [
-                    {"name": "priority:medium"},
                     {"name": "type:task"}
                 ],
                 "created_at": "2025-01-02T00:00:00Z"
@@ -70,7 +68,6 @@ class TestOrchestratorIssueFetching(unittest.TestCase):
                 "number": 3,
                 "title": "Task with status label (should be filtered out)",
                 "labels": [
-                    {"name": "priority:high"},
                     {"name": "type:task"},
                     {"name": "status:in-progress"}
                 ],
@@ -78,9 +75,8 @@ class TestOrchestratorIssueFetching(unittest.TestCase):
             },
             {
                 "number": 4,
-                "title": "Low priority task",
+                "title": "Another valid task",
                 "labels": [
-                    {"name": "priority:low"},
                     {"name": "type:task"}
                 ],
                 "created_at": "2025-01-04T00:00:00Z"
@@ -89,7 +85,6 @@ class TestOrchestratorIssueFetching(unittest.TestCase):
                 "number": 5,
                 "title": "Intervention issue (should be filtered out)",
                 "labels": [
-                    {"name": "priority:high"},
                     {"name": "type:intervention"}
                 ],
                 "created_at": "2025-01-05T00:00:00Z"
@@ -98,7 +93,6 @@ class TestOrchestratorIssueFetching(unittest.TestCase):
                 "number": 6,
                 "title": "PR (should be filtered out)",
                 "labels": [
-                    {"name": "priority:high"},
                     {"name": "type:task"}
                 ],
                 "pull_request": {},
@@ -126,7 +120,6 @@ class TestOrchestratorIssueFetching(unittest.TestCase):
                 "number": 10,
                 "title": "Older task",
                 "labels": [
-                    {"name": "priority:medium"},
                     {"name": "type:task"}
                 ],
                 "created_at": "2025-01-01T00:00:00Z"
@@ -135,7 +128,6 @@ class TestOrchestratorIssueFetching(unittest.TestCase):
                 "number": 11,
                 "title": "Newer task",
                 "labels": [
-                    {"name": "priority:high"},
                     {"name": "type:task"}
                 ],
                 "created_at": "2025-01-02T00:00:00Z"
@@ -188,7 +180,7 @@ class TestOrchestratorLabelManagement(unittest.TestCase):
             "labels": [
                 {"name": "status:in-progress"},
                 {"name": "status:blocked"},
-                {"name": "priority:high"},
+                {"name": "type:task"},
             ]
         }
         mock_get_response.raise_for_status = MagicMock()
@@ -213,7 +205,6 @@ class TestOrchestratorLabelManagement(unittest.TestCase):
         mock_get_response.json.return_value = {
             "number": 1,
             "labels": [
-                {"name": "priority:high"},
                 {"name": "type:task"},
             ]
         }
@@ -524,7 +515,7 @@ class TestOrchestratorWorkerSpawning(unittest.TestCase):
         # Mock context data
         mock_commits.return_value = ["abc123: Recent commit"]
         mock_open_issues.return_value = [
-            {"number": 1, "title": "Open issue", "labels": [{"name": "priority:high"}]}
+            {"number": 1, "title": "Open issue", "labels": [{"name": "type:task"}]}
         ]
         mock_blocked_issues.return_value = []
 
@@ -789,7 +780,6 @@ class TestOrchestratorRaceConditionPrevention(unittest.TestCase):
                 "number": 10,
                 "title": "Task 10",
                 "labels": [
-                    {"name": "priority:high"},
                     {"name": "type:task"}
                 ],
                 "created_at": "2025-01-01T00:00:00Z"
@@ -798,7 +788,6 @@ class TestOrchestratorRaceConditionPrevention(unittest.TestCase):
                 "number": 20,
                 "title": "Task 20",
                 "labels": [
-                    {"name": "priority:high"},
                     {"name": "type:task"}
                 ],
                 "created_at": "2025-01-02T00:00:00Z"
@@ -831,7 +820,6 @@ class TestOrchestratorRaceConditionPrevention(unittest.TestCase):
                 "number": 1,
                 "title": "Task 1",
                 "labels": [
-                    {"name": "priority:high"},
                     {"name": "type:task"}
                 ],
                 "created_at": "2025-01-01T00:00:00Z"
@@ -840,7 +828,6 @@ class TestOrchestratorRaceConditionPrevention(unittest.TestCase):
                 "number": 2,
                 "title": "Task 2",
                 "labels": [
-                    {"name": "priority:high"},
                     {"name": "type:task"}
                 ],
                 "created_at": "2025-01-02T00:00:00Z"

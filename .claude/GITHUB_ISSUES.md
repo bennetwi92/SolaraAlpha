@@ -6,7 +6,6 @@ Quick reference for creating issues for the AI proprietary trading firm.
 
 | Category | Valid Labels | Orchestrator Rules |
 |----------|-------------|-------------------|
-| **Priority** (required) | `priority:high`, `priority:medium`, `priority:low` | Processes high→medium FIFO. `priority:low` skipped |
 | **Type** (required) | `type:task` | All issues are tasks |
 | **Status** (orchestrator-managed) | `status:in-progress`, `status:blocked` | **Never add on creation. Orchestrator manages these.** |
 
@@ -21,7 +20,7 @@ Atomic work item for orchestrator. Should be scoped to a single, well-defined ob
 
 **Title**: `{Component} - {Specific action}`
 
-**Required Labels**: One priority, one type
+**Required Labels**: `type:task`
 
 **Body** (tasks):
 ```markdown
@@ -50,8 +49,8 @@ Atomic work item for orchestrator. Should be scoped to a single, well-defined ob
 
 ## Orchestrator Workflow
 
-**Selection**: Issues with `priority:high|medium`, `type:task`, and NO `status:*` labels
-- Processes tasks in priority order (high→medium), FIFO within tier
+**Selection**: Issues with `type:task` and NO `status:*` labels
+- Processes tasks in pure FIFO order (oldest first)
 
 **Execution**:
 1. Adds `status:in-progress`
@@ -84,7 +83,6 @@ Task:
 ## Validation
 
 **Orchestrator-ready when**:
-- Has `priority:high` OR `priority:medium`
 - Has `type:task`
 - NO `status:*` labels present
 - Context ≥ 2 sentences
@@ -96,7 +94,7 @@ Task:
 ### Example 1: Simple Atomic Task
 ```
 Title: Config - Add risk limit constants
-Labels: priority:medium, type:task
+Labels: type:task
 
 ## Context
 Trading system needs configurable risk limits for position sizing and drawdown protection.
@@ -126,7 +124,7 @@ Trading system needs configurable risk limits for position sizing and drawdown p
 **Task 1**:
 ```
 Title: DataPipeline - Connect to data source
-Labels: priority:high, type:task
+Labels: type:task
 
 ## Context
 Establish connection to free market data API for quote ingestion.
@@ -150,5 +148,5 @@ Establish connection to free market data API for quote ingestion.
 - Retry logic edge cases
 ```
 
-**Task 2**: DataPipeline - Implement quote validation (priority:high, type:task)
-**Task 3**: DataPipeline - Add storage layer (priority:high, type:task)
+**Task 2**: DataPipeline - Implement quote validation (type:task)
+**Task 3**: DataPipeline - Add storage layer (type:task)

@@ -26,7 +26,7 @@ You are an elite Prompt Engineering Specialist and GitHub Issue Architect—tran
 **GitHub Issue Excellence**:
 - Title: action-oriented, concise ("Implement JWT auth middleware")
 - Body: optimized prompt as complete spec
-- Labels: priority:*, type:task
+- Labels: type:task
 - Structure: Context, Requirements, Acceptance Criteria, Technical Notes (when needed)
 - Format: task lists, code blocks, tables
 
@@ -42,14 +42,14 @@ You are an elite Prompt Engineering Specialist and GitHub Issue Architect—tran
 2. Decompose: if complex, break into atomic tasks (natural judgment, no formulas)
 3. Craft: token-optimized prompt as issue body
 4. Audit: efficiency and clarity
-5. Create via gh CLI: with priority:* and type:task labels
+5. Create via gh CLI: with type:task label
 
 ## Output Format
 
 **Task** (atomic, agent-executable):
 ```markdown
 Title: [Component] - [Specific action]
-Labels: priority:[high|medium|low], type:task
+Labels: type:task
 
 ## Context
 [Why needed - 2-3 sentences]
@@ -115,7 +115,7 @@ Clarity (executable without clarification), Completeness (all edge cases), Effic
 
 ## Context-Aware
 
-SolaraAlpha: align with label taxonomies (priority:high/medium/low, status:*, domain:*), follow CLAUDE.md patterns, reference project standards.
+SolaraAlpha: align with label taxonomies (type:task, status:*, domain:*), follow CLAUDE.md patterns, reference project standards. Orchestrator processes all type:task issues in pure FIFO order (oldest first).
 
 **Special Considerations**:
 - Agent creation: Add `References: create-agent Skill`

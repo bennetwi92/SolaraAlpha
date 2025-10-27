@@ -13,11 +13,11 @@ export GITHUB_TOKEN=$(gh auth token)
 which claude
 
 # Check labels exist
-gh label list | grep "priority:high"
+gh label list | grep "type:task"
 # If missing: bash scripts/setup_labels.sh
 
 # Check ready issues
-gh issue list --label "priority:high" --label "priority:medium" --state open
+gh issue list --label "type:task" --state open
 ```
 
 ## Start
@@ -27,7 +27,7 @@ cd /Users/williambennett/Github/SolaraAlpha
 python src/orchestrator/orchestrator.py
 ```
 
-**Flow**: Fetch priority:high|medium + NO status → Sort → Spawn worker → Update labels → Refresh
+**Flow**: Fetch type:task + NO status → Sort FIFO (oldest first) → Spawn worker → Update labels → Refresh
 
 ## Stop
 
@@ -54,11 +54,11 @@ python src/orchestrator/orchestrator.py
 **No issues processed**:
 ```bash
 # Check labels
-gh issue list --label "priority:high" --state open
-# If missing NO status:* labels, add them
+gh issue list --label "type:task" --state open
+# Verify issue has NO status:* labels
 
-# Add priority if needed
-gh issue edit <number> --add-label "priority:high"
+# Add type:task if needed
+gh issue edit <number> --add-label "type:task"
 ```
 
 **Worker timeout**:
