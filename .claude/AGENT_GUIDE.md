@@ -6,9 +6,6 @@
 **task-builder**: GitHub issues from requirements, decompose features, estimate complexity
 **team-builder**: Design/optimize agents, research roles, write agent prompts
 **skill-builder**: Capture reusable patterns, document best practices, prevent mistakes
-**strategy-researcher**: Research novel trading strategies (quantitative, qualitative, historical analysis)
-**strategy-developer**: Implement production-ready strategies with tests, backtesting, risk controls
-**infrastructure-engineer**: Build/optimize infrastructure, data pipelines, performance, monitoring, CI/CD
 **latency-hunter**: Performance optimization, bottleneck identification, complexity analysis, query optimization, memory profiling
 **quant-alchemist**: Quantitative investment analysis, statistical modeling, ML, volatility forecasts, risk-adjusted metrics
 **scenario-architect**: Forward-looking scenarios, stress testing, Monte Carlo, VaR/CVaR, tail risk, portfolio resilience
@@ -28,9 +25,6 @@ Session start/strategy? → **ceo-orchestrator**
 Create/optimize agent? → **team-builder**
 GitHub issue? → **task-builder**
 Reusable pattern? → **skill-builder**
-Strategy research? → **strategy-researcher**
-Strategy implementation? → **strategy-developer**
-Infrastructure/pipelines? → **infrastructure-engineer**
 Performance/optimization/bottlenecks? → **latency-hunter**
 Quantitative analysis/modeling? → **quant-alchemist**
 Scenario planning/stress testing? → **scenario-architect**

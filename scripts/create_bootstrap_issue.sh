@@ -30,7 +30,7 @@ You have **full autonomy** to decide:
 
 **Available resources:**
 - Read `CLAUDE.md` for mission and principles
-- Available agents: task-builder, team-builder, skill-builder, general-purpose
+- Available agents: read .claude/AGENT_GUIDE.md for available agents
 - Constraint: All technologies/services must be free
 
 ## Acceptance Criteria
@@ -41,7 +41,7 @@ You have **full autonomy** to decide:
 
 ## Execution
 
-**Agent**: See `.claude/agents/ceo-orchestrator.md`
+**Agent**: Use the ceo-orchestrator agent to perform this task.
 
 This is an AI-only organization optimizing for AI-to-AI workflows. Make decisions that maximize long-term shareholder value.
 EOF
