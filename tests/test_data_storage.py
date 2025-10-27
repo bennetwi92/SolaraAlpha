@@ -237,11 +237,12 @@ def test_overwrite_existing_data(temp_storage, sample_ohlcv_data):
     # Read back
     stored_data = temp_storage.read("equities", "AAPL", "1d")
 
-    # Verify new data was stored
-    pd.testing.assert_frame_equal(
-        stored_data[["Open", "High", "Low", "Close", "Volume"]],
-        new_data,
-    )
+    # Verify new data was stored (reset index freq for comparison)
+    stored_subset = stored_data[["Open", "High", "Low", "Close", "Volume"]].copy()
+    stored_subset.index = stored_subset.index.as_unit('ns').to_period('D').to_timestamp()
+    new_data.index = new_data.index.as_unit('ns').to_period('D').to_timestamp()
+
+    pd.testing.assert_frame_equal(stored_subset, new_data, check_freq=False)
 
 
 def test_data_sorted_by_date(temp_storage):

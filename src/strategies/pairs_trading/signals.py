@@ -364,12 +364,19 @@ class SignalGenerator:
         drawdown = (cumulative - running_max) / running_max
         max_drawdown = drawdown.min()
 
-        # Win rate
-        winning_trades = (strategy_returns > 0).sum()
-        total_trades = (signals_df["signal"] != 0).sum()
+        # Win rate - only count periods when we had a position
+        # (not just signal generation events)
+        position_mask = signals_df["position"].shift(1) != 0
+        winning_periods = ((strategy_returns > 0) & position_mask).sum()
+        total_periods_in_position = position_mask.sum()
         win_rate = (
-            winning_trades / total_trades if total_trades > 0 else 0.0
+            winning_periods / total_periods_in_position
+            if total_periods_in_position > 0
+            else 0.0
         )
+
+        # Count total number of signal generation events
+        total_trades = (signals_df["signal"] != 0).sum()
 
         metrics = {
             "total_return": total_return,

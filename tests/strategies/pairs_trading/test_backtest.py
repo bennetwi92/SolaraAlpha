@@ -17,16 +17,28 @@ def cointegrated_series():
     np.random.seed(42)
     n = 252  # 1 year
 
+    # Generate base random walk for series2
     series2 = pd.Series(
         100 + np.cumsum(np.random.randn(n) * 0.5),
         index=pd.date_range("2023-01-01", periods=n),
     )
 
     hedge_ratio = 1.5
-    # Add STRONG mean-reverting component for reliable cointegration
-    noise = np.sin(np.linspace(0, 8 * np.pi, n)) * 5 + np.random.randn(n) * 0.5
+    # Create cointegrated series with mean-reverting spread
+    # Use OU process for the spread: dx = theta * (mu - x) * dt + sigma * dW
+    spread = np.zeros(n)
+    theta = 0.5  # Mean reversion speed
+    mu = 0  # Long-term mean
+    sigma = 0.5  # Volatility
+    dt = 1.0
+
+    for i in range(1, n):
+        spread[i] = spread[i-1] + theta * (mu - spread[i-1]) * dt + \
+                   sigma * np.random.randn() * np.sqrt(dt)
+
+    # Construct series1 from series2 and mean-reverting spread
     series1 = pd.Series(
-        hedge_ratio * series2.values + noise,
+        hedge_ratio * series2.values + spread,
         index=series2.index,
     )
 

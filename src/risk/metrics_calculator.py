@@ -219,7 +219,8 @@ class RiskMetricsCalculator:
         mean_return = recent_returns.mean()
         std_return = recent_returns.std()
 
-        if std_return == 0:
+        # Check for zero or near-zero volatility (numerical precision)
+        if std_return < 1e-10:
             return 0.0
 
         # Annualize (assuming 252 trading days)

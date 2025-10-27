@@ -276,7 +276,7 @@ def test_pipeline_with_warnings(mock_ticker, temp_pipeline):
     data = pd.DataFrame(
         {
             "Open": [100] * 10,
-            "High": [105] * 10,
+            "High": [100, 105, 105, 125, 105, 105, 105, 105, 105, 105],  # High must be >= Close
             "Low": [95] * 10,
             "Close": [100, 100, 100, 120, 100, 100, 100, 100, 100, 100],  # 20% spike
             "Volume": [1000000] * 10,
