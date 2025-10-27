@@ -25,7 +25,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import quote
 
 try:
@@ -51,9 +51,45 @@ CLAUDE_CLI_PATH = os.path.expanduser("~/.claude/local/claude")
 WORKER_TIMEOUT = 1200  # 20 minutes
 IDLE_SLEEP_SECONDS = 300  # 5 minutes
 MAX_COMMENT_LENGTH = 65000  # GitHub limit is 65,536; leave buffer for formatting
+POST_CLOSE_DELAY = 3  # Seconds to wait after closing issue (allows GitHub API to propagate)
+RECENTLY_CLOSED_TTL = 60  # Seconds to remember closed issues in memory
 
 # Initialize context manager
 context_mgr = ContextManager(repo_root=REPO_ROOT)
+
+# In-memory cache to prevent race condition with GitHub API propagation
+# Tracks (issue_number, timestamp) pairs for recently closed issues
+recently_closed_issues: Dict[int, datetime] = {}
+
+
+def clean_recently_closed_cache():
+    """
+    Remove entries from recently_closed_issues older than RECENTLY_CLOSED_TTL.
+
+    Prevents memory growth and allows re-processing of issues that were legitimately
+    reopened after the TTL period.
+    """
+    global recently_closed_issues
+    now = datetime.now()
+    expired = [
+        issue_num
+        for issue_num, timestamp in recently_closed_issues.items()
+        if (now - timestamp).total_seconds() > RECENTLY_CLOSED_TTL
+    ]
+    for issue_num in expired:
+        del recently_closed_issues[issue_num]
+
+
+def mark_issue_closed(issue_num: int):
+    """
+    Mark an issue as recently closed to prevent immediate re-processing.
+
+    Args:
+        issue_num: GitHub issue number to mark as closed
+    """
+    global recently_closed_issues
+    recently_closed_issues[issue_num] = datetime.now()
+    clean_recently_closed_cache()
 
 
 def detect_session_limit(output: str) -> Optional[str]:
@@ -163,6 +199,7 @@ def fetch_ready_issues() -> List[Dict]:
     Only processes type:task issues. Excludes:
     - Issues with any status:* labels (already being processed)
     - type:intervention issues (human-only)
+    - Issues in recently_closed_issues cache (race condition prevention)
 
     Returns:
         List of issue dictionaries sorted by creation date (FIFO - oldest first)
@@ -172,6 +209,9 @@ def fetch_ready_issues() -> List[Dict]:
         sys.exit(1)
 
     print(f"[FETCH] Fetching issues from {REPO_OWNER}/{REPO_NAME}...")
+
+    # Clean up old entries from recently closed cache
+    clean_recently_closed_cache()
 
     try:
         # Fetch all open issues sorted by creation date (FIFO)
@@ -188,7 +228,9 @@ def fetch_ready_issues() -> List[Dict]:
 
         # Filter for ready-to-process tasks
         ready_issues = []
+        skipped_recently_closed = 0
         for issue in all_issues:
+            issue_num = issue["number"]
             issue_labels = {label["name"] for label in issue.get("labels", [])}
 
             # Must have type:task (skip interventions)
@@ -197,12 +239,20 @@ def fetch_ready_issues() -> List[Dict]:
             has_status = any(label.startswith("status:") for label in issue_labels)
             # Skip pull requests (they have pull_request field)
             is_pr = "pull_request" in issue
+            # Skip if recently closed (race condition prevention)
+            is_recently_closed = issue_num in recently_closed_issues
 
-            # Include ONLY if: type:task AND no status labels AND not a PR
-            if has_task_type and not has_status and not is_pr:
+            # Include ONLY if: type:task AND no status labels AND not a PR AND not recently closed
+            if has_task_type and not has_status and not is_pr and not is_recently_closed:
                 ready_issues.append(issue)
+            elif is_recently_closed and has_task_type and not has_status:
+                # Track how many we're skipping due to recent close
+                skipped_recently_closed += 1
 
-        print(f"[FETCH] Found {len(ready_issues)} ready issues (FIFO order)")
+        msg = f"[FETCH] Found {len(ready_issues)} ready issues (FIFO order)"
+        if skipped_recently_closed > 0:
+            msg += f" [skipped {skipped_recently_closed} recently closed]"
+        print(msg)
         return ready_issues
 
     except requests.exceptions.RequestException as e:
@@ -626,7 +676,13 @@ This issue will be retried automatically - no action required.
             print("[LABEL] Removing status labels...")
             remove_status_labels(issue_num)
             print("[CLOSE] Closing issue...")
-            if not close_issue(issue_num):
+            if close_issue(issue_num):
+                # Mark issue as recently closed to prevent race condition
+                mark_issue_closed(issue_num)
+                # Brief delay to allow GitHub API to propagate the close state
+                print(f"[DELAY] Waiting {POST_CLOSE_DELAY}s for GitHub API propagation...")
+                time.sleep(POST_CLOSE_DELAY)
+            else:
                 print("[WARNING] Could not close issue, but task completed successfully")
             return True, None
         else:
