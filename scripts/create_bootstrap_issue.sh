@@ -5,7 +5,7 @@ set -e
 
 gh issue create --repo bennetwi92/SolaraAlpha \
   --title "Organization - Initialize SolaraAlpha trading firm" \
-  --label "priority:high,type:task" \
+  --label "type:task" \
   --body "$(cat <<'EOF'
 ## Context
 
