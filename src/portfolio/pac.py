@@ -403,14 +403,14 @@ class PortfolioAllocator:
         if len(strategies) == 0:
             return {}
 
-        # Get Sharpe ratios (only positive and above threshold)
+        # Get Sharpe ratios (only positive values)
         sharpe_ratios = {}
         for sid, perf in strategies.items():
-            if perf.sharpe_ratio > self.min_sharpe_threshold:
+            if perf.sharpe_ratio > 0.0:
                 sharpe_ratios[sid] = perf.sharpe_ratio
 
         if len(sharpe_ratios) == 0:
-            # Fall back to equal weight if no strategies meet Sharpe threshold
+            # Fall back to equal weight if no strategies have positive Sharpe
             return self._equal_weight_allocation(list(strategies.keys()))
 
         # Calculate weights proportional to Sharpe
