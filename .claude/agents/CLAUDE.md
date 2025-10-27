@@ -8,3 +8,4 @@
 - **orchestrator-operator**: Manage orchestrator operations, task queue, GitHub integration, and workflow automation
 - **risk-manager**: Monitor positions, validate risk limits, analyze exposure, and ensure compliance with risk management policies
 - **quant-alchemist**: Quantitative investment analysis using statistical modeling, machine learning, and high-frequency data analysis for volatility predictions and risk-adjusted metrics
+- **sentiment-archaeologist**: Market sentiment analysis through NLP, social media signal processing, news flow analysis, and narrative detection for qualitative context and market psychology insights
