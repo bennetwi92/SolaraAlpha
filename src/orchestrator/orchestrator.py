@@ -3,11 +3,14 @@
 GitHub Issue Orchestrator - Lightweight POC
 
 Automatically processes GitHub issues by:
-1. Fetching open issues with priority:high or priority:medium labels
-2. Sorting FIFO (oldest first) within priority tier
+1. Fetching open issues with type:task label (no status:* labels)
+2. Processing in pure FIFO order (oldest first)
 3. Spawning Claude Code workers to process issues
 4. Updating GitHub labels to track state
 5. Optionally pokes CEO for strategic assessment when queue is empty
+
+Philosophy: Trust the system (CEO + task-builder) to only create important work.
+All tasks are treated equally and processed in creation order.
 
 Usage:
     export GITHUB_TOKEN="ghp_..."
@@ -154,15 +157,15 @@ def wait_for_session_reset(reset_message: str) -> bool:
     return True
 
 
-def fetch_prioritized_issues() -> List[Dict]:
+def fetch_ready_issues() -> List[Dict]:
     """
-    Fetch open issues from GitHub with priority:high or priority:medium labels.
+    Fetch open issues ready for processing.
     Only processes type:task issues. Excludes:
     - Issues with any status:* labels (already being processed)
     - type:intervention issues (human-only)
 
     Returns:
-        List of issue dictionaries sorted by priority (high first) then creation date (FIFO)
+        List of issue dictionaries sorted by creation date (FIFO - oldest first)
     """
     if not GITHUB_TOKEN:
         print("[ERROR] GITHUB_TOKEN environment variable not set")
@@ -171,7 +174,7 @@ def fetch_prioritized_issues() -> List[Dict]:
     print(f"[FETCH] Fetching issues from {REPO_OWNER}/{REPO_NAME}...")
 
     try:
-        # Fetch all open issues (GitHub API doesn't support OR in label filters)
+        # Fetch all open issues sorted by creation date (FIFO)
         params = {
             "state": "open",
             "per_page": 100,
@@ -183,15 +186,11 @@ def fetch_prioritized_issues() -> List[Dict]:
         response.raise_for_status()
         all_issues = response.json()
 
-        # Filter for priority and type labels
-        priority_labels = {"priority:high", "priority:medium"}
-
-        filtered_issues = []
+        # Filter for ready-to-process tasks
+        ready_issues = []
         for issue in all_issues:
             issue_labels = {label["name"] for label in issue.get("labels", [])}
 
-            # Check if has priority label
-            has_priority = bool(issue_labels & priority_labels)
             # Must have type:task (skip interventions)
             has_task_type = "type:task" in issue_labels
             # Skip if ANY status:* label exists (already being processed)
@@ -199,28 +198,12 @@ def fetch_prioritized_issues() -> List[Dict]:
             # Skip pull requests (they have pull_request field)
             is_pr = "pull_request" in issue
 
-            # Include ONLY if: has priority AND type:task AND no status labels AND not a PR
-            if has_priority and has_task_type and not has_status and not is_pr:
-                filtered_issues.append(issue)
+            # Include ONLY if: type:task AND no status labels AND not a PR
+            if has_task_type and not has_status and not is_pr:
+                ready_issues.append(issue)
 
-        # Sort: priority:high first, then by created_at (already sorted by API)
-        high_priority = [
-            i
-            for i in filtered_issues
-            if "priority:high" in {l["name"] for l in i["labels"]}
-        ]
-        medium_priority = [
-            i
-            for i in filtered_issues
-            if "priority:medium" in {l["name"] for l in i["labels"]}
-        ]
-
-        sorted_issues = high_priority + medium_priority
-
-        print(
-            f"[FETCH] Found {len(sorted_issues)} issues ({len(high_priority)} high, {len(medium_priority)} medium)"
-        )
-        return sorted_issues
+        print(f"[FETCH] Found {len(ready_issues)} ready issues (FIFO order)")
+        return ready_issues
 
     except requests.exceptions.RequestException as e:
         print(f"[ERROR] Failed to fetch issues: {e}")
@@ -460,7 +443,7 @@ def spawn_ceo_poke() -> Tuple[bool, Optional[str]]:
 Recent completions (last 10 commits):
 {commits_text}
 
-Current open issues:
+Current open issues (processed in FIFO order):
 {open_issues_text}
 
 Blocked issues (require attention):
@@ -470,7 +453,7 @@ Evaluate:
 - Are blocked issues preventing progress?
 - Is critical infrastructure missing?
 - Are we working on highest-value opportunities?
-- Should low-priority work be escalated?
+- Are there gaps in our current task queue?
 
 If valuable work identified: Use task-builder agent to create issues
 If backlog is healthy: Report "MONITOR: No action required"
@@ -775,9 +758,9 @@ def main_loop(enable_ceo_poke: bool = False):
             total_failed = 0
 
             while True:
-                # Fetch prioritized issues (refresh on each iteration)
+                # Fetch ready issues (refresh on each iteration)
                 print("\n[REFRESH] Fetching latest issues...")
-                issues = fetch_prioritized_issues()
+                issues = fetch_ready_issues()
 
                 if not issues:
                     # Queue is empty
