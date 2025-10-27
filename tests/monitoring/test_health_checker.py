@@ -209,7 +209,9 @@ class TestHealthChecker:
             mock_rm = Mock()
             mock_rm.position_tracker = Mock()
             mock_rm.circuit_breaker = Mock()
-            mock_rm.circuit_breaker.get_state.return_value = Mock(name="ACTIVE")
+            mock_rm.circuit_breaker.get_state.return_value = Mock(
+                is_active=False, trigger_reason=None
+            )
             mock_risk_manager.return_value = mock_rm
 
             result = checker._check_risk_management()

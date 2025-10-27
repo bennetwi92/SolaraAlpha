@@ -5,7 +5,6 @@ management, execution layer, and system resources.
 """
 
 import logging
-import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -15,7 +14,6 @@ from typing import Dict, List, Optional
 import psutil
 
 from src.data.pipeline import DataPipeline
-from src.execution.clients.base import ExecutionClient
 from src.risk.risk_manager import RiskManager
 
 logger = logging.getLogger(__name__)
@@ -169,7 +167,7 @@ class HealthChecker:
             pipeline = DataPipeline()
 
             # Check storage directory access
-            storage_dir = Path(pipeline.storage.base_dir)
+            storage_dir = Path(pipeline.storage.base_path)
             if not storage_dir.exists():
                 storage_dir.mkdir(parents=True, exist_ok=True)
 
@@ -216,11 +214,11 @@ class HealthChecker:
 
             # Check circuit breaker state
             cb_state = risk_mgr.circuit_breaker.get_state()
-            if cb_state.name == "TRIPPED":
+            if cb_state.is_active:
                 return HealthCheckResult(
                     component="risk_management",
                     status=HealthStatus.DEGRADED,
-                    message="Circuit breaker is TRIPPED",
+                    message=f"Circuit breaker is TRIPPED: {cb_state.trigger_reason}",
                     metrics={"circuit_breaker_active": 0.0},
                 )
 
@@ -242,12 +240,12 @@ class HealthChecker:
         """Check execution layer connectivity."""
         try:
             # Check if execution config exists
-            from src.execution.config import ExecutionConfig
+            from src.execution.config import load_alpaca_config
 
-            config = ExecutionConfig.from_env()
+            config = load_alpaca_config()
 
             # For paper trading, verify API keys are set
-            if not config.alpaca_api_key or not config.alpaca_secret_key:
+            if not config.api_key or not config.secret_key:
                 return HealthCheckResult(
                     component="execution_layer",
                     status=HealthStatus.UNHEALTHY,
