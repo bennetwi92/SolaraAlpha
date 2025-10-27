@@ -26,3 +26,7 @@ dependencies:
     - python-dotenv
     - ccxt
     - psutil
+    - fastapi
+    - uvicorn[standard]
+    - websockets
+    - aiosqlite
