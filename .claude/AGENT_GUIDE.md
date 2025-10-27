@@ -6,6 +6,9 @@
 **task-builder**: GitHub issues from requirements, decompose features, estimate complexity
 **team-builder**: Design/optimize agents, research roles, write agent prompts
 **skill-builder**: Capture reusable patterns, document best practices, prevent mistakes
+**strategy-researcher**: Research novel trading strategies (quantitative, qualitative, historical analysis)
+**strategy-developer**: Implement production-ready strategies with tests, backtesting, risk controls
+**infrastructure-engineer**: Build/optimize infrastructure, data pipelines, performance, monitoring, CI/CD
 **Explore**: Codebase navigation, find files/code, understand architecture (quick/medium/thorough)
 **general-purpose**: Multi-step tasks, research, no specialized match
 
@@ -15,6 +18,9 @@ Session start/strategy? → **ceo-orchestrator**
 Create/optimize agent? → **team-builder**
 GitHub issue? → **task-builder**
 Reusable pattern? → **skill-builder**
+Strategy research? → **strategy-researcher**
+Strategy implementation? → **strategy-developer**
+Infrastructure/pipelines/performance? → **infrastructure-engineer**
 Explore codebase? → **Explore**
 Multi-step? → **general-purpose**
 Single-step? → Direct tool (Read/Edit/Grep/Glob/Bash)
