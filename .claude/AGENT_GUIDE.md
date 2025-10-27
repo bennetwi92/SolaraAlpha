@@ -9,6 +9,9 @@
 **strategy-researcher**: Research novel trading strategies (quantitative, qualitative, historical analysis)
 **strategy-developer**: Implement production-ready strategies with tests, backtesting, risk controls
 **infrastructure-engineer**: Build/optimize infrastructure, data pipelines, performance, monitoring, CI/CD
+**quant-alchemist**: Quantitative investment analysis, statistical modeling, ML, volatility forecasts, risk-adjusted metrics
+**scenario-architect**: Forward-looking scenarios, stress testing, Monte Carlo, VaR/CVaR, tail risk, portfolio resilience
+**contrarian-heretic**: Challenge consensus, red-team analysis, counter-evidence, premortem failure scenarios, bias mitigation
 **Explore**: Codebase navigation, find files/code, understand architecture (quick/medium/thorough)
 **general-purpose**: Multi-step tasks, research, no specialized match
 
@@ -21,6 +24,8 @@ Reusable pattern? → **skill-builder**
 Strategy research? → **strategy-researcher**
 Strategy implementation? → **strategy-developer**
 Infrastructure/pipelines/performance? → **infrastructure-engineer**
+Quantitative analysis/modeling? → **quant-alchemist**
+Scenario planning/stress testing? → **scenario-architect**
 Explore codebase? → **Explore**
 Multi-step? → **general-purpose**
 Single-step? → Direct tool (Read/Edit/Grep/Glob/Bash)
