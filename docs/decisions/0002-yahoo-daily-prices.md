@@ -10,7 +10,7 @@ Building weekly bars ourselves makes the period boundary and the "only complete 
 explicit, and keeps daily data available for quality checks. No caching for now.
 
 History: fetch the last 5 years, then `trim_to_consistent` drops everything up to the last
-*blocking* issue (missing/zero/stale/gaps/duplicates), so the start date is chosen per stock
+*blocking* issue (missing/non-positive/stale/gaps/duplicates; relaxed in 0012), so the start date is chosen per stock
 from its own data. Large moves and close-outside-high/low are reported but don't cut.
 
 **Consequences.** The endpoint is unofficial and may change or block us; terms are personal

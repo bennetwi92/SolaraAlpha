@@ -12,11 +12,10 @@ import pandas as pd
 from solaraalpha.data.prices import COLUMNS
 
 PRICE_COLS = ["open", "high", "low", "close", "adj_close"]
-# Issues that mean the data isn't real trading data. Large moves (often real) and OHLC
-# inconsistencies (close outside high/low; harmless for close-to-close returns) don't count.
-BLOCKING = frozenset(
-    {"missing", "non_positive_price", "zero_volume", "gap", "stale", "duplicate_date"}
-)
+# Issues that mean the data isn't real trading data. Large moves (often real), OHLC
+# inconsistencies (close outside high/low; harmless for close-to-close returns) and zero-volume
+# days (normal for thinly traded AIM stocks) don't count — see docs/decisions/0012.
+BLOCKING = frozenset({"missing", "non_positive_price", "gap", "stale", "duplicate_date"})
 # For series used only for close-to-close returns (indices, ETFs, FX as comparisons): volume
 # doesn't matter, and a missing or duplicated day is dropped / de-duplicated by clean_prices.
 CLOSE_ONLY_BLOCKING = frozenset({"non_positive_price", "gap", "stale"})
@@ -26,7 +25,7 @@ def check_prices(
     df: pd.DataFrame,
     max_abs_return: float = 0.25,
     max_gap_days: int = 7,
-    max_stale_days: int = 5,
+    max_stale_days: int = 20,
 ) -> pd.DataFrame:
     """Return one row per issue found: ``date``, ``check``, ``detail``. Empty means clean.
 
@@ -93,8 +92,12 @@ def trim_to_consistent(
     df: pd.DataFrame, issues: pd.DataFrame, blocking: frozenset[str] = BLOCKING
 ) -> pd.DataFrame:
     """Keep only the data after the last ``blocking`` issue, so the series is consistent
-    from its first date on. The cutoff differs per stock; check how much is left."""
+    from its first date on. The cutoff differs per stock; check how much is left.
+
+    Issues on rows no longer in ``df`` (e.g. a no-trade bar with no close, dropped by
+    :func:`clean_prices`) don't cut: they aren't in the data being used."""
     dates = issues.loc[issues["check"].isin(blocking), "date"].dropna()
+    dates = dates[dates.isin(df.index)]
     return df if dates.empty else df[df.index > dates.max()]
 
 
