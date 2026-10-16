@@ -103,6 +103,7 @@ Current state:
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
 | Book trades by hand (draft, approve, amend, reject, tickets, placed, fills, exits) | `uv run python scripts/book.py new JET2.L --entry 1520 --stop 1400 --qty 100` / `list` / `show ID` / `approve ID` / `amend ID --qty N --price P --stop P` / `reject ID --reason TEXT` / `tickets` / `placed ORDER_ID --ref REF` / `fill ORDER_ID --qty N --price P [--commission X]` / `unfilled ORDER_ID` / `cancel ORDER_ID` / `expire` / `exit ID --reason stop|target|thesis_broken|...` (`--db PATH` for a local file) |
+| Portfolio view: holdings, cash, equity, heat, sector exposure, breaches | `uv run python scripts/portfolio.py [--save] [--price JET2.L=1520]` (cash in: `book.py cash deposit 10000`) |
 | Results DB: which is in use, copy local ↔ Turso | `uv run python scripts/db.py status` / `push [--from PATH] [--append-new-runs]` / `pull [--to PATH]` |
 | Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `relative_strength` / `fundamentals` / `jet2_value` / `scan` |
 | Notebooks | `make notebook` |
@@ -155,9 +156,11 @@ src/solaraalpha/        importable package — all reusable code lives here
                         append-only event tables in the results DB; booking operations (draft,
                         approve, amend, fill → protective stop, exit → auto-close);
                         position_state, close_summary, to_account
+    risk.py             holdings / equity / heat / exposure / breaches vs the rules; sector_of
+                        (optional `sector` per stock in config/benchmarks.toml)
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM UK 50 snapshot)
-config/benchmarks.toml  per-stock market / industry / peers for relative strength
+config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)
 config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeholders until confirmed)
 .github/workflows/      ci.yml (checks), scan.yml (weekly pipeline, Sunday), stock.yml (one stock)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
