@@ -1,0 +1,173 @@
+{
+ "took": 33,
+ "timed_out": false,
+ "_shards": {
+  "failed": 0.0,
+  "skipped": 0.0,
+  "successful": 4.0,
+  "total": 4.0
+ },
+ "hits": {
+  "total": {
+   "relation": "eq",
+   "value": 5
+  },
+  "hits": [
+   {
+    "_index": "fca-nsm-searchdata",
+    "_id": "7367f782-09bd-4d9a-8ace-711da97de962",
+    "_source": {
+     "submitted_date": "2026-10-01T07:42:09Z",
+     "tag_esef": "",
+     "classifications_code": "",
+     "document_date": "2026-10-01T07:42:09Z",
+     "source": "RNS",
+     "type": "Total Voting Rights",
+     "related_org": [],
+     "lei_remediation_flag": "N",
+     "document_format": "Plain text",
+     "category_group": "Holdings",
+     "classifications": "",
+     "lei": "I72RQ3PNLDPW8R7JIJ56",
+     "download_link": "NSM/RNS/7367f782-09bd-4d9a-8ace-711da97de962.html",
+     "disclosure_id": "7367f782-09bd-4d9a-8ace-711da97de962",
+     "latest_flag": "Y",
+     "hist_seq": "1",
+     "publication_date": "2026-10-01T07:30:00Z",
+     "seq_id": "7367f782-09bd-4d9a-8ace-711da97de962",
+     "company": "JET2 PLC",
+     "last_updated_date": "2026-10-01T07:30:00Z",
+     "headline": "Total Voting Rights",
+     "type_code": "TVR"
+    },
+    "sort": [
+     1790839800000
+    ]
+   },
+   {
+    "_index": "fca-nsm-searchdata",
+    "_id": "8eb03c68-1459-46e4-abad-08b9b1d97eb5",
+    "_source": {
+     "submitted_date": "2026-07-23T13:21:10Z",
+     "tag_esef": "",
+     "classifications_code": "",
+     "document_date": "2026-07-23T13:21:10Z",
+     "source": "RNS",
+     "type": "Director/PDMR Shareholding",
+     "related_org": [],
+     "lei_remediation_flag": "N",
+     "document_format": "Plain text",
+     "category_group": "Holdings",
+     "classifications": "",
+     "lei": "I72RQ3PNLDPW8R7JIJ56",
+     "download_link": "NSM/RNS/8eb03c68-1459-46e4-abad-08b9b1d97eb5.html",
+     "disclosure_id": "8eb03c68-1459-46e4-abad-08b9b1d97eb5",
+     "latest_flag": "Y",
+     "hist_seq": "1",
+     "publication_date": "2026-07-23T13:10:26Z",
+     "seq_id": "8eb03c68-1459-46e4-abad-08b9b1d97eb5",
+     "company": "JET2 PLC",
+     "last_updated_date": "2026-08-22T14:04:13.840052243Z",
+     "headline": "Grant of Options and Director/PDMR Shareholding ",
+     "type_code": "DSH"
+    },
+    "sort": [
+     1784812226000
+    ]
+   },
+   {
+    "_index": "fca-nsm-searchdata",
+    "_id": "4973f4d9-bde7-4264-95cf-3b8f1e16ccb4",
+    "_source": {
+     "submitted_date": "2026-07-08T06:15:28Z",
+     "tag_esef": "",
+     "classifications_code": "",
+     "document_date": "2026-07-08T06:15:28Z",
+     "source": "RNS",
+     "type": "Miscellaneous",
+     "related_org": [],
+     "lei_remediation_flag": "N",
+     "document_format": "Plain text",
+     "category_group": "Miscellaneous",
+     "classifications": "",
+     "lei": "I72RQ3PNLDPW8R7JIJ56",
+     "download_link": "NSM/RNS/4973f4d9-bde7-4264-95cf-3b8f1e16ccb4.html",
+     "disclosure_id": "4973f4d9-bde7-4264-95cf-3b8f1e16ccb4",
+     "latest_flag": "Y",
+     "hist_seq": "1",
+     "publication_date": "2026-07-08T06:05:00Z",
+     "seq_id": "4973f4d9-bde7-4264-95cf-3b8f1e16ccb4",
+     "company": "JET2 PLC",
+     "last_updated_date": "2026-08-22T14:03:17.685156245Z",
+     "headline": "Launch of Share Buyback Programme of up to \u00a3250m ",
+     "type_code": "MSCL"
+    },
+    "sort": [
+     1783490700000
+    ]
+   },
+   {
+    "_index": "fca-nsm-searchdata",
+    "_id": "0e94d768-ad72-4101-9440-cb16aaa1003b",
+    "_source": {
+     "submitted_date": "2026-07-08T06:12:35Z",
+     "tag_esef": "",
+     "classifications_code": "",
+     "document_date": "2026-07-08T06:12:35Z",
+     "source": "RNS",
+     "type": "Preliminary Results",
+     "related_org": [],
+     "lei_remediation_flag": "N",
+     "document_format": "Plain text",
+     "category_group": "Financial Results",
+     "classifications": "",
+     "lei": "I72RQ3PNLDPW8R7JIJ56",
+     "download_link": "NSM/RNS/0e94d768-ad72-4101-9440-cb16aaa1003b.html",
+     "disclosure_id": "0e94d768-ad72-4101-9440-cb16aaa1003b",
+     "latest_flag": "Y",
+     "hist_seq": "1",
+     "publication_date": "2026-07-08T06:00:04Z",
+     "seq_id": "0e94d768-ad72-4101-9440-cb16aaa1003b",
+     "company": "JET2 PLC",
+     "last_updated_date": "2026-08-22T14:03:17.684521750Z",
+     "headline": "Final Results",
+     "type_code": "PRE"
+    },
+    "sort": [
+     1783490404000
+    ]
+   },
+   {
+    "_index": "fca-nsm-searchdata",
+    "_id": "49e24a0a-1b5d-4066-b2cb-f69a1cc99d51",
+    "_source": {
+     "submitted_date": "2025-11-19T07:10:56Z",
+     "tag_esef": "",
+     "classifications_code": "",
+     "document_date": "2025-11-19T07:10:56Z",
+     "source": "RNS",
+     "type": "Half-year Financial Report",
+     "related_org": [],
+     "lei_remediation_flag": "N",
+     "document_format": "Plain text",
+     "category_group": "Financial Results",
+     "classifications": "",
+     "lei": "I72RQ3PNLDPW8R7JIJ56",
+     "download_link": "NSM/RNS/49e24a0a-1b5d-4066-b2cb-f69a1cc99d51.html",
+     "disclosure_id": "49e24a0a-1b5d-4066-b2cb-f69a1cc99d51",
+     "latest_flag": "Y",
+     "hist_seq": "1",
+     "publication_date": "2025-11-19T07:00:04Z",
+     "seq_id": "49e24a0a-1b5d-4066-b2cb-f69a1cc99d51",
+     "company": "JET2 PLC",
+     "last_updated_date": "2026-08-22T13:38:05.011059475Z",
+     "headline": "Half-year Financial Report",
+     "type_code": "IR"
+    },
+    "sort": [
+     1763535604000
+    ]
+   }
+  ]
+ }
+}
