@@ -525,6 +525,48 @@ def load_steps(ticker: str | None = None, path: Path | None = None) -> pd.DataFr
         conn.close()
 
 
+def load_cards(
+    run_id: int, ticker: str, path: Path | None = None, conn: Conn | None = None
+) -> dict[str, dict[str, Any]]:
+    """``{model: {field: value}}`` for ``ticker`` in ``run_id``, rebuilt from the long table.
+
+    Numbers come back as floats (bools as 1.0 / 0.0), strings as text, and each card gets its
+    ``date`` as a UTC Timestamp. Models with several dates (none today) keep the latest.
+    """
+    own = conn is None
+    conn = conn or connect(path)
+    try:
+        df = query(
+            "SELECT model, date, field, value, text FROM results WHERE run_id = ? AND ticker = ?"
+            " ORDER BY date, rowid",
+            conn,
+            [run_id, ticker],
+        )
+    finally:
+        if own:
+            conn.close()
+    cards: dict[str, dict[str, Any]] = {}
+    for row in df.to_dict("records"):
+        card = cards.setdefault(str(row["model"]), {})
+        card["date"] = pd.Timestamp(row["date"], tz="UTC")
+        card[str(row["field"])] = row["text"] if pd.notna(row["text"]) else row["value"]
+    return cards
+
+
+def run_info(run_id: int, path: Path | None = None, conn: Conn | None = None) -> dict[str, Any]:
+    """The ``runs`` row for ``run_id`` as a dict (``ValueError`` if absent)."""
+    own = conn is None
+    conn = conn or connect(path)
+    try:
+        df = query("SELECT * FROM runs WHERE run_id = ?", conn, [run_id])
+    finally:
+        if own:
+            conn.close()
+    if df.empty:
+        raise ValueError(f"no run {run_id}")
+    return {str(k): v for k, v in df.iloc[0].items()}
+
+
 def latest(model: str, path: Path | None = None) -> pd.DataFrame:
     """Most recent ``model`` card per ticker, one row each — for screening across stocks."""
     df = load_results(model=model, path=path)

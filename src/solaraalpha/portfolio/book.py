@@ -662,17 +662,20 @@ def draft_position(
     actor: str = OWNER,
     at: str | None = None,
     rules: Rules | None = None,
+    valid_until: str | None = None,
 ) -> tuple[int, int]:
     """Create a draft position with its entry order; returns ``(position_id, order_id)``.
 
     The planned ``stop`` (and ``target``) live in the ``drafted`` payload, merged over
     ``payload`` (e.g. a full trade plan); the protective stop order is drafted when the first
-    fill arrives. ``valid_days`` defaults to ``Rules.entry_validity_days``.
+    fill arrives. ``valid_until`` (a date) defaults to ``at`` + ``valid_days``, which defaults
+    to ``Rules.entry_validity_days``.
     """
     rules = rules or load_rules()
     t = iso(at)
     days = valid_days if valid_days is not None else rules.entry_validity_days
-    valid_until = (pd.Timestamp(t) + pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+    if valid_until is None:
+        valid_until = (pd.Timestamp(t) + pd.Timedelta(days=days)).strftime("%Y-%m-%d")
     pid = new_position(
         conn,
         ticker,
