@@ -14,7 +14,11 @@ deleted, so every number can be traced to the run (time, git commit, arguments) 
   ``fail``, where ``pass`` meant "moved on to the next stage".
 * ``labels`` — one label per (run, ticker, stage): ``screen`` from the pipeline (the combination
   of the four screening toolkits, with each toolkit's label and failing clauses in ``reason``),
-  ``validate`` / ``research`` from the agents (``actor`` ``agent:<name>``, with a confidence).
+  ``validate`` / ``research`` / ``events`` from the agents (``actor`` ``agent:<name>``, with a
+  confidence) — see :mod:`solaraalpha.agents`.
+* ``evidence`` — every source an agent relied on (url, title, publisher, published, retrieved,
+  kind, section, summary, discretionary impact, ``nsm_id`` for filings), linked to the run,
+  ticker and stage.
 * ``prices`` / ``fundamentals`` — what the source returned, stored only when a row is new or
   differs from the latest stored version, so :func:`load_prices` / :func:`load_fundamentals`
   can rebuild what was known on any past date (``as_seen``) without duplicating history.
@@ -80,6 +84,26 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     run_id INTEGER NOT NULL REFERENCES runs,
     value REAL, currency TEXT,
     PRIMARY KEY (ticker, field, date, run_id)
+);
+CREATE TABLE IF NOT EXISTS evidence (
+    evidence_id       INTEGER PRIMARY KEY,
+    run_id            INTEGER NOT NULL REFERENCES runs,
+    ticker            TEXT NOT NULL,
+    stage             TEXT NOT NULL,     -- validate / research / events / monitor / postmortem
+    actor             TEXT NOT NULL,     -- agent:<name>
+    url               TEXT NOT NULL,
+    title             TEXT NOT NULL,
+    publisher         TEXT,
+    published         TEXT,             -- ISO-8601, NULL if unknown
+    retrieved         TEXT NOT NULL,
+    kind              TEXT NOT NULL,     -- filing / news / web / data
+    section           TEXT NOT NULL,
+    summary           TEXT NOT NULL,
+    impact_score      REAL,             -- [-1, 1]
+    impact_confidence REAL,             -- [0, 1]
+    driver            TEXT,
+    horizon_weeks     INTEGER,
+    nsm_id            TEXT              -- dedupes filings across runs
 );
 CREATE TABLE IF NOT EXISTS labels (
     run_id     INTEGER NOT NULL REFERENCES runs,
@@ -253,6 +277,31 @@ def load_labels(
         conn.close()
 
 
+def load_evidence(
+    ticker: str | None = None,
+    run_id: int | None = None,
+    stage: str | None = None,
+    path: Path | None = None,
+    conn: Conn | None = None,
+) -> pd.DataFrame:
+    """Saved evidence rows, oldest first."""
+    sql = "SELECT * FROM evidence"
+    where, params = [], []
+    for col, val in (("ticker", ticker), ("run_id", run_id), ("stage", stage)):
+        if val is not None:
+            where.append(f"{col} = ?")
+            params.append(val)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    own = conn is None
+    conn = conn or connect(path)
+    try:
+        return query(sql + " ORDER BY evidence_id", conn, params=params)
+    finally:
+        if own:
+            conn.close()
+
+
 def shortlist(
     run_id: int,
     stage: str = "screen",
@@ -289,7 +338,8 @@ def _cell(v: Any) -> tuple[float | None, str | None]:
 
 
 def _save_card(conn: Conn, run_id: int, ticker: str, model: str, card: Any) -> None:
-    fields = asdict(card)
+    """Insert a card (a dataclass, or a dict with a ``date`` key) as long rows."""
+    fields = dict(card) if isinstance(card, dict) else asdict(card)
     date = _day(fields.pop("date"))
     conn.executemany(
         "INSERT INTO results VALUES (?, ?, ?, ?, ?, ?, ?)",

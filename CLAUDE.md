@@ -57,7 +57,12 @@ Current state:
   screening toolkits and is saved per stock in the `labels` table (`store.shortlist`). Stocks:
   `config/watchlist.toml`. GitHub Actions run it Sunday (`scan.yml`) or on demand for one stock
   (`stock.yml`). Bands are placeholders until backtested. Daily tasks (news, announcements,
-  volatility) and the agent stage are not built yet.
+  volatility) are not built yet.
+- **Agents write through one door** (docs/decisions/0016): a `verdict.json` (schema:
+  `record.py schema`) recorded with `scripts/record.py verdict`, which writes the `labels` row,
+  a card under `model = stage` and the `evidence` rows on the same run. Agents can only
+  **downgrade** a label (ACT > WATCH > PASS; ERROR always allowed). `record.py prior` gives the
+  previous verdicts and the filings already interpreted.
 - **Relative strength** (`analysis/relative_strength.py`) compares each stock with its market
   index, industry index / ETF and peers, listed per stock in `config/benchmarks.toml` (market
   defaults by listing suffix). Method is generic; the comparison lists are per stock. See 0011.
@@ -102,6 +107,7 @@ Current state:
 | Jet2 news analyst (agent) | `/jet2-value <news or question>` in Claude Code |
 | Read one announcement | `uv run python scripts/announcement.py <NSM url>` |
 | Events analyst (agent) | `/events JET2.L` in Claude Code |
+| Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `prior JET2.L [--stage research]` / `schema` |
 | Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
@@ -126,6 +132,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         save_run / save_label / load_results / load_steps / load_labels /
                         shortlist / latest / load_prices — see docs/decisions/0007
   turso.py              hosted results DB: sqlite3-style connection to Turso over HTTP — 0013
+  agents.py             Verdict / Evidence / KillCriterion models, record_verdict (labels row +
+                        card + evidence, downgrade-only), prior — see docs/decisions/0016
   toolkits.py           toolkit register: id -> run fn + act / watch bands; Inputs (lazy,
                         shared per-ticker data)
   pipeline.py           WEEKLY stages (runs_on), clauses, band / combine / screen_label,
