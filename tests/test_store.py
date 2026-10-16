@@ -159,3 +159,20 @@ def test_float_jitter_is_not_a_revision(db: Path, daily: pd.DataFrame) -> None:
     jittered["adj_close"] = jittered["adj_close"] + 1.2e-4  # one float32 ulp at ~1300p
     store.save_run("stock_prices", {}, "JET2.L", daily=jittered, path=db)
     assert _count(db, "prices") == len(daily)
+
+
+def test_steps_round_trip(db: Path) -> None:
+    steps = [
+        ("technical", "technical", "pass", "trend=0.50"),
+        ("levels", "levels", "fail", "failed reward_risk >= 2"),
+        ("events", "events", "skip", "needs levels"),
+    ]
+    run_id = store.save_run("scan", {}, "JET2.L", {"technical": CARD}, path=db, steps=steps)
+    got = store.load_steps("JET2.L", path=db)
+    assert list(got["run_id"].unique()) == [run_id]
+    assert list(zip(got["node"], got["status"], strict=True)) == [
+        ("technical", "pass"),
+        ("levels", "fail"),
+        ("events", "skip"),
+    ]
+    assert store.load_steps("OTHER.L", path=db).empty

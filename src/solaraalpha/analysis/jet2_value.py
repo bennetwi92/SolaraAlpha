@@ -2,7 +2,7 @@
 
 Jet2-specific by design (not reusable). Built for long trades of ~2-16 weeks, so the question
 is "where should the price be in N weeks, and what does this piece of news do to it?", not a
-long-term DCF. See ``docs/decisions/0008-jet2-fair-value.md`` for the reasoning and sources.
+long-term DCF. See ``docs/decisions/0009-jet2-fair-value.md`` for the reasoning and sources.
 
 **Earnings.** A driver P&L per fiscal year (April-March) that reproduces the FY26 accounts line
 by line. Seats x load factor give passenger sectors, split into package customers and
@@ -615,7 +615,7 @@ def value(
 
 # --- Monte Carlo ----------------------------------------------------------------------------
 
-# One-year one-sigma uncertainties (judgement, see ADR 0008). Scaled by sqrt(weeks / 52): the
+# One-year one-sigma uncertainties (judgement, see ADR 0009). Scaled by sqrt(weeks / 52): the
 # spread is of what will be known by the horizon, not of the final FY28 outcome.
 MC_SIGMA = {
     "fuel": 0.35,  # jet price, lognormal

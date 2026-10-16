@@ -8,6 +8,8 @@ deleted, so every number can be traced to the run (time, git commit, arguments) 
   ``value`` (numbers, bools as 1/0) or ``text`` (strings, timestamps). ``date`` is the week the
   card describes, separate from the run time, so past scores can be joined to later returns
   without look-ahead. New card fields need no schema change.
+* ``steps`` — dependency-graph outcomes: (run, ticker, node) -> toolkit, status
+  (pass / fail / skip / error) and reason — see :mod:`solaraalpha.graph`.
 * ``prices`` / ``fundamentals`` — what the source returned, stored only when a row is new or
   differs from the latest stored version, so :func:`load_prices` / :func:`load_fundamentals`
   can rebuild what was known on any past date (``as_seen``) without duplicating history.
@@ -51,6 +53,15 @@ CREATE TABLE IF NOT EXISTS results (
     text   TEXT,
     PRIMARY KEY (run_id, ticker, model, date, field)
 );
+CREATE TABLE IF NOT EXISTS steps (
+    run_id  INTEGER NOT NULL REFERENCES runs,
+    ticker  TEXT NOT NULL,
+    node    TEXT NOT NULL,
+    toolkit TEXT NOT NULL,
+    status  TEXT NOT NULL,     -- pass / fail / skip / error
+    reason  TEXT NOT NULL,
+    PRIMARY KEY (run_id, ticker, node)
+);
 CREATE TABLE IF NOT EXISTS prices (
     ticker TEXT NOT NULL,
     date   TEXT NOT NULL,
@@ -87,8 +98,11 @@ def save_run(
     daily: pd.DataFrame | None = None,
     fund: pd.DataFrame | None = None,
     path: Path | None = None,
+    steps: list[tuple[str, str, str, str]] | None = None,
 ) -> int:
     """Record one run: its model ``cards`` (``{model: dataclass}``) and input snapshots.
+
+    ``steps`` are graph outcomes ``(node, toolkit, status, reason)`` for ``ticker``.
 
     ``daily`` is the frame from :func:`solaraalpha.data.prices.fetch_daily` as fetched (before
     cleaning), ``fund`` the one from :func:`solaraalpha.data.fundamentals.fetch_fundamentals`.
@@ -100,6 +114,10 @@ def save_run(
             run_id = _start_run(conn, script, args)
             for model, card in (cards or {}).items():
                 _save_card(conn, run_id, ticker, model, card)
+            conn.executemany(
+                "INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?)",
+                [(run_id, ticker, *s) for s in steps or []],
+            )
             if daily is not None:
                 _save_snapshot(conn, run_id, "prices", ["date"], _price_rows(ticker, daily))
             if fund is not None:
@@ -280,6 +298,19 @@ def load_results(
     conn = connect(path)
     try:
         return pd.read_sql_query(sql + " ORDER BY x.run_id", conn, params=params)
+    finally:
+        conn.close()
+
+
+def load_steps(ticker: str | None = None, path: Path | None = None) -> pd.DataFrame:
+    """All saved graph outcomes, with each run's time, script and commit."""
+    sql = "SELECT r.started_at, r.script, r.git_sha, s.* FROM steps s JOIN runs r USING (run_id)"
+    params = [ticker] if ticker is not None else []
+    if ticker is not None:
+        sql += " WHERE s.ticker = ?"
+    conn = connect(path)
+    try:
+        return pd.read_sql_query(sql + " ORDER BY s.run_id, s.rowid", conn, params=params)
     finally:
         conn.close()
 

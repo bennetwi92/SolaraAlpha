@@ -1,4 +1,4 @@
-# 0008 — Jet2 fair-value model: consensus-calibrated drivers, valued at the trade horizon
+# 0009 — Jet2 fair-value model: consensus-calibrated drivers, valued at the trade horizon
 
 **Context.** We want a Jet2-only fair value that answers two questions for 2-16 week longs:
 where should the price be at the end of the hold, and *so what* when news lands ("a deal with
