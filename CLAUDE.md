@@ -107,6 +107,8 @@ Current state:
 | Jet2 news analyst (agent) | `/jet2-value <news or question>` in Claude Code |
 | Read one announcement | `uv run python scripts/announcement.py <NSM url>` |
 | Events analyst (agent) | `/events JET2.L` in Claude Code |
+| Validator pack (DB only, independent of other agents) | `uv run python scripts/validate_pack.py JET2.L --run N` / `--run N --all` |
+| Validator (agent) | `/validate JET2.L --run N` or `/validate --run N` in Claude Code |
 | Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `prior JET2.L [--stage research]` / `schema` |
 | Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
@@ -134,6 +136,8 @@ src/solaraalpha/        importable package — all reusable code lives here
   turso.py              hosted results DB: sqlite3-style connection to Turso over HTTP — 0013
   agents.py             Verdict / Evidence / KillCriterion models, record_verdict (labels row +
                         card + evidence, downgrade-only), prior — see docs/decisions/0016
+  validation.py         the validator's pack from the DB: independent cards, steps, label, price
+                        snapshot as seen, fundamentals known at the card date, filing headlines
   toolkits.py           toolkit register: id -> run fn + act / watch bands; Inputs (lazy,
                         shared per-ticker data)
   pipeline.py           WEEKLY stages (runs_on), clauses, band / combine / screen_label,
@@ -185,6 +189,7 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
 .github/workflows/      ci.yml (checks), scan.yml (weekly pipeline + weekly pack, Sunday), stock.yml (one stock)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
+.claude/skills/validate/  agent skill: re-checks a run's screen labels against the pack; downgrade only
 notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure; fakes.py (FakeTurso), conftest.py (db_backend)
 data/                   gitignored; raw/ processed/ cache/ created on demand

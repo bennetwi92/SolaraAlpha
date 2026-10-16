@@ -42,4 +42,25 @@ runs when it was relied on twice. A later `record.py revision` (#121) and `recor
 
 ## Validator (#118)
 
-*Added by #118.*
+The validator is a second, independent opinion of the **same data** the toolkits saw. It
+does no research and never sees `events`, `research` or other agents' notes, so a wrong
+toolkit label is caught by a different reader of the same evidence, not by someone with more
+evidence. Mechanics:
+
+- `scripts/validate_pack.py TICKER --run N` (`--run N --all` for every screen-ACT ticker)
+  writes `pack.json` from the DB alone (`solaraalpha.validation`): the independent cards
+  (technical, levels, relative_strength, fundamentals, position), the steps and screen label,
+  the price snapshot **as seen at the run** (`check_prices` issues, the span kept by
+  `trim_to_consistent`, 104 weekly bars with 10w / 40w MAs, 60 daily bars, the 5 largest
+  weekly moves) and the fundamentals **known at the card date** (statutory lags). The one live
+  fetch is the recent filings' headlines (13 weeks, material only, published before the run);
+  a failure becomes `"unavailable"`.
+- The skill `.claude/skills/validate/SKILL.md` answers a fixed seven-item checklist (data
+  issues; one-off spikes vs filings; overextension in ATRs; stale or just-broken levels;
+  relative strength carried by one comparison; stale, one-off or currency-mismatched
+  fundamentals; agreement between toolkits), each `ok` / `concern` / `unknown` with a line of
+  pack evidence, and marks each toolkit *warranted* or *not warranted*, all in `checks`.
+- It records a `validate` verdict through `record.py` (downgrade only). A pack that cannot
+  be built gives an ERROR verdict with the failure as the reason.
+
+Chart images and disagreement statistics are R2 (#126).
