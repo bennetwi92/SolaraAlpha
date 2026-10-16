@@ -1,0 +1,44 @@
+{
+  "stage": "events",
+  "ticker": "JET2.L",
+  "run_id": 1,
+  "label": "ACT",
+  "confidence": 0.75,
+  "reasons": ["Trading update ahead of consensus; next results estimated 2026-11-19"],
+  "scores": {"catalyst_score": 0.45, "event_risk": 0.66},
+  "kill_criteria": [],
+  "evidence": [
+    {
+      "url": "https://data.fca.org.uk/artefacts/NSM/Portal/NI-000012345678/NI-000012345678.html",
+      "title": "Jet2 plc - Trading Update",
+      "publisher": "FCA NSM",
+      "published": "2026-10-08T06:00:00Z",
+      "retrieved": "2026-10-11T18:40:00Z",
+      "kind": "filing",
+      "section": "recent_catalysts",
+      "summary": "Winter 26/27 seats +7%, pricing ahead; company says FY27 profit 'at the upper end of market expectations'. Reaction +4.1% (z 2.3), volume 2.1x.",
+      "impact_score": 0.5,
+      "impact_confidence": 0.8,
+      "driver": "yields",
+      "horizon_weeks": 8,
+      "nsm_id": "NI-000012345678"
+    },
+    {
+      "url": "https://data.fca.org.uk/artefacts/NSM/Portal/NI-000012340000/NI-000012340000.html",
+      "title": "Jet2 plc - Half Year Results (2025)",
+      "publisher": "FCA NSM",
+      "published": "2025-11-20T07:00:00Z",
+      "retrieved": "2026-10-11T18:41:00Z",
+      "kind": "filing",
+      "section": "upcoming_events",
+      "summary": "Last year's interims came on 2025-11-20; the pack estimates 2026-11-19 (3 years of support), median move 5.2%.",
+      "impact_score": null,
+      "impact_confidence": null,
+      "driver": null,
+      "horizon_weeks": 6,
+      "nsm_id": "NI-000012340000"
+    }
+  ],
+  "note_md": "## Bottom line\nCatalyst score +0.45, event risk medium: interims estimated 2026-11-19...",
+  "checks": {}
+}

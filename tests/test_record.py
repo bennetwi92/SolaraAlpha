@@ -251,3 +251,65 @@ def test_schema_prints(capsys: pytest.CaptureFixture[str]) -> None:
         "reasons",
     }
     assert "Evidence" in schema["$defs"] and "KillCriterion" in schema["$defs"]
+
+
+EVENTS_FIXTURE = Path(__file__).parent / "fixtures" / "verdict_events.json"
+
+
+def test_fixtures_validate_against_the_schema() -> None:
+    research = agents.load_verdict(FIXTURE.read_text())
+    assert research.stage == "research" and len(research.evidence) == 2
+    assert {"catalyst_score", "event_risk"} <= set(research.scores)
+    events = agents.load_verdict(EVENTS_FIXTURE.read_text())
+    assert events.stage == "events" and events.label == "ACT"
+    assert [e.nsm_id for e in events.evidence] == ["NI-000012345678", "NI-000012340000"]
+
+
+def test_events_recorded_twice_prior_lists_first_runs_filings(
+    db_backend: Path | None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # a standalone `/events` run: --new-run creates the run to attach to
+    record.main(
+        ["verdict", str(EVENTS_FIXTURE), "--new-run", "--actor", "agent:events", *_args(db_backend)]
+    )
+    out = capsys.readouterr().out
+    assert "recorded events ACT (0.75) for JET2.L in run 1" in out and "labels row written" in out
+    second = json.loads(EVENTS_FIXTURE.read_text())
+    second["evidence"] = second["evidence"][:1]
+    second["evidence"][0]["nsm_id"] = "NI-000099999999"
+    second["scores"] = {"catalyst_score": 0.1, "event_risk": 0.33}
+    record.main(["verdict", _write(tmp_path, second), "--new-run", *_args(db_backend)])
+    capsys.readouterr()
+    record.main(["prior", "JET2.L", "--stage", "events", *_args(db_backend)])
+    out = capsys.readouterr().out
+    assert "JET2.L: 2 prior events verdict(s)" in out
+    assert "NI-000012345678 (events, run 1)" in out and "NI-000012340000 (events, run 1)" in out
+    assert "NI-000099999999 (events, run 2)" in out
+    runs = store.query("SELECT script, args FROM runs ORDER BY run_id", store.connect(db_backend))
+    assert list(runs["script"]) == ["events", "events"]
+    assert store.latest("events", path=db_backend).loc["JET2.L", "catalyst_score"] == 0.1  # #84
+    # --run overrides the file's run id
+    run3 = store.start_run("scan", {}, path=db_backend)
+    record.main(["verdict", str(EVENTS_FIXTURE), "--run", str(run3), *_args(db_backend)])
+    assert f"in run {run3}" in capsys.readouterr().out
+
+
+def test_skills_reference_the_schema_and_record() -> None:
+    root = Path(__file__).resolve().parents[1] / ".claude" / "skills"
+    for name in ("events", "research", "validate"):
+        text = (root / name / "SKILL.md").read_text()
+        assert "record.py schema" in text and "record.py verdict" in text, name
+    research = (root / "research" / "SKILL.md").read_text()
+    for section in (
+        "Scene setting",
+        "Recent catalysts",
+        "Upcoming events",
+        "Commercial",
+        "Policy",
+        "Macro",
+        "Ownership",
+        "Thesis and kill criteria",
+        "Verdict",
+    ):
+        assert section in research, section
+    assert "30 days" in research and "catalyst_score" in research and "kill_criteria" in research

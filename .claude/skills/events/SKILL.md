@@ -17,8 +17,19 @@ The programmatic layer collects facts; you supply judgement. Your judgement must
 evidence you can cite. **Minimise assumptions**: when something is not in the evidence, say
 "unknown" and name what would resolve it. Never fill a gap with a plausible guess.
 
-Arguments: `<TICKER> [--days N]`. `--days` defaults to 7 (weekly cadence); use the time
-since the last review if that is longer.
+Arguments: `<TICKER> [--days N] [--run N]`. `--days` defaults to 7 (weekly cadence); use the
+time since the last review if that is longer. `--run N` attaches the note to a saved scan run;
+without it the note gets its own run (Step 5).
+
+## Step 0: Prior work
+
+```
+uv run python scripts/record.py prior <TICKER> --stage events
+```
+
+Earlier notes survive the container in the results DB (ADR 0016, #84). Reuse their reads as
+background, update an event from `estimated` to `confirmed` when the company has since named
+the date, and **do not re-interpret filings already logged** (match on `nsm_id`).
 
 ## Step 1: Build the pack
 
@@ -159,6 +170,35 @@ and their typical gap.
 3. **What's coming**: a dated table (event, date and status, typical move, what to watch),
    then the set-up for the next one.
 4. **Open questions / data issues.**
+
+## Step 5: Record it
+
+Write `verdict.json` next to `analysis.json`, per `uv run python scripts/record.py schema`:
+
+- `stage: "events"`, `ticker`, `run_id` (the `--run` you were given, else `0` and record with
+  `--new-run`);
+- `label`: `ACT` (the events note is informational, not a gate), or `ERROR` if the pack could
+  not be built, with the reason;
+- `confidence`: how sure you are of `catalyst_score`;
+- `reasons`: the bottom line as one line;
+- `scores`: `catalyst_score` and `event_risk` (map none / low / medium / high to 0 / 0.33 /
+  0.66 / 1);
+- `evidence`: one item per catalyst and per dated event you relied on: the NSM `url`, `title`
+  (headline), `publisher` `"FCA NSM"`, `published`, `retrieved`, `kind` `filing` (or `news` /
+  `web` for corroborated press), `section` `recent_catalysts` / `upcoming_events`, your
+  `summary`, `impact_score` / `impact_confidence` / `driver` / `horizon_weeks` from your
+  scoring, and `nsm_id` = the filing's `id`;
+- `kill_criteria`: `[]`;
+- `note_md`: the full `analysis.md`.
+
+Then:
+
+```
+uv run python scripts/record.py verdict <dir>/verdict.json --actor agent:events [--run N | --new-run]
+```
+
+The next run's Step 0 sees this note. `analysis.json` and `analysis.md` stay on disk as the
+working files.
 
 ## Standards
 
