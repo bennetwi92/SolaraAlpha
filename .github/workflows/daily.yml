@@ -1,0 +1,38 @@
+# Daily check: prices, triggers and new filings for open positions, the watch list and pending
+# breakout entries (scripts/daily.py), weekday evenings after the London close. Writes a
+# `daily` run with the triggers to the results DB (Turso secrets, else the local file) and the
+# report to the job summary. Shares the `book` concurrency group with scan.yml so the two never
+# write at once (docs/decisions/0017).
+name: Daily check
+
+on:
+  schedule:
+    - cron: "47 17 * * 1-5"  # 17:47 UTC: after the 16:35 London close in GMT and BST
+  workflow_dispatch:
+
+concurrency:
+  group: book
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - name: Daily check
+        env:
+          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+        run: uv run --no-sync python scripts/daily.py --save --report "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: daily-${{ github.run_id }}
+          path: data/
+          if-no-files-found: ignore
+          retention-days: 30

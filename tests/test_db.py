@@ -100,6 +100,7 @@ def test_pull_into_new_file_only(fake_turso: FakeTurso, tmp_path: Path) -> None:
         "prices": 0,
         "fundamentals": 0,
         "evidence": 0,
+        "triggers": 0,
         "labels": 0,
         "steps": 1,
     }

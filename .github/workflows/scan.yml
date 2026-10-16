@@ -16,7 +16,7 @@ on:
         default: ""
 
 concurrency:
-  group: scan
+  group: book  # shared with daily.yml: never write the book at the same time
   cancel-in-progress: false
 
 jobs:

@@ -16,6 +16,8 @@ deleted, so every number can be traced to the run (time, git commit, arguments) 
   of the four screening toolkits, with each toolkit's label and failing clauses in ``reason``),
   ``validate`` / ``research`` / ``events`` from the agents (``actor`` ``agent:<name>``, with a
   confidence) — see :mod:`solaraalpha.agents`.
+* ``triggers`` — the daily job's checks that fired (per daily run, ticker, kind), with the
+  numbers in ``detail`` — see :mod:`solaraalpha.portfolio.daily`.
 * ``evidence`` — every source an agent relied on (url, title, publisher, published, retrieved,
   kind, section, summary, discretionary impact, ``nsm_id`` for filings), linked to the run,
   ticker and stage.
@@ -105,6 +107,16 @@ CREATE TABLE IF NOT EXISTS evidence (
     horizon_weeks     INTEGER,
     nsm_id            TEXT              -- dedupes filings across runs
 );
+CREATE TABLE IF NOT EXISTS triggers (
+    run_id      INTEGER NOT NULL REFERENCES runs,  -- the daily run
+    ticker      TEXT NOT NULL,
+    kind        TEXT NOT NULL,      -- stop_close / stop_touched / target_hit / gap / watch_break /
+                                    -- entry_break / filing / news
+    position_id INTEGER,
+    order_id    INTEGER,
+    detail      TEXT NOT NULL,      -- JSON: the numbers that fired
+    at          TEXT NOT NULL       -- session date or publication time
+);
 CREATE TABLE IF NOT EXISTS labels (
     run_id     INTEGER NOT NULL REFERENCES runs,
     ticker     TEXT NOT NULL,
@@ -172,9 +184,12 @@ def save_run(
     return run_id
 
 
-def start_run(script: str, args: dict[str, Any], path: Path | None = None) -> int:
+def start_run(
+    script: str, args: dict[str, Any], path: Path | None = None, conn: Conn | None = None
+) -> int:
     """Record the start of a run (time, script, args, commit) and return its ``run_id``."""
-    conn = connect(path)
+    own = conn is None
+    conn = conn or connect(path)
     try:
         with conn:
             cur = conn.execute(
@@ -182,7 +197,8 @@ def start_run(script: str, args: dict[str, Any], path: Path | None = None) -> in
                 (datetime.now(UTC).isoformat(), script, json.dumps(args, default=str), git_sha()),
             )
     finally:
-        conn.close()
+        if own:
+            conn.close()
     assert cur.lastrowid is not None
     return cur.lastrowid
 
@@ -196,6 +212,7 @@ def save_ticker(
     path: Path | None = None,
     steps: list[tuple[str, str, str, str]] | None = None,
     others: dict[str, pd.DataFrame] | None = None,
+    conn: Conn | None = None,
 ) -> None:
     """Record one ticker's model ``cards`` (``{model: dataclass}``) and input snapshots under
     ``run_id``.
@@ -207,7 +224,8 @@ def save_ticker(
     ``others`` the daily prices of instruments it was compared with (indices, peers, FX), by
     ticker.
     """
-    conn = connect(path)
+    own = conn is None
+    conn = conn or connect(path)
     try:
         with conn:
             for model, card in (cards or {}).items():
@@ -224,7 +242,8 @@ def save_ticker(
                 rows = fund.assign(ticker=ticker, date=_days(fund["date"]))
                 _save_snapshot(conn, run_id, "fundamentals", ["field", "date"], rows)
     finally:
-        conn.close()
+        if own:
+            conn.close()
     log.info("saved %s in run %d", ticker, run_id)
 
 
@@ -275,6 +294,63 @@ def load_labels(
         return query(sql + " ORDER BY l.run_id, l.rowid", conn, params=params)
     finally:
         conn.close()
+
+
+def save_triggers(
+    run_id: int, triggers: list[Any], path: Path | None = None, conn: Conn | None = None
+) -> None:
+    """Record the daily job's fired triggers (objects with ticker, kind, position_id, order_id,
+    detail, at) under ``run_id``."""
+    own = conn is None
+    conn = conn or connect(path)
+    try:
+        with conn:
+            conn.executemany(
+                "INSERT INTO triggers VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        run_id,
+                        t.ticker,
+                        t.kind,
+                        t.position_id,
+                        t.order_id,
+                        json.dumps(t.detail, default=str),
+                        t.at,
+                    )
+                    for t in triggers
+                ],
+            )
+    finally:
+        if own:
+            conn.close()
+
+
+def load_triggers(
+    run_id: int | None = None,
+    ticker: str | None = None,
+    kind: str | None = None,
+    path: Path | None = None,
+    conn: Conn | None = None,
+) -> pd.DataFrame:
+    """Saved triggers (``detail`` parsed back to dicts), oldest first."""
+    sql = "SELECT r.started_at, t.* FROM triggers t JOIN runs r USING (run_id)"
+    where, params = [], []
+    for col, val in (("run_id", run_id), ("ticker", ticker), ("kind", kind)):
+        if val is not None:
+            where.append(f"t.{col} = ?")
+            params.append(val)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    own = conn is None
+    conn = conn or connect(path)
+    try:
+        df = query(sql + " ORDER BY t.run_id, t.rowid", conn, params=params)
+    finally:
+        if own:
+            conn.close()
+    if not df.empty:
+        df["detail"] = df["detail"].map(json.loads)
+    return df
 
 
 def load_evidence(
