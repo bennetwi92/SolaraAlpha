@@ -10,8 +10,19 @@ Solara Alpha is a mini hedge fund's codebase. Work happens in two phases:
 2. **Portfolio management** (later) — construction, risk, monitoring.
 
 There is **one developer** (the owner) working with Claude Code. Optimise for speed of
-iteration and clarity, not for team process. No assets, markets, instruments or strategies
-have been chosen yet — **never assume any**. Ask when a task depends on that choice.
+iteration and clarity, not for team process. **Prefer lightweight, stripped-back
+implementations over complexity** — the simplest thing that works, fewest dependencies,
+no speculative options or layers. No assets, markets, instruments or strategies
+have been chosen yet beyond what's listed below — **never assume any**. Ask when a task
+depends on that choice.
+
+Current state:
+- **Trading frequency is weekly** unless the owner says otherwise. Weekly bars end Friday
+  (`to_weekly`), and only completed weeks are used.
+- Working on **single-stock analysis**; first example is Jet2 (`JET2.L`, AIM-listed).
+- Price data is **not persisted** for now — fetch fresh each run (no `@parquet_cache`).
+- All price data must pass through `check_prices` (review the issues) and `clean_prices`
+  before use.
 
 ## Hard rules
 
@@ -37,6 +48,7 @@ have been chosen yet — **never assume any**. Ask when a task depends on that c
 | Tests incl. live network | `make test-all` |
 | Single test | `uv run pytest tests/test_x.py::test_name -q` |
 | Run a script | `uv run python scripts/<name>.py` |
+| Stock prices + quality report | `uv run python scripts/stock_prices.py JET2.L --start 2006-01-01` |
 | Notebooks | `make notebook` |
 
 Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `uv.lock` by hand.
@@ -50,6 +62,8 @@ src/solaraalpha/        importable package — all reusable code lives here
   data/                 fetching, cleaning, storage of external data
     http.py             shared requests session with retry/backoff — use for all HTTP
     cache.py            @parquet_cache decorator for DataFrame-returning fetchers
+    prices.py           daily OHLCV for one stock (Yahoo chart API)
+    clean.py            check_prices / clean_prices / to_weekly / log_returns
   analysis/             research & analytics code
   portfolio/            portfolio construction / risk (later phase)
 scripts/                thin CLI entry points (argparse) that call into the package
