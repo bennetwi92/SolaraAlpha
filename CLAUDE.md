@@ -23,7 +23,7 @@ Current state:
 - Price data is **not persisted** for now — fetch fresh each run (no `@parquet_cache`).
 - Price history: fetch the **last 5 years** (default), then cut per stock to the span after
   the last blocking data issue (`trim_to_consistent`). Don't pull long history yet.
-- Technical analysis (`analysis/technical.py`) is the one model that must stay **generic across
+- The technical models (`analysis/technical.py`, `analysis/levels.py`) must stay **generic across
   stocks** — no per-stock tuning. Other models (e.g. fundamentals) are stock-specific.
 - Model outputs for the scorecard are scores in **[-1, +1]** (+ = bullish / favourable).
 - All price data must pass through `check_prices` (review the issues), `clean_prices` and
@@ -55,6 +55,7 @@ Current state:
 | Run a script | `uv run python scripts/<name>.py` |
 | Stock prices + quality report | `uv run python scripts/stock_prices.py JET2.L` |
 | Technical scorecard | `uv run python scripts/technical.py JET2.L [--entry-date D]` |
+| Levels + trade plan | `uv run python scripts/levels.py JET2.L [--short]` |
 | Notebooks | `make notebook` |
 
 Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `uv.lock` by hand.
@@ -73,6 +74,8 @@ src/solaraalpha/        importable package — all reusable code lives here
   analysis/             research & analytics code
     technical.py        weekly technical model (any stock): trend/momentum/entry scores,
                         open-position assessment — see docs/decisions/0003
+    levels.py           weekly levels model (any stock): S/R zones, trendlines, 52w/history
+                        highs/lows, blue sky; stop/targets/reward:risk — see docs/decisions/0004
   portfolio/            portfolio construction / risk (later phase)
 scripts/                thin CLI entry points (argparse) that call into the package
 notebooks/              exploration only; promote anything reused into src/
