@@ -83,7 +83,7 @@ def test_blue_sky_breakout_long_vs_short() -> None:
     close = np.concatenate([_range(n=76), np.linspace(112, 140, 6)])
     df = _weekly(close)
     long = levels_card(df)
-    assert long.blue_sky and long.close > long.history_high
+    assert long.blue_sky and long.close > long.high_5y
     assert np.isnan(long.target) and long.reward_risk == np.inf and long.setup == 1
     short = levels_card(df, side=-1)
     assert short.stop > short.close > short.target

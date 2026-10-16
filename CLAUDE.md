@@ -74,7 +74,7 @@ src/solaraalpha/        importable package — all reusable code lives here
   analysis/             research & analytics code
     technical.py        weekly technical model (any stock): trend/momentum/entry scores,
                         open-position assessment — see docs/decisions/0003
-    levels.py           weekly levels model (any stock): S/R zones, trendlines, 52w/history
+    levels.py           weekly levels model (any stock): S/R zones, trendlines, 52w/5y
                         highs/lows, blue sky; stop/targets/reward:risk — see docs/decisions/0004
   portfolio/            portfolio construction / risk (later phase)
 scripts/                thin CLI entry points (argparse) that call into the package

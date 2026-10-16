@@ -13,9 +13,9 @@ used once it is confirmed.
   support and vice versa.
 * **trendlines** — upper (through swing highs) and lower (through swing lows) lines in log price,
   not broken by any weekly close since their first anchor; the one with most touches wins.
-* **significant levels** — prior 52-week high/low and the high/low of the whole history
-  (an all-time high only if the history reaches back far enough). ``blue_sky`` = closed above
-  every prior high, so no overhead supply.
+* **significant levels** — prior 52-week and 5-year highs/lows (5-year = as far back as the
+  supplied history goes, up to 5 years). ``blue_sky`` = closed above the 5-year high, so no
+  overhead supply.
 
 :func:`levels_card` turns the level map into a plan for a position on ``side`` and two scores in
 [-1, +1]: ``structure`` (market view, + bullish) and ``setup`` (reward:risk for ``side``).
@@ -41,6 +41,7 @@ TREND_TOL_ATR = 0.25  # closes may poke this far through a trendline; pivots thi
 STOP_BUFFER_ATR = 0.5  # stop sits this far beyond the nearest support / resistance
 MIN_STOP_ATR = 1.0  # ...but at least this far from the close
 YEAR = 52  # weeks
+FIVE_YEARS = 5 * YEAR
 FULL_RR = 3.0  # reward:risk that scores a full +1 on setup (1/3 scores -1, 1 scores 0)
 
 
@@ -157,11 +158,11 @@ def _atr_now(weekly: pd.DataFrame) -> float:
 
 def level_map(weekly: pd.DataFrame) -> pd.DataFrame:
     """Every level as of the last week, highest first: ``source`` (``zone``, ``trend_upper``,
-    ``trend_lower``, ``high_52w``, ``low_52w``, ``history_high``, ``history_low``), ``price``,
+    ``trend_lower``, ``high_52w``, ``low_52w``, ``high_5y``, ``low_5y``), ``price``,
     ``touches``, ``last`` (week it was last set or touched), ``role`` (``resistance`` above the
     close, ``support`` below), and distance from the close in ATRs and as a fraction.
 
-    52-week and history highs/lows exclude the latest week, so a close above them is a breakout
+    52-week and 5-year highs/lows exclude the latest week, so a close above them is a breakout
     (the old high becomes support). Trendline prices are projected to the coming week."""
     close, a = float(weekly["close"].iloc[-1]), _atr_now(weekly)
     rows: list[tuple[str, float, int, pd.Timestamp]] = [
@@ -176,7 +177,7 @@ def level_map(weekly: pd.DataFrame) -> pd.DataFrame:
     prior = weekly.iloc[:-1]
     for hi, lo, frame in (
         ("high_52w", "low_52w", prior.iloc[-YEAR:]),
-        ("history_high", "history_low", prior),
+        ("high_5y", "low_5y", prior.iloc[-FIVE_YEARS:]),
     ):
         rows.append((hi, *_extreme(frame, "high")))
         rows.append((lo, *_extreme(frame, "low")))
@@ -210,11 +211,11 @@ class LevelsCard:
     upper_slope: float
     high_52w: float  # prior 52 weeks, excluding the latest
     low_52w: float
-    history_high: float  # all-time high within the supplied history
-    history_low: float
-    history_start: pd.Timestamp
-    blue_sky: bool  # closed above every prior high in the history
-    new_low: bool  # closed below every prior low in the history
+    high_5y: float  # prior 5 years (or all supplied history if shorter), excluding the latest
+    low_5y: float
+    start_5y: pd.Timestamp  # first week of that window; later than 5y ago if history is short
+    blue_sky: bool  # closed above the 5-year high
+    new_low: bool  # closed below the 5-year low
     breakout: int  # +1 closed above last week's nearest resistance, -1 below its support, else 0
     stop: float  # beyond the nearest level against ``side``
     target: float  # nearest level in favour of ``side`` (NaN: nothing in the way)
@@ -283,11 +284,11 @@ def levels_card(weekly: pd.DataFrame, side: int = 1) -> LevelsCard:
         upper_slope=upper.slope if upper else np.nan,
         high_52w=hi52,
         low_52w=lo52,
-        history_high=float(by["history_high"]),
-        history_low=float(by["history_low"]),
-        history_start=weekly.index[0],
-        blue_sky=close > by["history_high"],
-        new_low=close < by["history_low"],
+        high_5y=float(by["high_5y"]),
+        low_5y=float(by["low_5y"]),
+        start_5y=weekly.index[max(len(weekly) - 1 - FIVE_YEARS, 0)],
+        blue_sky=close > by["high_5y"],
+        new_low=close < by["low_5y"],
         breakout=breakout,
         stop=stop,
         target=targets[0],
