@@ -59,6 +59,10 @@ Current state:
   defaults by listing suffix). Method is generic; the comparison lists are per stock. See 0011.
 - All price data must pass through `check_prices` (review the issues), `clean_prices` and
   `trim_to_consistent` before use.
+- **Portfolio rules** (capital, risk per trade, position / sector / heat limits, entry validity,
+  long-only) live in `config/portfolio.toml`, read through `portfolio.rules.load_rules`. All
+  values are **placeholders** until the owner sets them and flips `confirmed = true`; reports
+  print a warning while it is false. See epic #104.
 
 ## Hard rules
 
@@ -143,10 +147,12 @@ src/solaraalpha/        importable package — all reusable code lives here
                         scheduled events from the issuer's own history — see docs/decisions/0006
     jet2_value.py       Jet2-only fair value: consensus-calibrated FY27/FY28 driver P&L, live
                         fuel curve / FX, horizon valuation, news shocks, Monte Carlo — 0009
-  portfolio/            portfolio construction / risk (later phase)
+  portfolio/            portfolio construction, booking and risk
+    rules.py            Rules dataclass + load_rules (config/portfolio.toml, validated)
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM UK 50 snapshot)
 config/benchmarks.toml  per-stock market / industry / peers for relative strength
+config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeholders until confirmed)
 .github/workflows/      ci.yml (checks), scan.yml (weekly pipeline, Sunday), stock.yml (one stock)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
