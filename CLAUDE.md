@@ -57,8 +57,11 @@ Current state:
   strength, on every stock) → `fundamentals` (on ACT and WATCH) → `events` (on ACT; it has no
   bands and is the input to research, not a gate). The **screen label** combines the four
   screening toolkits and is saved per stock in the `labels` table (`store.shortlist`). Stocks:
-  `config/watchlist.toml`. GitHub Actions run it Sunday (`scan.yml`) or on demand for one stock
-  (`stock.yml`). Bands are placeholders until backtested.
+  `config/watchlist.toml`. After the pipeline the scan **reviews every open position** (all
+  toolkits with the position's entry → a `review` card; the stop ratchets up and is drafted as
+  an approved order with `--save`; an exit is reported, never drafted; docs/decisions/0015).
+  GitHub Actions run it Sunday (`scan.yml`) or on demand for one stock (`stock.yml`). Bands are
+  placeholders until backtested.
 - **Daily job** (docs/decisions/0017): `scripts/daily.py` / `daily.yml` run every weekday after
   the close over open positions, the latest scan's WATCH tickers and pending breakout entries:
   price triggers (stop closed through / touched, target hit, gap > 2 ATR), coil and entry
@@ -200,6 +203,8 @@ src/solaraalpha/        importable package — all reusable code lives here
     triggers.py         daily triggers (pure): stop_close / stop_touched / target_hit / gap /
                         watch_break / entry_break / filing / news — see docs/decisions/0017
     daily.py            run_daily (what to check, fetch, evaluate, save the triggers) + render_daily
+    review.py           weekly review of open positions: every toolkit re-run with the entry,
+                        ReviewCard (ratcheted stop, deterioration, horizon rule, action), raise_stop
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM UK 50 snapshot)
 config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)

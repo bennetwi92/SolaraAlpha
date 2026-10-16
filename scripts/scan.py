@@ -8,10 +8,14 @@ uv run python scripts/scan.py --list                   # stages, toolkits and th
 Every toolkit labels its stock ACT / WATCH / PASS (ERROR if it raised) from its act / watch
 bands, and the stock's screen label combines technical, levels, relative strength and
 fundamentals (ERROR > PASS > WATCH > ACT); see solaraalpha.pipeline and docs/decisions/0014.
-Add --save to record the scan as one run in the results DB (every stock's cards, steps, a
-`labels` row per stock and input snapshots), --report FILE to append a markdown summary (GitHub
-Actions: "$GITHUB_STEP_SUMMARY") and --run-id-file FILE to write the saved run id. Exits 1 if
-any toolkit errored (after reporting and saving).
+After the pipeline, every **open position** in the book is reviewed (portfolio.review): all
+toolkits re-run with the position's entry, the stop ratcheted (a raised stop is drafted as an
+approved order with --save), deterioration since entry and the horizon rule judged into a
+`review` card; an exit is reported, never drafted. Add --save to record the scan as one run in
+the results DB (every stock's cards, steps, a `labels` row per stock and input snapshots),
+--report FILE to append a markdown summary (GitHub Actions: "$GITHUB_STEP_SUMMARY") and
+--run-id-file FILE to write the saved run id. Exits 1 if any toolkit errored (after reporting
+and saving).
 """
 
 from __future__ import annotations
@@ -30,6 +34,9 @@ from solaraalpha.pipeline import (
     screen_label,
     watchlist,
 )
+from solaraalpha.portfolio import book
+from solaraalpha.portfolio.review import Reviewed, review_positions, review_report
+from solaraalpha.portfolio.rules import load_rules
 from solaraalpha.store import save_label, save_ticker, start_run
 from solaraalpha.toolkits import REGISTRY, Inputs
 
@@ -54,7 +61,11 @@ def _save(run_id: int, x: Inputs, steps: list[Step], label: tuple[str, str] | No
         save_label(run_id, x.ticker, "screen", label[0], label[1])
 
 
-def _report(results: dict[str, list[Step]], labels: dict[str, tuple[str, str]]) -> str:
+def _report(
+    results: dict[str, list[Step]],
+    labels: dict[str, tuple[str, str]],
+    reviewed: list[Reviewed] | None = None,
+) -> str:
     cols = [s.toolkit for s in next(iter(results.values()))]
     lines = ["## Weekly pipeline", ""]
     lines += ["| ticker | " + " | ".join(cols) + " | label |", "|---" * (len(cols) + 2) + "|"]
@@ -76,6 +87,8 @@ def _report(results: dict[str, list[Step]], labels: dict[str, tuple[str, str]]) 
         if s.status == "error"
     ]
     lines += errors or ["- none"]
+    if reviewed is not None:
+        lines += ["", review_report(reviewed)]
     lines += ["", "<details><summary>Every toolkit's reason</summary>", ""]
     for ticker, steps in results.items():
         lines += [f"- {ticker} `{s.toolkit}` {s.label}: {s.reason}" for s in steps if s.reason]
@@ -129,17 +142,29 @@ def main(argv: list[str] | None = None) -> None:
         print(f"{x.ticker:<10} {labels[x.ticker][0]:<6} {marks}")
         if run_id is not None:
             _save(run_id, x, steps, None if args.toolkit else labels[x.ticker])
+    reviewed: list[Reviewed] | None = None
+    if not args.toolkit:
+        conn = book.connect()
+        try:
+            shared = {x.ticker: x for x in inputs}
+            reviewed = review_positions(conn, load_rules(), shared, run_id)
+        finally:
+            conn.close()
+        for it in reviewed:
+            print(f"{it.state.ticker:<10} review {it.card.action:<6} {it.card.reason}")
     if run_id is not None:
         print(f"saved run {run_id}")
         if args.run_id_file:
             args.run_id_file.write_text(f"{run_id}\n")
 
-    report = _report(results, labels)
+    report = _report(results, labels, reviewed)
     print("\n" + report)
     if args.report:
         with args.report.open("a") as f:
             f.write(report + "\n")
-    if any(s.status == "error" for steps in results.values() for s in steps):
+    errored = any(s.status == "error" for steps in results.values() for s in steps)
+    errored |= any(s.status == "error" for it in reviewed or [] for s in it.steps)
+    if errored:
         sys.exit(1)
 
 
