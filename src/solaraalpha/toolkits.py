@@ -26,6 +26,7 @@ import pandas as pd
 from solaraalpha.analysis.events import build_pack
 from solaraalpha.analysis.fundamentals import fundamentals_card
 from solaraalpha.analysis.levels import levels_card
+from solaraalpha.analysis.liquidity import liquidity_card
 from solaraalpha.analysis.relative_strength import compare, comparisons, rs_card
 from solaraalpha.analysis.technical import assess_position, scorecard
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
@@ -157,6 +158,16 @@ def _relative_strength(x: Inputs) -> Cards:
 def _fundamentals(x: Inputs, as_of: str | None = None) -> Cards:
     """Growth / value / quality scores, point-in-time via publication lags."""
     return {"fundamentals": fundamentals_card(x.fund, x.weekly, as_of)}
+
+
+@toolkit("liquidity")  # no bands: information for sizing (adv_gbp_20) and the validator
+def _liquidity(x: Inputs) -> Cards:
+    """Median daily traded value (20 / 60 sessions), zero-volume share, spread proxy, max
+    position value at max_adv_pct."""
+    from solaraalpha.portfolio.rules import load_rules
+
+    daily = trim_to_consistent(clean_prices(x.daily), x.issues)
+    return {"liquidity": liquidity_card(daily, load_rules().max_adv_pct, x.weekly.index[-1])}
 
 
 @dataclass(frozen=True)

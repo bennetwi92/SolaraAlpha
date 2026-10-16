@@ -6,7 +6,10 @@
 #   industry — sector index; if Yahoo has no history for it, the closest sector ETF. Optional.
 #   peers    — listed companies in the same business, any exchange. Optional; aim for 4-8.
 #   sector   — the stock's sector for concentration limits (portfolio.risk.sector_of). Optional;
-#              a stock without one is "unknown". Set only from a public source, never guessed.
+#              a stock without one is "unknown". Set only from a public source, never guessed:
+#              the ICB industry on the LSE company page (londonstockexchange.com/stock/<TIDM>/...),
+#              citing the date. Those pages render only with JavaScript, so they could not be read
+#              programmatically (#124, 2026-10-16); fill the rest by hand from the page.
 #
 # A stock with no entry is compared with its market only.
 

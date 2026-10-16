@@ -11,6 +11,7 @@ A stage runs each of its toolkits on every ticker whose *running* label (the com
 everything judged so far) is in the stage's ``runs_on``; the others get ``skip`` steps::
 
     screen        technical + levels + relative_strength    every ticker in the watchlist
+                  (+ liquidity: no bands, information only)
     fundamentals  fundamentals                              running label ACT or WATCH
     events        events                                    running label ACT (input to research)
 
@@ -36,6 +37,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from solaraalpha.config import REPO_ROOT
 from solaraalpha.log import get_logger
 from solaraalpha.toolkits import Cards, Inputs, get
@@ -43,6 +46,11 @@ from solaraalpha.toolkits import Cards, Inputs, get
 log = get_logger(__name__)
 
 WATCHLIST = REPO_ROOT / "config" / "watchlist.toml"
+# FTSE reviews its UK indices quarterly; constituent changes take effect in these months. A
+# hand-copied snapshot is stale once a review month has passed (plus a week for the changes
+# to land) since it was taken.
+REVIEW_MONTHS = (3, 6, 9, 12)
+REVIEW_GRACE_DAYS = 7
 LABELS = ("ACT", "WATCH", "PASS", "ERROR")
 ALL_LABELS = frozenset(LABELS)
 # Toolkits whose labels make the screen label (events is the input to research, not a gate).
@@ -134,7 +142,7 @@ class Stage:
 
 
 WEEKLY: tuple[Stage, ...] = (
-    Stage("screen", ("technical", "levels", "relative_strength")),
+    Stage("screen", ("technical", "levels", "relative_strength", "liquidity")),
     Stage("fundamentals", ("fundamentals",), frozenset({"ACT", "WATCH"})),
     Stage("events", ("events",), frozenset({"ACT"})),
 )
@@ -158,6 +166,34 @@ class Step:
 def watchlist(path: Path = WATCHLIST) -> list[str]:
     with path.open("rb") as f:
         return list(tomllib.load(f)["tickers"])
+
+
+def watchlist_snapshot(path: Path = WATCHLIST) -> pd.Timestamp | None:
+    """The ``snapshot`` date in the watchlist file, if any."""
+    with path.open("rb") as f:
+        raw = tomllib.load(f).get("snapshot")
+    return pd.Timestamp(raw) if raw is not None else None
+
+
+def stale_watchlist(snapshot: pd.Timestamp | None, today: pd.Timestamp) -> str | None:
+    """A warning when ``today`` is more than :data:`REVIEW_GRACE_DAYS` past the end of the first
+    FTSE review month (:data:`REVIEW_MONTHS`) after ``snapshot``'s month; None when current."""
+    if snapshot is None:
+        return "watchlist has no `snapshot` date; add one so staleness can be checked"
+    snap, now = pd.Timestamp(snapshot).tz_localize(None), pd.Timestamp(today).tz_localize(None)
+    year, month = snap.year, snap.month
+    later = [m for m in REVIEW_MONTHS if m > month]
+    review_month = (year, later[0]) if later else (year + 1, REVIEW_MONTHS[0])
+    end_of_review = pd.Timestamp(
+        year=review_month[0], month=review_month[1], day=1
+    ) + pd.offsets.MonthEnd(0)
+    due = end_of_review + pd.Timedelta(days=REVIEW_GRACE_DAYS)
+    if now.normalize() > due:
+        return (
+            f"watchlist snapshot {snap:%Y-%m-%d} predates the {end_of_review:%B %Y} FTSE review:"
+            " refresh config/watchlist.toml from the FTSE AIM UK 50 constituents"
+        )
+    return None
 
 
 def band(cards: Cards, toolkit: str) -> tuple[str, str]:

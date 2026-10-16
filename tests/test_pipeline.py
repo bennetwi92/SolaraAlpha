@@ -258,6 +258,11 @@ def test_screen_label(fake: list[tuple[str, str]], monkeypatch: pytest.MonkeyPat
 
     for real in ("technical", "levels", "relative_strength", "fundamentals"):
         monkeypatch.setitem(REGISTRY, real, stub(real))
+    monkeypatch.setitem(
+        REGISTRY,
+        "liquidity",
+        Toolkit("liquidity", lambda x: {"liquidity": Card(DATE, 0.0)}, (), (), "l"),
+    )
     monkeypatch.setitem(REGISTRY, "events", Toolkit("events", REGISTRY["boom"].run, (), (), "e"))
     got = run_pipeline([Inputs("UP.L"), Inputs("MID.L"), Inputs("DOWN.L")])
     assert screen_label(got["UP.L"]) == (
@@ -268,8 +273,8 @@ def test_screen_label(fake: list[tuple[str, str]], monkeypatch: pytest.MonkeyPat
     assert label == "WATCH"
     assert reason.startswith("technical WATCH: failed score > 0.0 (score=-0.30); levels WATCH")
     assert screen_label(got["DOWN.L"])[0] == "PASS"
-    assert [s.status for s in got["MID.L"]] == ["watch", "watch", "watch", "watch", "skip"]
-    assert [s.status for s in got["DOWN.L"]] == ["pass", "pass", "pass", "skip", "skip"]
+    assert [s.status for s in got["MID.L"]] == ["watch", "watch", "watch", "act", "watch", "skip"]
+    assert [s.status for s in got["DOWN.L"]] == ["pass", "pass", "pass", "act", "skip", "skip"]
     assert got["UP.L"][-1].status == "error"  # events raised, screen label unaffected
     assert screen_label(got["UP.L"])[0] == "ACT"
     assert screen_label([]) == ("ERROR", "no toolkit ran")

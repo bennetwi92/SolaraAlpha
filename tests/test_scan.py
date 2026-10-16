@@ -35,10 +35,10 @@ def stubs(monkeypatch: pytest.MonkeyPatch) -> None:
                 raise RuntimeError("NSM down")
             return {real: Card(DATE, scores[x.ticker])}
 
-        bands = ((), ()) if real == "events" else (("score > 0",), ("score > -0.5",))
+        bands = ((), ()) if real in ("events", "liquidity") else (("score > 0",), ("score > -0.5",))
         return Toolkit(real, run, bands[0], bands[1], real)
 
-    for real in ("technical", "levels", "relative_strength", "fundamentals", "events"):
+    for real in ("technical", "levels", "relative_strength", "liquidity", "fundamentals", "events"):
         monkeypatch.setitem(REGISTRY, real, stub(real))
 
 
@@ -66,10 +66,10 @@ def test_scan_labels_report_and_save(
     assert "saved run 1" in out and run_file.read_text() == "1\n"
 
     md = report.read_text()
-    assert "| UP.L | ACT | ACT | ACT | ACT | ACT | **ACT** |" in md
-    assert "| MID.L | WATCH | WATCH | WATCH | WATCH | - | **WATCH** |" in md
-    assert "| DOWN.L | pass | pass | pass | - | - | **PASS** |" in md
-    assert "| ERR.L | ACT | ACT | ACT | ACT | ERROR | **ACT** |" in md
+    assert "| UP.L | ACT | ACT | ACT | ACT | ACT | ACT | **ACT** |" in md
+    assert "| MID.L | WATCH | WATCH | WATCH | ACT | WATCH | - | **WATCH** |" in md
+    assert "| DOWN.L | pass | pass | pass | ACT | - | - | **PASS** |" in md
+    assert "| ERR.L | ACT | ACT | ACT | ACT | ACT | ERROR | **ACT** |" in md
     assert "**ACT:** UP.L, ERR.L" in md
     assert "- MID.L: technical WATCH: failed score > 0.0 (score=-0.30); levels WATCH" in md
     assert "- ERR.L `events`: RuntimeError: NSM down" in md
@@ -82,7 +82,7 @@ def test_scan_labels_report_and_save(
     assert store.shortlist(1) == ["UP.L", "ERR.L"]
     assert store.shortlist(1, labels=("WATCH",)) == ["MID.L"]
     steps = store.load_steps("MID.L")
-    assert list(steps["status"]) == ["watch", "watch", "watch", "watch", "skip"]
+    assert list(steps["status"]) == ["watch", "watch", "watch", "act", "watch", "skip"]
     assert steps["reason"].iloc[-1] == "running label WATCH"
 
 

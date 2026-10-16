@@ -54,10 +54,12 @@ Current state:
   registered by id in `solaraalpha/toolkits.py`, each with `act=` / `watch=` bands that label a
   stock **ACT / WATCH / PASS** (ERROR if it raised); labels combine ERROR > PASS > WATCH > ACT.
   The stages are `WEEKLY` in `solaraalpha/pipeline.py` — `screen` (technical + levels + relative
-  strength, on every stock) → `fundamentals` (on ACT and WATCH) → `events` (on ACT; it has no
-  bands and is the input to research, not a gate). The **screen label** combines the four
+  strength + liquidity, on every stock; liquidity has no bands and feeds sizing) → `fundamentals`
+  (on ACT and WATCH) → `events` (on ACT; it has no bands and is the input to research, not a
+  gate). The **screen label** combines the four
   screening toolkits and is saved per stock in the `labels` table (`store.shortlist`). Stocks:
-  `config/watchlist.toml`. After the pipeline the scan **reviews every open position** (all
+  `config/watchlist.toml` (hand snapshot with a `snapshot` date; the scan warns once a quarterly
+  FTSE review month has passed since it). After the pipeline the scan **reviews every open position** (all
   toolkits with the position's entry → a `review` card; the stop ratchets up and is drafted as
   an approved order with `--save`; an exit is reported, never drafted; docs/decisions/0015).
   GitHub Actions run it Sunday (`scan.yml`) or on demand for one stock (`stock.yml`). Bands are
@@ -187,6 +189,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         point-in-time via publication lags — see docs/decisions/0005
     relative_strength.py  relative strength (any stock) vs market, industry, peer basket:
                         vol-scaled excess returns, peer rank — see docs/decisions/0011
+    liquidity.py        liquidity (any stock): median daily traded value (20 / 60 sessions),
+                        zero-volume share, Corwin-Schultz spread proxy, max position at max_adv_pct
     events.py           events model (any stock): market reaction per filing, expected
                         scheduled events from the issuer's own history — see docs/decisions/0006
     jet2_value.py       Jet2-only fair value: consensus-calibrated FY27/FY28 driver P&L, live
