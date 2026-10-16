@@ -9,6 +9,14 @@ uv run python scripts/book.py amend POSITION_ID [--qty N] [--price P] [--stop P]
 uv run python scripts/book.py reject POSITION_ID --reason TEXT
 uv run python scripts/book.py tickets                       # approved, not yet placed orders
 uv run python scripts/book.py placed ORDER_ID [--ref BROKER_REF] [--at ISO]
+uv run python scripts/book.py fill ORDER_ID --qty N --price P [--at ISO] [--commission X] [--fees X]
+uv run python scripts/book.py unfilled ORDER_ID [--reason TEXT]   # entry never filled
+uv run python scripts/book.py cancel ORDER_ID [--reason TEXT]
+uv run python scripts/book.py expire [--as-of DATE]               # entry orders past valid_until
+uv run python scripts/book.py show POSITION_ID --price P          # adds R so far at price P
+
+A first fill on an entry order opens the position and drafts its protective stop order
+(approved, so it appears in `tickets` at once); later entry fills re-size that stop.
 
 Every command is one transaction in the results DB (Turso when configured, else data/solara.db;
 --db PATH forces a local file). State changes are new event rows, never updates
@@ -161,6 +169,10 @@ def _show(conn: Conn, a: argparse.Namespace) -> None:
     print(
         f"risk at stop £{st.risk_at_stop:,.2f}  realised £{st.realised_pnl:,.2f}  costs £{st.costs:,.2f}"
     )
+    if a.price is not None and st.shares:
+        unreal = book.to_account((a.price - st.avg_cost) * st.shares * st.side, ccy)
+        r = f"{unreal / st.r_unit:+.2f}R" if st.r_unit else "R unknown (no initial stop)"
+        print(f"  at {book.fmt_price(a.price, ccy)}: unrealised £{unreal:,.2f}  {r}")
 
 
 def _short(d: dict[str, Any]) -> str:
@@ -201,6 +213,35 @@ def _tickets(conn: Conn, a: argparse.Namespace) -> None:
     )
 
 
+@command("fill")
+def _fill(conn: Conn, a: argparse.Namespace) -> None:
+    out = book.fill(conn, a.order_id, a.qty, a.price, a.at, a.commission, a.fees)
+    msg = f"order {a.order_id} {out['order_status']}; position holds {out['shares']} shares"
+    if out["opened"]:
+        msg += "; position opened"
+    if out["stop_order_id"]:
+        msg += f"; protective stop order {out['stop_order_id']} approved (see `tickets`)"
+    print(msg)
+
+
+@command("unfilled")
+def _unfilled(conn: Conn, a: argparse.Namespace) -> None:
+    cancelled = book.end_order(conn, a.order_id, "not_filled", a.reason or "")
+    print(f"order {a.order_id} not filled" + ("; position cancelled" if cancelled else ""))
+
+
+@command("cancel")
+def _cancel(conn: Conn, a: argparse.Namespace) -> None:
+    cancelled = book.end_order(conn, a.order_id, "cancelled", a.reason or "")
+    print(f"order {a.order_id} cancelled" + ("; position cancelled" if cancelled else ""))
+
+
+@command("expire")
+def _expire(conn: Conn, a: argparse.Namespace) -> None:
+    ids = book.expire_orders(conn, a.as_of)
+    print(f"expired orders: {', '.join(map(str, ids)) or 'none'}")
+
+
 @command("placed")
 def _placed(conn: Conn, a: argparse.Namespace) -> None:
     book.place_order(conn, a.order_id, a.ref, a.at)
@@ -228,6 +269,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sh = sub.add_parser("show", help="one position in full")
     sh.add_argument("position_id", type=int)
+    sh.add_argument("--price", type=float, help="last price, to show unrealised P&L and R")
 
     ap = sub.add_parser("approve")
     ap.add_argument("position_id", type=int)
@@ -250,6 +292,22 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("order_id", type=int)
     pl.add_argument("--ref", help="broker reference")
     pl.add_argument("--at", help="ISO time (default now)")
+
+    fi = sub.add_parser("fill", help="record a (part) fill")
+    fi.add_argument("order_id", type=int)
+    fi.add_argument("--qty", type=int, required=True)
+    fi.add_argument("--price", type=float, required=True, help="quote currency (pence for LSE)")
+    fi.add_argument("--at", help="ISO time (default now)")
+    fi.add_argument("--commission", type=float, default=0.0, help="account currency (GBP)")
+    fi.add_argument("--fees", type=float, default=0.0, help="stamp duty etc., GBP")
+
+    for name, help_ in (("unfilled", "an order that never filled"), ("cancel", "cancel an order")):
+        c = sub.add_parser(name, help=help_)
+        c.add_argument("order_id", type=int)
+        c.add_argument("--reason", default="")
+
+    ex = sub.add_parser("expire", help="expire entry orders past their validity")
+    ex.add_argument("--as-of", help="date (default today)")
 
     return p
 

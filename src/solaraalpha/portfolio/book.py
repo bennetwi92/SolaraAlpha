@@ -825,3 +825,130 @@ def fmt_price(price: float | None, currency: str | None) -> str:
     if currency in ("GBp", "GBX"):
         return f"{price:,.0f}p" if float(price).is_integer() else f"{price:,.2f}p"
     return f"{price:,.2f} {currency or ''}".strip()
+
+
+# ---------------------------------------------------------------------------- fills
+
+
+def fill(
+    conn: Conn,
+    order_id: int,
+    qty: int,
+    price: float,
+    at: str | None = None,
+    commission: float = 0.0,
+    fees: float = 0.0,
+    actor: str = OWNER,
+) -> dict[str, Any]:
+    """Record a fill and its consequences for the position.
+
+    A fill on a buying order (``entry`` / ``add``) opens the position on its first fill and
+    (re)drafts the **protective stop**: an ``approved`` stop order at the planned stop for every
+    share held, replacing the previous stop order so it always covers the whole holding. Returns
+    ``{"fill_id", "order_status", "opened", "stop_order_id", "shares"}``.
+    """
+    t = iso(at)
+    fid = add_fill(conn, order_id, qty, price, t, commission, fees, actor)
+    order = _order(conn, order_id)
+    pid = int(order["position_id"])
+    out: dict[str, Any] = {
+        "fill_id": fid,
+        "order_status": order_status(conn, order_id),
+        "opened": False,
+        "stop_order_id": None,
+    }
+    if order["purpose"] in BUY_PURPOSES:
+        if position_status(conn, pid) == "approved":
+            position_event(
+                conn, pid, "opened", {"order_id": order_id, "price": price}, actor=actor, at=t
+            )
+            out["opened"] = True
+        out["stop_order_id"] = protect(conn, pid, actor=actor, at=t)
+    out["shares"] = position_state(conn, pid).shares
+    return out
+
+
+def protect(conn: Conn, position_id: int, actor: str = OWNER, at: str | None = None) -> int | None:
+    """Make the live protective stop order cover every share held, at the planned stop price
+    (or the current stop's price once one exists). Replaces the old stop order (cancel + new,
+    status ``approved``); returns the new order id, None when nothing is held or no stop is known."""
+    st = position_state(conn, position_id)
+    price = st.stop if st.stop is not None else st.initial_stop
+    if st.shares <= 0 or price is None:
+        return None
+    od = orders(conn, position_id)
+    live = od[(od["purpose"] == "stop") & od["status"].isin(LIVE_ORDER)]
+    if not live.empty:
+        if int(live["qty"].iloc[-1]) == st.shares and float(live["price"].iloc[-1]) == price:
+            return int(live["order_id"].iloc[-1])
+        return replace_order(
+            conn, int(live["order_id"].iloc[-1]), st.shares, price, "stop re-sized", actor, at
+        )
+    return add_order(
+        conn,
+        position_id,
+        -st.side,
+        "stop",
+        st.shares,
+        price,
+        "stop",
+        None,
+        "approved",
+        actor,
+        at=at,
+    )
+
+
+def end_order(
+    conn: Conn,
+    order_id: int,
+    status: str,
+    reason: str = "",
+    actor: str = OWNER,
+    at: str | None = None,
+) -> bool:
+    """Mark an order ``not_filled`` / ``cancelled`` / ``expired``. An entry order ending with no
+    fill on an unopened position cancels the position too. Returns whether the position was
+    cancelled."""
+    if status not in ("not_filled", "cancelled", "expired"):
+        raise ValueError(
+            f"end_order: status must be not_filled / cancelled / expired, got {status!r}"
+        )
+    t = iso(at)
+    order = _order(conn, order_id)
+    order_event(conn, order_id, status, actor=actor, reason=reason, at=t)
+    pid = int(order["position_id"])
+    if order["purpose"] != "entry" or position_status(conn, pid) not in ("draft", "approved"):
+        return False
+    if filled_qty(conn, order_id) or not fills(conn, position_id=pid).empty:
+        return False
+    od = orders(conn, pid)
+    if od.loc[(od["purpose"] == "entry") & od["status"].isin(OPEN_ORDER)].empty:
+        position_event(conn, pid, "cancelled", actor=actor, reason=f"entry {status}", at=t)
+        cancel_open_orders(conn, pid, reason=f"entry {status}", actor=actor, at=t)
+        return True
+    return False
+
+
+def expire_orders(conn: Conn, as_of: str | None = None, actor: str = OWNER) -> list[int]:
+    """Mark every approved or placed entry order whose ``valid_until`` is before ``as_of``
+    (default today, UTC) as ``expired``; returns their ids."""
+    today = pd.Timestamp(iso(as_of)).strftime("%Y-%m-%d")
+    od = orders(conn)
+    stale = od[
+        (od["purpose"] == "entry")
+        & od["status"].isin(["approved", "placed"])
+        & od["valid_until"].notna()
+        & (od["valid_until"] < today)
+    ]
+    ids = [int(o) for o in stale["order_id"]]
+    for oid in ids:
+        end_order(
+            conn,
+            oid,
+            "expired",
+            f"valid until {od.set_index('order_id').loc[oid, 'valid_until']}",
+            actor,
+            as_of,
+        )
+    return ids
