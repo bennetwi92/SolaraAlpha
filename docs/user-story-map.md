@@ -3,7 +3,7 @@
 This is the whole job, from a stock entering the universe to a closed trade feeding back into
 the models. Use it to see what's built and what still has to be delivered. Each story that
 isn't built should become one GitHub issue (see CLAUDE.md, *Issues*), and its row here links
-to that issue.
+to that issue. The build order and shared conventions are in epic #104.
 
 - **Backbone**: the activities, left to right, in the order they happen in a week (§3).
 - **Stories**: what each activity needs, grouped by release (§4). R1 is the smallest set that
@@ -138,10 +138,10 @@ Story format: *as <actor>, I want <capability> so that <outcome>*, then acceptan
 |---|---|---|---|
 | S0.1 | As the owner I want a watchlist universe so the scan knows which stocks to run. | R1 | ✅ `config/watchlist.toml` (FTSE AIM UK 50, hand snapshot) |
 | S0.2 | As the owner I want per-stock benchmarks and peers so relative strength is meaningful. | R1 | ✅ `config/benchmarks.toml` |
-| S0.3 | As the owner I want **portfolio rules** in one config file (capital, risk per trade, max open positions, max per stock / sector, max portfolio heat, cash buffer, min liquidity) so sizing and checks are consistent and versioned. | R1 | ⬜ |
-| S0.4 | As the owner I want a reminder when the watchlist snapshot is older than the last quarterly FTSE review, so the universe doesn't drift. | R2 | ⬜ |
-| S0.5 | As the owner I want each stock's sector / industry recorded so concentration can be checked. | R2 | 🟡 implicit in `benchmarks.toml` industry; not a field |
-| S0.6 | As the owner I want each stock's liquidity (median daily £ volume, spread proxy) so size is capped at what AIM names can absorb. | R2 | ⬜ |
+| S0.3 | As the owner I want **portfolio rules** in one config file (capital, risk per trade, max open positions, max per stock / sector, max portfolio heat, cash buffer, min liquidity) so sizing and checks are consistent and versioned. | R1 | ⬜ · #105 |
+| S0.4 | As the owner I want a reminder when the watchlist snapshot is older than the last quarterly FTSE review, so the universe doesn't drift. | R2 | ⬜ · #124 |
+| S0.5 | As the owner I want each stock's sector / industry recorded so concentration can be checked. | R2 | 🟡 implicit in `benchmarks.toml` industry; not a field · #124 |
+| S0.6 | As the owner I want each stock's liquidity (median daily £ volume, spread proxy) so size is capped at what AIM names can absorb. | R2 | ⬜ · #124 |
 
 S0.3 acceptance (proposal for the values; owner to set them):
 - `config/portfolio.toml` holding `capital`, `risk_per_trade` (e.g. 0.5–1% of capital),
@@ -172,12 +172,12 @@ at least 2:1 to the next resistance (or nothing overhead).**
 |---|---|---|---|
 | S1.1 | As the pipeline I want technical, levels and relative strength run on every watchlist stock, side by side. | R1 | ✅ stage `screen` |
 | S1.2 | As the pipeline I want fundamentals run on the survivors. | R1 | ✅ stage `fundamentals` |
-| S1.3 | As the owner I want each toolkit to give **ACT / WATCH / PASS / ERROR** from its own bands (`act=` and `watch=` conditions) rather than pass/fail, so near-misses become a watch list. | R1 | ⬜ conditions are pass/fail only |
-| S1.4 | As the owner I want one **screen label per stock** from all four toolkits (the combining rule in §2), saved as a `steps` row, so the shortlist is one query. | R1 | 🟡 stages gate; no combined label |
-| S1.5 | As the owner I want the **"what we're looking for"** definition above recorded in an ADR and coded as the bands, so the screen is explicit and testable. | R1 | ⬜ thresholds are placeholders (ADR 0010) |
-| S1.6 | As the owner I want WATCH stocks to keep their reason (e.g. "extended: entry −0.4", "coiled: trigger 1,520p") so the daily monitor knows what would turn them into ACT. | R2 | ⬜ |
-| S1.7 | As the owner I want the event pack (`events` toolkit) to stop being a pass/fail screen and become the **input to A3** (it has no pass conditions today). | R1 | 🟡 runs as stage 3 with no gate |
-| S1.8 | As the owner I want the screen to rank ACT stocks (e.g. by setup × RS) so the agents work the best first if the list is long. | R2 | ⬜ |
+| S1.3 | As the owner I want each toolkit to give **ACT / WATCH / PASS / ERROR** from its own bands (`act=` and `watch=` conditions) rather than pass/fail, so near-misses become a watch list. | R1 | ⬜ conditions are pass/fail only · #111 |
+| S1.4 | As the owner I want one **screen label per stock** from all four toolkits (the combining rule in §2), saved as a `steps` row, so the shortlist is one query. | R1 | 🟡 stages gate; no combined label · #111 |
+| S1.5 | As the owner I want the **"what we're looking for"** definition above recorded in an ADR and coded as the bands, so the screen is explicit and testable. | R1 | ⬜ thresholds are placeholders (ADR 0010) · #111 |
+| S1.6 | As the owner I want WATCH stocks to keep their reason (e.g. "extended: entry −0.4", "coiled: trigger 1,520p") so the daily monitor knows what would turn them into ACT. | R2 | ⬜ · #125 |
+| S1.7 | As the owner I want the event pack (`events` toolkit) to stop being a pass/fail screen and become the **input to A3** (it has no pass conditions today). | R1 | 🟡 runs as stage 3 with no gate · #111 |
+| S1.8 | As the owner I want the screen to rank ACT stocks (e.g. by setup × RS) so the agents work the best first if the list is long. | R2 | ⬜ · #125 |
 
 ### A2 — Validate (agent, Sunday)
 
@@ -187,12 +187,12 @@ research. Its job is to catch model artefacts: bad data, a score driven by one o
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S2.1 | As the owner I want a `/validate <TICKER> [--run N]` skill that reads the saved cards, steps and price snapshot for that run, and judges each toolkit's label as *warranted / not warranted* with a reason. | R1 | ⬜ |
-| S2.2 | As the validator I want a fixed checklist: data issues (`check_prices`, trim span, gaps, suspensions); one-off spikes (bid, placing, results gap) inflating trend or momentum; overextension vs ATR; levels that are stale or that the price just broke; RS driven by one peer; fundamentals stale, a one-off, or currency-mismatched; agreement between the toolkits. | R1 | ⬜ |
-| S2.3 | As the owner I want its output to be ACT / WATCH / PASS / ERROR + confidence + reasons, written to the DB as a `validate` card and step on the **same run**. | R1 | ⬜ |
-| S2.4 | As the owner I want it to be **independent**: it sees the raw data and the cards, never the other agents' notes, and can only *downgrade* (ACT → WATCH / PASS), never upgrade. | R1 | ⬜ (proposal: downgrade only) |
-| S2.5 | As the owner I want it rendered as a short chart pack (weekly bars, MAs, levels, stop, target) the agent can read, so it judges the picture as well as the numbers. | R2 | ⬜ |
-| S2.6 | As the owner I want the validator's disagreements logged and counted, so bad toolkit rules surface (feeds A11). | R2 | ⬜ |
+| S2.1 | As the owner I want a `/validate <TICKER> [--run N]` skill that reads the saved cards, steps and price snapshot for that run, and judges each toolkit's label as *warranted / not warranted* with a reason. | R1 | ⬜ · #118 |
+| S2.2 | As the validator I want a fixed checklist: data issues (`check_prices`, trim span, gaps, suspensions); one-off spikes (bid, placing, results gap) inflating trend or momentum; overextension vs ATR; levels that are stale or that the price just broke; RS driven by one peer; fundamentals stale, a one-off, or currency-mismatched; agreement between the toolkits. | R1 | ⬜ · #118 |
+| S2.3 | As the owner I want its output to be ACT / WATCH / PASS / ERROR + confidence + reasons, written to the DB as a `validate` card and step on the **same run**. | R1 | ⬜ · #117, #118 |
+| S2.4 | As the owner I want it to be **independent**: it sees the raw data and the cards, never the other agents' notes, and can only *downgrade* (ACT → WATCH / PASS), never upgrade. | R1 | ⬜ (proposal: downgrade only) · #118 |
+| S2.5 | As the owner I want it rendered as a short chart pack (weekly bars, MAs, levels, stop, target) the agent can read, so it judges the picture as well as the numbers. | R2 | ⬜ · #126 |
+| S2.6 | As the owner I want the validator's disagreements logged and counted, so bad toolkit rules surface (feeds A11). | R2 | ⬜ · #126 |
 
 ### A3 — Research: events, catalysts and headwinds (agent, Sunday)
 
@@ -231,49 +231,49 @@ labelled as such (no look-ahead in the record, and the live decision uses what's
 |---|---|---|---|
 | S3.1 | As the strategist I want the event pack (filings with reactions, expected events, headlines) as the starting facts. | R1 | ✅ `scripts/events.py`, `events` toolkit |
 | S3.2 | As the strategist I want an interpretation skill for catalysts and upcoming events. | R1 | ✅ `/events` skill (writes `analysis.json/md` to disk) |
-| S3.3 | As the owner I want a `/research <TICKER>` skill (extending `/events`) that follows the 9-section structure above and **searches the web** for fresh information. | R1 | ⬜ |
-| S3.4 | As the owner I want every source the agent relies on logged in the DB as an **evidence** row: url, title, publisher, published, retrieved, section, summary, discretionary impact (score, confidence, horizon, which driver), and a link to the run and ticker. | R1 | ⬜ (#84 covers the `/events` notes only) |
-| S3.5 | As the owner I want the research verdict saved as a `research` card and step on the same run, so it reads like any other stage. | R1 | ⬜ |
-| S3.6 | As the owner I want the agent to separate facts (quoted, cited) from interpretation, and never invent consensus or dates. | R1 | ✅ rule in `/events`; carry into `/research` |
-| S3.7 | As the owner I want the free web/news sources it uses listed in `docs/data-sources.md`, with terms checked. | R1 | 🟡 Google News, NSM listed; web search not |
-| S3.8 | As the owner I want stock-specific value models (e.g. `/jet2-value`) called from research when they exist, so news is turned into earnings impact. | R2 | 🟡 Jet2 only, not wired in |
-| S3.9 | As the owner I want the prior week's research for a stock reused as background and only the delta researched, so repeat candidates are cheap. | R2 | ⬜ |
-| S3.10 | As the owner I want a sector / macro note shared across the week's candidates (the same headwind researched once). | R3 | ⬜ |
+| S3.3 | As the owner I want a `/research <TICKER>` skill (extending `/events`) that follows the 9-section structure above and **searches the web** for fresh information. | R1 | ⬜ · #119 |
+| S3.4 | As the owner I want every source the agent relies on logged in the DB as an **evidence** row: url, title, publisher, published, retrieved, section, summary, discretionary impact (score, confidence, horizon, which driver), and a link to the run and ticker. | R1 | ⬜ (#84 covers the `/events` notes only) · #117 |
+| S3.5 | As the owner I want the research verdict saved as a `research` card and step on the same run, so it reads like any other stage. | R1 | ⬜ · #117, #119 |
+| S3.6 | As the owner I want the agent to separate facts (quoted, cited) from interpretation, and never invent consensus or dates. | R1 | ✅ rule in `/events`; carry into `/research` · #119 |
+| S3.7 | As the owner I want the free web/news sources it uses listed in `docs/data-sources.md`, with terms checked. | R1 | 🟡 Google News, NSM listed; web search not · #119 |
+| S3.8 | As the owner I want stock-specific value models (e.g. `/jet2-value`) called from research when they exist, so news is turned into earnings impact. | R2 | 🟡 Jet2 only, not wired in · #127 |
+| S3.9 | As the owner I want the prior week's research for a stock reused as background and only the delta researched, so repeat candidates are cheap. | R2 | ⬜ · #127 |
+| S3.10 | As the owner I want a sector / macro note shared across the week's candidates (the same headwind researched once). | R3 | ⬜ · #140 |
 
 ### A4 — Plan and size (Sunday)
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
 | S4.1 | As the pipeline I want an entry, stop and targets for each stock. | R1 | ✅ levels card: `trigger` / close, `stop`, `target`, `reward_risk`; technical `stop` |
-| S4.2 | As the owner I want a **trade plan** per ACT stock: entry type (buy-stop at `trigger` if coiled, else limit near the close / Monday open), entry validity (e.g. good for 1 week), initial stop, targets, holding horizon (2–16 weeks), trailing rule (chandelier 3 ATR, ADR 0003), review dates (before known events). | R1 | ⬜ |
-| S4.3 | As the owner I want **position size** from risk: shares = (capital × `risk_per_trade`) ÷ (entry − stop), capped by `max_position_pct`, liquidity (`max_adv_pct`) and cash. | R1 | ⬜ |
-| S4.4 | As the owner I want a **portfolio fit check** before a plan is drafted: max positions, sector cap, total heat, correlation with open positions, event clash (results within N days of entry). It reports breaches and ranks candidates if the slots run out. | R1 | ⬜ |
-| S4.5 | As the owner I want **draft positions and draft orders** written to the DB (positions, orders tables) with a status, so there's one record from plan to close. | R1 | ⬜ |
-| S4.6 | As the owner I want every card that justified the trade (technical, levels, RS, fundamentals, validate, research) **linked to the position as its entry conditions**: run_id + ticker + model, plus a frozen copy of the key fields, so the monitor can compare "then" with "now". | R1 | ⬜ |
-| S4.7 | As the owner I want the research's kill criteria stored as **thesis conditions** on the position (e.g. "FY guidance cut", "close < 40w MA", "fuel > $X"), each either machine-checkable (field op value) or agent-checked text. | R1 | ⬜ |
-| S4.8 | As the owner I want a **weekly pack** (markdown / artifact): new ACT plans with size and orders, the WATCH list with what would trigger it, open-position actions, portfolio heat and cash. | R1 | 🟡 scan job summary lists stage outcomes only |
-| S4.9 | As the owner I want scaling rules (add on a confirmed breakout or a pullback to a new support; never add to a loser) in the plan, so it can be "held longer while it keeps climbing". | R2 | ⬜ |
+| S4.2 | As the owner I want a **trade plan** per ACT stock: entry type (buy-stop at `trigger` if coiled, else limit near the close / Monday open), entry validity (e.g. good for 1 week), initial stop, targets, holding horizon (2–16 weeks), trailing rule (chandelier 3 ATR, ADR 0003), review dates (before known events). | R1 | ⬜ · #112 |
+| S4.3 | As the owner I want **position size** from risk: shares = (capital × `risk_per_trade`) ÷ (entry − stop), capped by `max_position_pct`, liquidity (`max_adv_pct`) and cash. | R1 | ⬜ · #112 |
+| S4.4 | As the owner I want a **portfolio fit check** before a plan is drafted: max positions, sector cap, total heat, correlation with open positions, event clash (results within N days of entry). It reports breaches and ranks candidates if the slots run out. | R1 | ⬜ · #113 |
+| S4.5 | As the owner I want **draft positions and draft orders** written to the DB (positions, orders tables) with a status, so there's one record from plan to close. | R1 | ⬜ · #106, #114 |
+| S4.6 | As the owner I want every card that justified the trade (technical, levels, RS, fundamentals, validate, research) **linked to the position as its entry conditions**: run_id + ticker + model, plus a frozen copy of the key fields, so the monitor can compare "then" with "now". | R1 | ⬜ · #114 |
+| S4.7 | As the owner I want the research's kill criteria stored as **thesis conditions** on the position (e.g. "FY guidance cut", "close < 40w MA", "fuel > $X"), each either machine-checkable (field op value) or agent-checked text. | R1 | ⬜ · #114 |
+| S4.8 | As the owner I want a **weekly pack** (markdown / artifact): new ACT plans with size and orders, the WATCH list with what would trigger it, open-position actions, portfolio heat and cash. | R1 | 🟡 scan job summary lists stage outcomes only · #115 |
+| S4.9 | As the owner I want scaling rules (add on a confirmed breakout or a pullback to a new support; never add to a loser) in the plan, so it can be "held longer while it keeps climbing". | R2 | ⬜ · #128 |
 
 ### A5 — Approve and place (owner)
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S5.1 | As the owner I want to approve, amend (size, price) or reject each draft position with a reason, recorded in the DB. | R1 | ⬜ |
-| S5.2 | As the owner I want approved orders listed as broker-ready tickets (ticker, side, type, qty, limit/stop price, validity) to place by hand. | R1 | ⬜ |
-| S5.3 | As the owner I want to mark orders as **placed**, with the broker reference. | R1 | ⬜ |
-| S5.4 | As the owner I want rejections and amendments counted, so I can see where the system and I disagree (A11). | R2 | ⬜ |
-| S5.5 | As the owner I want a simple CLI (`scripts/book.py approve|reject|placed ...`) and later a page, rather than raw SQL. | R1 / R2 | ⬜ |
+| S5.1 | As the owner I want to approve, amend (size, price) or reject each draft position with a reason, recorded in the DB. | R1 | ⬜ · #107 |
+| S5.2 | As the owner I want approved orders listed as broker-ready tickets (ticker, side, type, qty, limit/stop price, validity) to place by hand. | R1 | ⬜ · #107 |
+| S5.3 | As the owner I want to mark orders as **placed**, with the broker reference. | R1 | ⬜ · #107 |
+| S5.4 | As the owner I want rejections and amendments counted, so I can see where the system and I disagree (A11). | R2 | ⬜ · #130 |
+| S5.5 | As the owner I want a simple CLI (`scripts/book.py approve|reject|placed ...`) and later a page, rather than raw SQL. | R1 / R2 | ⬜ · #107 |
 
 ### A6 — Record fills (owner, daily)
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S6.1 | As the owner I want to enter a fill against an order: date-time, qty, price, commission, stamp duty / fees (AIM shares are currently exempt from UK stamp duty; record any fee anyway). | R1 | ⬜ |
-| S6.2 | As the owner I want to mark an order **not filled / expired / cancelled**, and a part fill to leave the rest open. | R1 | ⬜ |
-| S6.3 | As the owner I want a first fill to open the position, and it to show average cost, shares, risk at the stop and R. | R1 | ⬜ |
-| S6.4 | As the owner I want each newly opened position to get a **protective stop order** drafted for me to place. | R1 | ⬜ |
-| S6.5 | As the owner I want a reminder of orders past their validity with no fill entered. | R2 | ⬜ |
-| S6.6 | As the owner I want fills reconciled against a broker statement / CSV export, if the broker offers one, so manual entry errors show up. | R3 | ⬜ (depends on the broker; owner to choose) |
+| S6.1 | As the owner I want to enter a fill against an order: date-time, qty, price, commission, stamp duty / fees (AIM shares are currently exempt from UK stamp duty; record any fee anyway). | R1 | ⬜ · #108 |
+| S6.2 | As the owner I want to mark an order **not filled / expired / cancelled**, and a part fill to leave the rest open. | R1 | ⬜ · #108 |
+| S6.3 | As the owner I want a first fill to open the position, and it to show average cost, shares, risk at the stop and R. | R1 | ⬜ · #106, #108 |
+| S6.4 | As the owner I want each newly opened position to get a **protective stop order** drafted for me to place. | R1 | ⬜ · #108 |
+| S6.5 | As the owner I want a reminder of orders past their validity with no fill entered. | R2 | ⬜ · #130 |
+| S6.6 | As the owner I want fills reconciled against a broker statement / CSV export, if the broker offers one, so manual entry errors show up. | R3 | ⬜ (depends on the broker; owner to choose) · #141 |
 
 ### A7 — Monitor daily
 
@@ -282,56 +282,56 @@ and WATCH stock**, and **the agent only when a check fires**.
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S7.1 | As the pipeline I want a **daily job** (weekday evenings after the 16:35 close) that fetches daily prices for open positions and WATCH stocks. | R1 | ⬜ (ADR 0010 says daily isn't built) |
-| S7.2 | As the owner I want **price triggers**: close below the stop (exit), intraday through the stop (check the fill), hit a target (take profit / trail), gap over N ATR, WATCH coil `trigger` broken (promote to ACT mid-week). | R1 | ⬜ |
-| S7.3 | As the owner I want **new regulatory announcements** for open positions checked daily (NSM by LEI) and new headlines from the news feed. | R1 | 🟡 fetchers exist (`announcements`, `news`); no daily job |
-| S7.4 | As the owner I want **thesis conditions** (S4.7) that are machine-checkable evaluated daily. | R2 | ⬜ |
-| S7.5 | As the owner I want the **monitor agent** run only for positions with a fired trigger: read the filing / news, compare it with the entry conditions and the thesis, and propose **hold / tighten stop / take partial / exit / revise target**, with evidence logged (as S3.4). | R1 | ⬜ |
-| S7.6 | As the owner I want "structural change" defined so the agent doesn't churn: guidance or estimate change; a thesis kill criterion hit; a capital event (placing, bid, delisting); a regulatory or legal event; a weekly-trend break (stage 2 → 3). Noise (no new information, a move inside 2 ATR) is ignored. | R1 | ⬜ (proposal) |
-| S7.7 | As the owner I want each proposal stored as a **plan revision** (old → new, reason, evidence, status proposed / accepted / rejected), and new draft orders if accepted. | R1 | ⬜ |
-| S7.8 | As the owner I want a daily notification only when something needs me (a revision, a stop hit, a fill to enter, an error); silence otherwise. | R2 | ⬜ |
-| S7.9 | As the owner I want market-wide volatility checks (index drawdown, VIX / VFTSE proxy) to flag "tighten everything" days. | R3 | ⬜ |
+| S7.1 | As the pipeline I want a **daily job** (weekday evenings after the 16:35 close) that fetches daily prices for open positions and WATCH stocks. | R1 | ⬜ (ADR 0010 says daily isn't built) · #120 |
+| S7.2 | As the owner I want **price triggers**: close below the stop (exit), intraday through the stop (check the fill), hit a target (take profit / trail), gap over N ATR, WATCH coil `trigger` broken (promote to ACT mid-week). | R1 | ⬜ · #120 |
+| S7.3 | As the owner I want **new regulatory announcements** for open positions checked daily (NSM by LEI) and new headlines from the news feed. | R1 | 🟡 fetchers exist (`announcements`, `news`); no daily job · #120 |
+| S7.4 | As the owner I want **thesis conditions** (S4.7) that are machine-checkable evaluated daily. | R2 | ⬜ · #131 |
+| S7.5 | As the owner I want the **monitor agent** run only for positions with a fired trigger: read the filing / news, compare it with the entry conditions and the thesis, and propose **hold / tighten stop / take partial / exit / revise target**, with evidence logged (as S3.4). | R1 | ⬜ · #121 |
+| S7.6 | As the owner I want "structural change" defined so the agent doesn't churn: guidance or estimate change; a thesis kill criterion hit; a capital event (placing, bid, delisting); a regulatory or legal event; a weekly-trend break (stage 2 → 3). Noise (no new information, a move inside 2 ATR) is ignored. | R1 | ⬜ (proposal) · #121 |
+| S7.7 | As the owner I want each proposal stored as a **plan revision** (old → new, reason, evidence, status proposed / accepted / rejected), and new draft orders if accepted. | R1 | ⬜ · #121 |
+| S7.8 | As the owner I want a daily notification only when something needs me (a revision, a stop hit, a fill to enter, an error); silence otherwise. | R2 | ⬜ · #132 |
+| S7.9 | As the owner I want market-wide volatility checks (index drawdown, VIX / VFTSE proxy) to flag "tighten everything" days. | R3 | ⬜ · #142 |
 
 ### A8 — Review weekly (open positions, Sunday)
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
 | S8.1 | As the pipeline I want the technical position assessment (chandelier stop, R, hold / review / exit) for each open position. | R1 | ✅ `assess_position` via `technical --param entry_date=...` |
-| S8.2 | As the pipeline I want **every** toolkit re-run for open positions (not only screen survivors) and compared with the entry conditions: what has deteriorated since entry. | R1 | ⬜ open positions aren't in the scan yet |
-| S8.3 | As the owner I want the new stop each week (ratchet only), with a drafted amend order when it moves. | R1 | 🟡 the stop is computed; no order |
-| S8.4 | As the owner I want the "hold while it keeps climbing" rule explicit: beyond 16 weeks, hold only while trend ≥ 0 and the trailing stop holds; flag positions past the horizon with stalled momentum. | R1 | ⬜ (proposal) |
-| S8.5 | As the owner I want an upcoming-event check per position (results inside the next 2 weeks: hold through, trim or exit, decided in advance). | R2 | 🟡 expected events exist in the pack; no rule |
+| S8.2 | As the pipeline I want **every** toolkit re-run for open positions (not only screen survivors) and compared with the entry conditions: what has deteriorated since entry. | R1 | ⬜ open positions aren't in the scan yet · #122 |
+| S8.3 | As the owner I want the new stop each week (ratchet only), with a drafted amend order when it moves. | R1 | 🟡 the stop is computed; no order · #122 |
+| S8.4 | As the owner I want the "hold while it keeps climbing" rule explicit: beyond 16 weeks, hold only while trend ≥ 0 and the trailing stop holds; flag positions past the horizon with stalled momentum. | R1 | ⬜ (proposal) · #122 |
+| S8.5 | As the owner I want an upcoming-event check per position (results inside the next 2 weeks: hold through, trim or exit, decided in advance). | R2 | 🟡 expected events exist in the pack; no rule · #129 |
 
 ### A9 — Exit and close
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S9.1 | As the owner I want exit reasons tagged (stop, trailing stop, target, thesis broken, time, discretionary, corporate action) when I close. | R1 | ⬜ |
-| S9.2 | As the owner I want exit fills to close the position and compute realised P&L (gross, costs, net), R-multiple, holding weeks, max favourable and adverse excursion. | R1 | ⬜ |
-| S9.3 | As the owner I want corporate actions handled (dividends received, splits, consolidations, takeovers, delisting) so P&L is right. | R2 | ⬜ |
-| S9.4 | As the owner I want a short post-mortem per closed trade (agent draft from the record: entry conditions vs what happened) kept in the DB. | R2 | ⬜ |
+| S9.1 | As the owner I want exit reasons tagged (stop, trailing stop, target, thesis broken, time, discretionary, corporate action) when I close. | R1 | ⬜ · #109 |
+| S9.2 | As the owner I want exit fills to close the position and compute realised P&L (gross, costs, net), R-multiple, holding weeks, max favourable and adverse excursion. | R1 | ⬜ · #109 |
+| S9.3 | As the owner I want corporate actions handled (dividends received, splits, consolidations, takeovers, delisting) so P&L is right. | R2 | ⬜ · #133 |
+| S9.4 | As the owner I want a short post-mortem per closed trade (agent draft from the record: entry conditions vs what happened) kept in the DB. | R2 | ⬜ · #134 |
 
 ### A10 — Portfolio view and risk
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S10.1 | As the owner I want a **holdings view**: positions, shares, cost, last price, P&L, R, stop, risk at the stop, weeks held, next event. | R1 | ⬜ |
-| S10.2 | As the owner I want **cash and equity** tracked (capital, deposits / withdrawals, realised and unrealised P&L), so sizing uses current equity. | R1 | ⬜ |
-| S10.3 | As the owner I want **portfolio heat** (sum of open risk to the stops) and exposure by sector vs the limits in S0.3. | R1 | ⬜ |
-| S10.4 | As the owner I want an equity curve, drawdown, and a benchmark comparison (e.g. FTSE AIM All-Share). | R2 | ⬜ |
-| S10.5 | As the owner I want a correlation / overlap check across holdings (same driver: fuel, consumer, rates). | R2 | ⬜ |
-| S10.6 | As the owner I want a dashboard over the DB (holdings, weekly pack, history). | R2 | ⬜ |
-| S10.7 | As the owner I want a drawdown circuit breaker (e.g. stop new entries if equity is X% below its high). | R3 | ⬜ (proposal; owner to set) |
+| S10.1 | As the owner I want a **holdings view**: positions, shares, cost, last price, P&L, R, stop, risk at the stop, weeks held, next event. | R1 | ⬜ · #110 |
+| S10.2 | As the owner I want **cash and equity** tracked (capital, deposits / withdrawals, realised and unrealised P&L), so sizing uses current equity. | R1 | ⬜ · #110 |
+| S10.3 | As the owner I want **portfolio heat** (sum of open risk to the stops) and exposure by sector vs the limits in S0.3. | R1 | ⬜ · #110 |
+| S10.4 | As the owner I want an equity curve, drawdown, and a benchmark comparison (e.g. FTSE AIM All-Share). | R2 | ⬜ · #135 |
+| S10.5 | As the owner I want a correlation / overlap check across holdings (same driver: fuel, consumer, rates). | R2 | ⬜ · #135 |
+| S10.6 | As the owner I want a dashboard over the DB (holdings, weekly pack, history). | R2 | ⬜ · #136 |
+| S10.7 | As the owner I want a drawdown circuit breaker (e.g. stop new entries if equity is X% below its high). | R3 | ⬜ (proposal; owner to set) · #143 |
 
 ### A11 — Learn and calibrate
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
 | S11.1 | As the owner I want every week's labels stored point-in-time, so they can be scored against later returns. | R1 | ✅ results DB, `date` per card (ADR 0007) |
-| S11.2 | As the owner I want a **label scorecard**: forward 2/4/8/16-week returns (and excess vs market) for ACT vs WATCH vs PASS, per stage and per toolkit band. | R2 | ⬜ |
-| S11.3 | As the owner I want a backtest of the screen rules over history (point-in-time, survivorship caveat noted) to set the bands in S1.5. | R2 | ⬜ |
-| S11.4 | As the owner I want agent value-added measured: did the validator's and strategist's downgrades avoid losers, did upgrades or retentions pick winners. | R3 | ⬜ |
-| S11.5 | As the owner I want a trade journal: hit rate, average R, expectancy, by exit reason and by set-up type (pullback vs breakout vs blue sky). | R2 | ⬜ |
+| S11.2 | As the owner I want a **label scorecard**: forward 2/4/8/16-week returns (and excess vs market) for ACT vs WATCH vs PASS, per stage and per toolkit band. | R2 | ⬜ · #137 |
+| S11.3 | As the owner I want a backtest of the screen rules over history (point-in-time, survivorship caveat noted) to set the bands in S1.5. | R2 | ⬜ · #138 |
+| S11.4 | As the owner I want agent value-added measured: did the validator's and strategist's downgrades avoid losers, did upgrades or retentions pick winners. | R3 | ⬜ · #144 |
+| S11.5 | As the owner I want a trade journal: hit rate, average R, expectancy, by exit reason and by set-up type (pullback vs breakout vs blue sky). | R2 | ⬜ · #137 |
 
 ### A12 — Operate
 
@@ -339,12 +339,12 @@ and WATCH stock**, and **the agent only when a check fires**.
 |---|---|---|---|
 | S12.1 | As the pipeline I want the Sunday scan scheduled. | R1 | ✅ `scan.yml` |
 | S12.2 | As the owner I want one stock run on demand. | R1 | ✅ `stock.yml` |
-| S12.3 | As the owner I want a **durable DB** that Actions, cloud sessions and my machine all reach (today the DB is an Actions artifact for 90 days). | R1 | ⬜ Turso planned (ADR 0007) |
-| S12.4 | As the owner I want the agent stages (A2, A3, A7) runnable unattended (Actions or a scheduled Claude session) after the scan, reading the run from the DB. | R1 | ⬜ needs a key / subscription token (ADR 0010) |
-| S12.5 | As the owner I want a daily workflow (A7) alongside the weekly one. | R1 | ⬜ |
-| S12.6 | As the owner I want failures reported (ERROR labels, source outages, agent errors) without stopping the rest of the run. | R1 | ✅ for toolkits; ⬜ for agents |
-| S12.7 | As the owner I want notifications (email / push) for the weekly pack and the daily actions. | R2 | ⬜ |
-| S12.8 | As the owner I want agent cost and runtime per run logged, so the free / subscription limits aren't hit by surprise. | R2 | ⬜ |
+| S12.3 | As the owner I want a **durable DB** that Actions, cloud sessions and my machine all reach (today the DB is an Actions artifact for 90 days). | R1 | 🟡 Turso client built (#103, ADR 0013); local ↔ hosted copy and dual-backend tests · #116 |
+| S12.4 | As the owner I want the agent stages (A2, A3, A7) runnable unattended (Actions or a scheduled Claude session) after the scan, reading the run from the DB. | R1 | ⬜ needs a key / subscription token (ADR 0010) · #123 |
+| S12.5 | As the owner I want a daily workflow (A7) alongside the weekly one. | R1 | ⬜ · #120 |
+| S12.6 | As the owner I want failures reported (ERROR labels, source outages, agent errors) without stopping the rest of the run. | R1 | ✅ for toolkits; ⬜ for agents · #123 |
+| S12.7 | As the owner I want notifications (email / push) for the weekly pack and the daily actions. | R2 | ⬜ · #132 |
+| S12.8 | As the owner I want agent cost and runtime per run logged, so the free / subscription limits aren't hit by surprise. | R2 | ⬜ · #139 |
 
 ---
 
