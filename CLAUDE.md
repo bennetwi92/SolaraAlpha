@@ -190,10 +190,17 @@ GitHub issues are the backlog and the hand-off between threads/agents.
 
 - Work on the branch you're given; small, focused commits with descriptive messages.
 - Before committing: `make fmt && make check`.
-- **Always raise a PR** against `main` once the work is pushed — no need to ask. Reference the
-  issue (`Closes #N`) when there is one. Then **enable auto-merge (squash)** on it so it merges
-  as soon as CI passes; keep it open (no auto-merge) only if the owner says to or a decision is
-  still open on the issue.
+- **Every session ends with a PR, conflict-free.** Do this every time, without asking:
+  1. Before pushing, `git fetch origin main` and `git merge origin/main` into your branch.
+     Resolve any conflicts (keep both sides' intent; regenerate `uv.lock` with `uv lock`, never
+     by hand), then `make check` again.
+  2. Push, then **raise a PR** against `main` (or update the existing open one for the branch).
+     Reference the issue (`Closes #N`) when there is one.
+  3. Check the PR's mergeable state. If GitHub reports a conflict (e.g. `main` moved since
+     step 1), repeat step 1 and push — never rebase or force-push a branch with an open PR.
+  4. **Enable auto-merge (squash)** so it merges as soon as CI passes; keep it open (no
+     auto-merge) only if the owner says to or a decision is still open on the issue.
+  Ask the owner only when both sides changed the same logic and either choice loses behaviour.
 - When adding a data source: add the fetcher in `src/solaraalpha/data/`, a fixture-based test,
   and an entry in `docs/data-sources.md`.
 - When adding a toolkit: register it in `toolkits.py` with `@toolkit(id, passes=...)` (its
