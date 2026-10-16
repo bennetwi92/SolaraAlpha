@@ -161,6 +161,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         position_state, close_summary, to_account
     risk.py             holdings / equity / heat / exposure / breaches vs the rules; sector_of
                         (optional `sector` per stock in config/benchmarks.toml)
+    plan.py             TradePlan + make_plan: entry (breakout trigger or limit), stop, targets,
+                        risk-based size with caps, review dates, flags — see docs/decisions/0015
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM UK 50 snapshot)
 config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)
