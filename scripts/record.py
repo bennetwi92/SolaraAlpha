@@ -1,11 +1,11 @@
 """Record an agent's output in the results DB: the one door agents write through.
 
-uv run python scripts/record.py verdict FILE [--actor agent:NAME] [--run N | --new-run] [--db PATH]
+uv run python scripts/record.py verdict FILE [--actor agent:NAME] [--run N | --new-run] [--position ID] [--db PATH]
 uv run python scripts/record.py revision FILE --position ID [--actor agent:monitor] [--db PATH]
 uv run python scripts/record.py prior TICKER [--stage research] [--limit 3] [--db PATH]
 uv run python scripts/record.py schema
 uv run python scripts/record.py error TICKER --run N --stage S --reason TEXT     # runner: skill failed
-uv run python scripts/record.py queue --run N --stage validate|research|monitor  # runner: what to work
+uv run python scripts/record.py queue --run N --stage validate|research|monitor|postmortem  # runner
 uv run python scripts/record.py latest-run [--script scan|daily]                 # runner: which run
 uv run python scripts/record.py outcome --run N --stage S                        # runner: exit 1 if all ERROR
 
@@ -52,7 +52,7 @@ def _verdict(args: argparse.Namespace) -> None:
         verdict = verdict.model_copy(update={"run_id": args.run})
     conn = store.connect(args.db)
     try:
-        out = agents.record_verdict(conn, verdict, actor)
+        out = agents.record_verdict(conn, verdict, actor, args.position)
     except (agents.DowngradeError, ValueError) as e:
         print(f"error: {e}")
         sys.exit(2)
@@ -141,7 +141,7 @@ def _error(args: argparse.Namespace) -> None:
     verdict = agents.error_verdict(args.ticker, args.run, args.stage, args.reason)
     conn = store.connect(args.db)
     try:
-        agents.record_verdict(conn, verdict, args.actor or f"agent:{args.stage}")
+        agents.record_verdict(conn, verdict, args.actor or f"agent:{args.stage}", args.position)
     except ValueError as e:
         print(f"error: {e}")
         sys.exit(2)
@@ -198,6 +198,7 @@ def main(argv: list[str] | None = None) -> None:
         "--run", type=int, default=None, help="record under this run instead of the file's"
     )
     v.add_argument("--new-run", action="store_true", help="start a run named after the stage")
+    v.add_argument("--position", type=int, help="postmortem: the closed position it is about")
     v.add_argument("--db", type=Path, default=None, help="local DB file (default: configured DB)")
     rv = sub.add_parser("revision", help="record a monitor verdict and propose its revision")
     rv.add_argument("file")
@@ -219,13 +220,16 @@ def main(argv: list[str] | None = None) -> None:
         choices=("validate", "research", "events", "monitor", "postmortem"),
     )
     er.add_argument("--reason", required=True)
+    er.add_argument("--position", type=int, help="postmortem: the closed position")
     er.add_argument("--actor")
     er.add_argument("--db", type=Path, default=None)
     qu = sub.add_parser(
         "queue", help="tickers (or position ids) the agents should work, best first"
     )
     qu.add_argument("--run", type=int, required=True)
-    qu.add_argument("--stage", required=True, choices=("validate", "research", "monitor"))
+    qu.add_argument(
+        "--stage", required=True, choices=("validate", "research", "monitor", "postmortem")
+    )
     qu.add_argument("--cap", type=int, default=None, help="default Rules.max_agent_tickers")
     qu.add_argument("--db", type=Path, default=None)
     lr = sub.add_parser("latest-run", help="the latest run id of a script")

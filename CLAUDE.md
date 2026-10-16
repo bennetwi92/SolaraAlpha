@@ -132,6 +132,8 @@ Current state:
 | Validator (agent) | `/validate JET2.L --run N` or `/validate --run N` in Claude Code |
 | Monitor pack for a daily run's triggered positions (then vs now, thesis, filing text) | `uv run python scripts/monitor_pack.py --run N [--position ID]` |
 | Monitor (agent): structural change? propose hold / tighten / partial / exit / revise target | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions` / `accept REV_ID` / `decline REV_ID --reason` |
+| Post-mortem pack for a closed position (record + weekly bars, hindsight labelled) | `uv run python scripts/postmortem_pack.py POSITION_ID` / `--since ISO` |
+| Post-mortem (agent): set-up, what worked / failed, signal right or wrong, rule proposals | `/postmortem POSITION_ID` in Claude Code → `record.py verdict ... --position ID` |
 | Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `revision FILE --position ID` / `prior JET2.L [--stage research]` / `schema`; runner: `error TICKER --run N --stage S --reason ...` / `queue --run N --stage S` / `latest-run` / `outcome --run N --stage S` |
 | Daily check: prices, triggers (stops, targets, gaps, breaks), new filings and headlines | `uv run python scripts/daily.py [--save] [--report FILE]` |
 | Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
@@ -164,6 +166,9 @@ src/solaraalpha/        importable package — all reusable code lives here
                         card + evidence, downgrade-only), prior — see docs/decisions/0016
   validation.py         the validator's pack from the DB: independent cards, steps, label, price
                         snapshot as seen, fundamentals known at the card date, filing headlines
+  postmortem.py         the post-mortem pack for a closed position: close summary, plan / set-up,
+                        entry conditions, reviews, revisions, triggers, agent verdicts + evidence,
+                        weekly bars as seen at the close (post-exit weeks = hindsight) — 0016
   monitoring.py         the monitor's pack: position then (entry conditions) vs now (fresh cards),
                         thesis conditions evaluated, triggers + filing text — docs/decisions/0018
   toolkits.py           toolkit register: id -> run fn + act / watch bands; Inputs (lazy,
@@ -236,6 +241,7 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
 .claude/skills/validate/  agent skill: re-checks a run's screen labels against the pack; downgrade only
 .claude/skills/research/  agent skill: strategist's 9-section pre-trade note, web search, evidence → record.py
 .claude/skills/monitor/   agent skill: structural change or noise on a triggered position; proposes one action
+.claude/skills/postmortem/  agent skill: post-mortem of a closed trade from its pack; setup / execution scores
 notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure; fakes.py (FakeTurso), conftest.py (db_backend)
 data/                   gitignored; raw/ processed/ cache/ created on demand

@@ -132,9 +132,12 @@ def card_date(conn: Conn, run_id: int, ticker: str) -> str:
     return str(store.run_info(run_id, conn=conn)["started_at"])[:10]
 
 
-def record_verdict(conn: Conn, verdict: Verdict, actor: str) -> dict[str, Any]:
+def record_verdict(
+    conn: Conn, verdict: Verdict, actor: str, position_id: int | None = None
+) -> dict[str, Any]:
     """Record ``verdict`` under ``actor`` (``agent:<name>``) in one transaction. Returns
-    ``{"label": bool, "date": str, "evidence_ids": [...]}``.
+    ``{"label": bool, "date": str, "evidence_ids": [...]}``. ``position_id`` (a post-mortem's
+    closed position) is kept on the card so the runner does not repeat it.
 
     Raises :class:`DowngradeError` for an upgrade and ``ValueError`` if that stage was already
     recorded for the run and ticker (append-only: a verdict is never replaced).
@@ -159,6 +162,11 @@ def record_verdict(conn: Conn, verdict: Verdict, actor: str) -> dict[str, Any]:
                 (v.run_id, v.ticker, v.stage, v.label, v.confidence, "; ".join(v.reasons), actor),
             )
             wrote_label = True
+        elif conn.execute(
+            "SELECT 1 FROM results WHERE run_id = ? AND ticker = ? AND model = ? LIMIT 1",
+            (v.run_id, v.ticker, v.stage),
+        ).fetchone():
+            raise ValueError(f"{v.stage} already recorded for {v.ticker} in run {v.run_id}")
         ids = [save_evidence(conn, v.run_id, v.ticker, v.stage, actor, e) for e in v.evidence]
         criteria = [
             {
@@ -182,6 +190,8 @@ def record_verdict(conn: Conn, verdict: Verdict, actor: str) -> dict[str, Any]:
             "actor": actor,
             "evidence_ids": json.dumps(ids),
         }
+        if position_id is not None:
+            fields["position_id"] = int(position_id)
         store._save_card(conn, v.run_id, v.ticker, v.stage, {"date": date, **fields})
     return {"label": wrote_label, "date": date, "evidence_ids": ids}
 
@@ -318,15 +328,33 @@ def error_verdict(ticker: str, run_id: int, stage: str, reason: str) -> Verdict:
 def queue(conn: Conn, run_id: int, stage: str, cap: int) -> list[str]:
     """What the unattended agents should work in ``run_id`` for ``stage``, best first, at most
     ``cap`` items: ``validate`` → the screen-ACT tickers; ``research`` → tickers whose final
-    label is ACT; ``monitor`` → position ids with an agent trigger in that daily run. Tickers
-    are ordered by ``rank_score`` over the run's cards (ties by ticker); those already recorded
-    for the stage are left out."""
+    label is ACT; ``monitor`` → position ids with an agent trigger in that daily run;
+    ``postmortem`` → position ids closed since the daily run before ``run_id`` (ever, when
+    there is none) with no post-mortem card yet. Tickers are ordered by ``rank_score`` over
+    the run's cards (ties by ticker); those already recorded for the stage are left out."""
     from solaraalpha.monitoring import positions_to_review
     from solaraalpha.portfolio.fit import rank_score
     from solaraalpha.portfolio.planner import final_labels
+    from solaraalpha.postmortem import closed_since
 
     if stage == "monitor":
         return [str(p) for p in positions_to_review(conn, run_id)[:cap]]
+    if stage == "postmortem":
+        prev = conn.execute(
+            "SELECT started_at FROM runs WHERE script = 'daily' AND run_id < ?"
+            " ORDER BY run_id DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        done = {
+            int(v)
+            for v in query(
+                "SELECT value FROM results WHERE model = 'postmortem' AND field = 'position_id'"
+                " AND value IS NOT NULL",
+                conn,
+            )["value"]
+        }
+        ids = [p for p in closed_since(conn, str(prev[0]) if prev else None) if p not in done]
+        return [str(p) for p in ids[:cap]]
     if stage == "validate":
         df = query(
             "SELECT ticker FROM labels WHERE run_id = ? AND stage = 'screen' AND label = 'ACT'",
@@ -354,12 +382,12 @@ def queue(conn: Conn, run_id: int, stage: str, cap: int) -> list[str]:
 
 def outcome(conn: Conn, run_id: int, stage: str) -> dict[str, int]:
     """Counts of labels for ``stage`` in ``run_id`` (``total`` and ``errors``); for ``monitor``
-    the cards instead of labels."""
-    if stage == "monitor":
+    and ``postmortem`` the cards instead of labels."""
+    if stage in ("monitor", "postmortem"):
         df = query(
-            "SELECT ticker, text FROM results WHERE run_id = ? AND model = 'monitor' AND field = 'label'",
+            "SELECT ticker, text FROM results WHERE run_id = ? AND model = ? AND field = 'label'",
             conn,
-            [run_id],
+            [run_id, stage],
         )
         return {
             "total": len(df),
