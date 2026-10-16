@@ -142,6 +142,7 @@ Current state:
 | Weekly pack for a run (new plans with approve/reject commands, fit rejections, watch list, open positions, money, errors) | `uv run python scripts/weekly_pack.py --run N [--out FILE] [--report FILE]` |
 | Portfolio view: holdings, cash, equity, heat, sector exposure, breaches | `uv run python scripts/portfolio.py [--save] [--price JET2.L=1520]` (cash in: `book.py cash deposit 10000`) |
 | Equity curve, time-weighted return, drawdown, vs benchmark, correlated holdings | `uv run python scripts/portfolio.py --history` |
+| Label scorecard (forward returns per label / toolkit band) and trade journal | `uv run python scripts/learn.py scorecard [--since D]` / `journal` |
 | Results DB: which is in use, copy local ↔ Turso | `uv run python scripts/db.py status` / `push [--from PATH] [--append-new-runs]` / `pull [--to PATH]` |
 | Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `relative_strength` / `fundamentals` / `jet2_value` / `scan` |
 | Notebooks | `make notebook` |
@@ -192,6 +193,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         vol-scaled excess returns, peer rank — see docs/decisions/0011
     liquidity.py        liquidity (any stock): median daily traded value (20 / 60 sessions),
                         zero-volume share, Corwin-Schultz spread proxy, max position at max_adv_pct
+    scorecard.py        label scorecard: 2/4/8/16-week forward returns (and excess vs market) per
+                        saved label, by stage x label and toolkit x band, no look-ahead
     events.py           events model (any stock): market reaction per filing, expected
                         scheduled events from the issuer's own history — see docs/decisions/0006
     jet2_value.py       Jet2-only fair value: consensus-calibrated FY27/FY28 driver P&L, live
@@ -218,6 +221,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         ReviewCard (ratcheted stop, deterioration, horizon rule, action), raise_stop
     performance.py      equity_curve (rebuilt from cash + fills + closes), drawdown, time-weighted
                         return vs Rules.benchmark, correlation of holdings' weekly returns
+    journal.py          trade journal: closed trades (close summary + set-up type from the plan),
+                        hit rate / average R / expectancy by exit reason and set-up
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM UK 50 snapshot)
 config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)
