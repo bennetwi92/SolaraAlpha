@@ -2,8 +2,8 @@
 
 Every weekday evening (``daily.yml``): fetch daily prices for the open positions, the latest
 scan's WATCH tickers and the tickers with a live entry order waiting for a break; run the
-checks in :mod:`solaraalpha.portfolio.triggers`; look for new filings (and headlines) since
-the last daily run; report owner actions and agent reviews. One ticker's failure never stops
+checks in :mod:`solaraalpha.portfolio.triggers`; look for dividends and splits the book has not
+recorded, and for new filings (and headlines) since the last daily run; report owner actions and agent reviews. One ticker's failure never stops
 the others. With ``save``: one ``daily`` run, a price snapshot per ticker and the triggers in
 the ``triggers`` table (the monitor agent reads them). See docs/decisions/0017.
 """
@@ -31,6 +31,7 @@ from solaraalpha.portfolio.triggers import (
     AGENT_KINDS,
     OWNER_KINDS,
     Trigger,
+    action_triggers,
     entry_break,
     filing_triggers,
     news_triggers,
@@ -49,6 +50,7 @@ class Fetchers:
     """The live sources, swappable in tests."""
 
     daily: Callable[[str], pd.DataFrame] = prices_mod.fetch_daily
+    actions: Callable[[str], pd.DataFrame] = prices_mod.fetch_corporate_actions
     announcements: Callable[..., pd.DataFrame] = ann_mod.fetch_announcements
     issuer: Callable[[str], Any] = ann_mod.resolve_issuer
     news: Callable[..., pd.DataFrame] = news_mod.fetch_news
@@ -192,6 +194,31 @@ def run_daily(
                 if eb:
                     result.triggers.append(eb)
 
+    # dividends and splits on open positions that the book does not have yet
+    cash = book.cash(conn)
+    for ticker in {st.ticker for st in states.values()}:
+        try:
+            actions = fetch.actions(ticker)
+        except Exception as e:
+            log.exception("%s: corporate actions failed", ticker)
+            result.errors.append((ticker, f"actions: {type(e).__name__}: {e}"))
+            continue
+        for pid, st in states.items():
+            if st.ticker != ticker:
+                continue
+            divs = cash[(cash["kind"] == "dividend") & (cash["position_id"] == pid)]
+            ev = book.position_events(conn, pid)
+            result.triggers += action_triggers(
+                ticker,
+                actions,
+                pid,
+                st.shares,
+                since,
+                st.currency,
+                frozenset(str(a)[:10] for a in divs["at"]),
+                frozenset(str(a)[:10] for a in ev.loc[ev["kind"] == "split", "at"]),
+            )
+
     # filings and headlines for open positions
     for ticker in {st.ticker for st in states.values()}:
         pids = [pid for pid, st in states.items() if st.ticker == ticker]
@@ -255,6 +282,14 @@ def render_daily(r: DailyResult) -> str:
         elif t.kind == "entry_break":
             lines.append(
                 f"- **{t.ticker}** closed {_px(d['close'])} above the trigger {_px(d['trigger'])}: place entry order {t.order_id} (position {t.position_id}) now — `book.py placed {t.order_id} --ref ...`"
+            )
+        elif t.kind == "dividend":
+            lines.append(
+                f"- **{t.ticker}** ex-dividend {t.at}: {book.fmt_price(d['per_share'], d['currency'])} x {d['shares']} shares = £{d['amount_gbp']:,.2f} (position {t.position_id}): confirm against the broker and record — `book.py cash dividend {t.ticker} {d['amount_gbp']:.2f} --at {t.at}`"
+            )
+        elif t.kind == "split":
+            lines.append(
+                f"- **{t.ticker}** split {d['ratio']} on {t.at} (position {t.position_id}): record it — `book.py split {t.position_id} --ratio {d['ratio']} --at {t.at}`"
             )
     lines += ([] if owner else ["none"]) + [""]
 

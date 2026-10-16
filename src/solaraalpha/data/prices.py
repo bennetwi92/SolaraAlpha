@@ -26,6 +26,7 @@ CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 # Yahoo returns 429 to non-browser user agents.
 _HEADERS = {"User-Agent": "Mozilla/5.0"}
 COLUMNS = ["open", "high", "low", "close", "adj_close", "volume"]
+ACTION_COLUMNS = ["date", "kind", "value", "ratio"]
 
 
 LOOKBACK_YEARS = 5
@@ -75,5 +76,66 @@ def parse_chart(payload: dict) -> pd.DataFrame:
         index=pd.DatetimeIndex(dates, name="date").tz_localize(UTC),
         dtype="float64",
     )
+    df.attrs = {"ticker": meta["symbol"], "currency": meta.get("currency")}
+    return df
+
+
+def fetch_corporate_actions(
+    ticker: str, start: str | None = None, end: str | None = None
+) -> pd.DataFrame:
+    """Dividends and splits for a Yahoo ticker between ``start`` and ``end`` (same endpoint as
+    :func:`fetch_daily`, with ``events=div,split``). See :func:`parse_events` for the frame."""
+    stop = pd.Timestamp(end, tz=UTC) if end else pd.Timestamp(datetime.now(UTC))
+    begin = pd.Timestamp(start, tz=UTC) if start else stop - pd.DateOffset(years=LOOKBACK_YEARS)
+    resp = session().get(
+        CHART_URL.format(ticker=ticker),
+        params={
+            "period1": str(int(begin.timestamp())),
+            "period2": str(int(stop.timestamp())),
+            "interval": "1d",
+            "events": "div,split",
+        },
+        headers=_HEADERS,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    resp.raise_for_status()
+    return parse_events(resp.json())
+
+
+def parse_events(payload: dict) -> pd.DataFrame:
+    """Tidy ``date, kind, value, ratio`` frame from a chart payload's ``events``.
+
+    ``kind`` is ``dividend`` (``value``: amount per share in the quote currency, e.g. pence for
+    LSE stocks; the date is the ex-dividend date) or ``split`` (``value``: new shares per old
+    share, e.g. 2.0 for a 2:1 split and 0.1 for a 1:10 consolidation; ``ratio`` the text
+    ``new:old``). Sorted by date; ``attrs`` carry ``ticker`` and ``currency``.
+    """
+    chart = payload["chart"]
+    if chart.get("error"):
+        raise ValueError(f"Yahoo chart error: {chart['error']}")
+    result = chart["result"][0]
+    meta = result["meta"]
+    tz = meta["exchangeTimezoneName"]
+    events = result.get("events") or {}
+    rows: list[dict[str, object]] = []
+    for e in (events.get("dividends") or {}).values():
+        rows.append(
+            {"date": e["date"], "kind": "dividend", "value": float(e["amount"]), "ratio": ""}
+        )
+    for e in (events.get("splits") or {}).values():
+        num, den = float(e["numerator"]), float(e["denominator"])
+        rows.append(
+            {
+                "date": e["date"],
+                "kind": "split",
+                "value": num / den if den else float("nan"),
+                "ratio": str(e.get("splitRatio") or f"{e['numerator']}:{e['denominator']}"),
+            }
+        )
+    df = pd.DataFrame(rows, columns=ACTION_COLUMNS)
+    ts = pd.to_datetime(df["date"].astype("int64"), unit="s", utc=True) if len(df) else df["date"]
+    if len(df):
+        df["date"] = ts.dt.tz_convert(tz).dt.normalize().dt.tz_localize(None).dt.tz_localize(UTC)
+    df = df.sort_values(["date", "kind"]).reset_index(drop=True)
     df.attrs = {"ticker": meta["symbol"], "currency": meta.get("currency")}
     return df

@@ -15,6 +15,9 @@ uv run python scripts/book.py cancel ORDER_ID [--reason TEXT]
 uv run python scripts/book.py expire [--as-of DATE]               # entry orders past valid_until
 uv run python scripts/book.py show POSITION_ID --price P          # adds R so far at price P
 uv run python scripts/book.py cash deposit|withdraw AMOUNT [--at ISO] [--note TEXT]   # GBP
+uv run python scripts/book.py cash dividend TICKER AMOUNT [--at ISO] [--position ID]   # GBP received
+uv run python scripts/book.py split POSITION_ID --ratio NEW:OLD [--at ISO]      # split / consolidation
+uv run python scripts/book.py corporate-close POSITION_ID --price P --reason takeover|delisting [--at ISO]
 uv run python scripts/book.py revisions [--status proposed|accepted|declined]   # agent proposals
 uv run python scripts/book.py accept REV_ID          # drafts the orders the revision implies
 uv run python scripts/book.py decline REV_ID --reason TEXT
@@ -25,6 +28,9 @@ A first fill on an entry order opens the position and drafts its protective stop
 (approved, so it appears in `tickets` at once); later entry fills re-size that stop. A stop or
 exit fill that brings the shares to zero closes the position (exit reason, P&L, R-multiple,
 holding weeks) and cancels its remaining orders; `show` adds MFE / MAE from daily prices.
+Dividends recorded against a position count in its net P&L; a split scales the shares, the
+average cost and every open order from its date; a corporate close is a synthetic exit fill of
+every share at the offer (or 0) with reason `corporate_action`.
 
 Every command is one transaction in the results DB (Turso when configured, else data/solara.db;
 --db PATH forces a local file). State changes are new event rows, never updates
@@ -266,9 +272,42 @@ def _fill(conn: Conn, a: argparse.Namespace) -> None:
 
 @command("cash")
 def _cash(conn: Conn, a: argparse.Namespace) -> None:
+    if a.kind == "dividend":
+        if len(a.args) != 2:
+            raise ValueError("cash dividend takes TICKER AMOUNT")
+        ticker, amount = a.args[0], float(a.args[1])
+        pid = book.record_dividend(conn, ticker, amount, a.at, a.position, a.note or "")
+        where = f"position {pid}" if pid is not None else "no open position (cash only)"
+        print(f"dividend £{amount:,.2f} from {ticker} recorded against {where}; ", end="")
+        print(f"cash balance £{book.cash_balance(conn):,.2f}")
+        return
+    if len(a.args) != 1:
+        raise ValueError(f"cash {a.kind} takes AMOUNT")
+    amount = float(a.args[0])
     kind = {"deposit": "deposit", "withdraw": "withdrawal"}[a.kind]
-    book.cash_event(conn, kind, a.amount, "GBP", note=a.note or "", at=a.at)
-    print(f"{kind} £{a.amount:,.2f} recorded; cash balance £{book.cash_balance(conn):,.2f}")
+    book.cash_event(conn, kind, amount, "GBP", note=a.note or "", at=a.at)
+    print(f"{kind} £{amount:,.2f} recorded; cash balance £{book.cash_balance(conn):,.2f}")
+
+
+@command("split")
+def _split(conn: Conn, a: argparse.Namespace) -> None:
+    out = book.split(conn, a.position_id, a.ratio, a.at, reason=a.reason or "")
+    ccy = str(book.positions(conn).set_index("position_id").loc[a.position_id, "currency"])
+    print(
+        f"split {a.ratio} recorded on position {a.position_id}: now {out['shares']} shares"
+        f" at avg cost {book.fmt_price(out['avg_cost'], ccy)}"
+    )
+    for old, new in out["orders"].items():
+        print(f"  order {old} replaced by {new} at the adjusted qty / price (see `tickets`)")
+
+
+@command("corporate-close")
+def _corporate_close(conn: Conn, a: argparse.Namespace) -> None:
+    c = book.corporate_close(conn, a.position_id, a.price, a.reason, a.at)
+    print(
+        f"position {a.position_id} closed ({a.reason}): net £{c.net_pnl:,.2f}"
+        f"  {c.r_multiple:+.2f}R  {c.holding_weeks:.1f} weeks; remaining orders cancelled"
+    )
 
 
 @command("revisions")
@@ -406,11 +445,28 @@ def build_parser() -> argparse.ArgumentParser:
     ex = sub.add_parser("expire", help="expire entry orders past their validity")
     ex.add_argument("--as-of", help="date (default today)")
 
-    ca = sub.add_parser("cash", help="record a deposit or withdrawal (GBP)")
-    ca.add_argument("kind", choices=("deposit", "withdraw"))
-    ca.add_argument("amount", type=float)
-    ca.add_argument("--at", help="ISO time (default now)")
+    ca = sub.add_parser("cash", help="record a deposit, withdrawal or dividend (GBP)")
+    ca.add_argument("kind", choices=("deposit", "withdraw", "dividend"))
+    ca.add_argument("args", nargs="+", metavar="[TICKER] AMOUNT")
+    ca.add_argument("--at", help="ISO time (default now); for a dividend, the ex-date")
     ca.add_argument("--note", default="")
+    ca.add_argument("--position", type=int, help="dividend: the position (default: open at --at)")
+
+    sp = sub.add_parser("split", help="record a share split or consolidation on a position")
+    sp.add_argument("position_id", type=int)
+    sp.add_argument(
+        "--ratio", required=True, help="NEW:OLD, e.g. 2:1 (split) or 1:10 (consolidation)"
+    )
+    sp.add_argument("--at", help="ISO time (default now)")
+    sp.add_argument("--reason", default="")
+
+    cc = sub.add_parser("corporate-close", help="close a position taken over or delisted")
+    cc.add_argument("position_id", type=int)
+    cc.add_argument(
+        "--price", type=float, required=True, help="per share, quote currency (0 if worthless)"
+    )
+    cc.add_argument("--reason", required=True, choices=book.CORPORATE_CLOSES)
+    cc.add_argument("--at", help="ISO time (default now)")
 
     rv = sub.add_parser("revisions", help="plan revisions proposed by the monitor")
     rv.add_argument(

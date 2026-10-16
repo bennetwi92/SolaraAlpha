@@ -16,10 +16,11 @@ import pandas as pd
 
 from solaraalpha.analysis.events import material
 from solaraalpha.analysis.technical import atr
+from solaraalpha.portfolio.book import to_account
 
 GAP_ATR = 2.0  # |open - previous close| beyond this many daily ATRs is a gap (placeholder)
 ATR_SESSIONS = 14
-OWNER_KINDS = ("stop_close", "stop_touched", "target_hit", "entry_break")
+OWNER_KINDS = ("stop_close", "stop_touched", "target_hit", "entry_break", "dividend", "split")
 AGENT_KINDS = ("gap", "filing")
 REPORT_KINDS = ("watch_break", "news")
 
@@ -175,3 +176,58 @@ def news_triggers(ticker: str, news: pd.DataFrame, since: str | pd.Timestamp) ->
         )
         for r in new.to_dict("records")
     ]
+
+
+def action_triggers(
+    ticker: str,
+    actions: pd.DataFrame,
+    position_id: int,
+    shares: int,
+    since: str,
+    currency: str = "GBp",
+    recorded_dividends: frozenset[str] = frozenset(),
+    recorded_splits: frozenset[str] = frozenset(),
+) -> list[Trigger]:
+    """Corporate actions on a held stock since ``since`` that the book has not recorded yet.
+
+    ``actions`` is :func:`solaraalpha.data.prices.fetch_corporate_actions`'s frame. ``dividend``
+    (owner: confirm the cash against the broker and record it; ``detail`` has the per-share
+    amount, the shares held and the GBP amount) and ``split`` (owner: record the ratio).
+    ``recorded_*`` are the ex-dates / split dates (``YYYY-MM-DD``) already in the book.
+    """
+    out: list[Trigger] = []
+    if actions is None or actions.empty or shares <= 0:
+        return out
+    for r in actions.to_dict("records"):
+        day = pd.Timestamp(r["date"]).strftime("%Y-%m-%d")
+        if day <= since[:10]:
+            continue
+        if r["kind"] == "dividend" and day not in recorded_dividends:
+            per_share = float(r["value"])
+            out.append(
+                Trigger(
+                    ticker,
+                    "dividend",
+                    position_id,
+                    None,
+                    {
+                        "per_share": per_share,
+                        "currency": currency,
+                        "shares": shares,
+                        "amount_gbp": round(to_account(per_share * shares, currency), 2),
+                    },
+                    day,
+                )
+            )
+        elif r["kind"] == "split" and day not in recorded_splits:
+            out.append(
+                Trigger(
+                    ticker,
+                    "split",
+                    position_id,
+                    None,
+                    {"ratio": str(r["ratio"]), "factor": float(r["value"])},
+                    day,
+                )
+            )
+    return out
