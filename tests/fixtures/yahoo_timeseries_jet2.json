@@ -1,0 +1,839 @@
+{
+ "timeseries": {
+  "result": [
+   {
+    "meta": {
+     "symbol": [
+      "JET2.L"
+     ],
+     "type": [
+      "annualFreeCashFlow"
+     ]
+    },
+    "annualFreeCashFlow": [
+     {
+      "asOfDate": "2023-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 755500000.0
+      }
+     },
+     {
+      "asOfDate": "2024-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 685500000.0
+      }
+     },
+     {
+      "asOfDate": "2025-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 659100000.0
+      }
+     },
+     {
+      "asOfDate": "2026-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 495400000.0
+      }
+     }
+    ]
+   },
+   {
+    "meta": {
+     "symbol": [
+      "JET2.L"
+     ],
+     "type": [
+      "annualOrdinarySharesNumber"
+     ]
+    },
+    "annualOrdinarySharesNumber": [
+     {
+      "asOfDate": "2023-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 214681281.0
+      }
+     },
+     {
+      "asOfDate": "2024-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 214681281.0
+      }
+     },
+     {
+      "asOfDate": "2025-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 204461072.0
+      }
+     },
+     {
+      "asOfDate": "2026-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 186004267.0
+      }
+     }
+    ]
+   },
+   {
+    "meta": {
+     "symbol": [
+      "JET2.L"
+     ],
+     "type": [
+      "annualDilutedEPS"
+     ]
+    },
+    "annualDilutedEPS": [
+     {
+      "asOfDate": "2023-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 1.266
+      }
+     },
+     {
+      "asOfDate": "2024-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 1.704
+      }
+     },
+     {
+      "asOfDate": "2025-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 2.072
+      }
+     },
+     {
+      "asOfDate": "2026-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 2.082
+      }
+     }
+    ]
+   },
+   {
+    "meta": {
+     "symbol": [
+      "JET2.L"
+     ],
+     "type": [
+      "trailingForwardPeRatio"
+     ]
+    },
+    "trailingForwardPeRatio": [
+     {
+      "asOfDate": "2020-02-12",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 18.315
+      }
+     },
+     {
+      "asOfDate": "2023-03-09",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 12.5313
+      }
+     },
+     {
+      "asOfDate": "2023-03-23",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 11.7371
+      }
+     },
+     {
+      "asOfDate": "2024-06-10",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 7.8125
+      }
+     },
+     {
+      "asOfDate": "2024-07-12",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 8.4459
+      }
+     },
+     {
+      "asOfDate": "2024-09-19",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 8.4175
+      }
+     },
+     {
+      "asOfDate": "2025-08-20",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 7.6511
+      }
+     },
+     {
+      "asOfDate": "2025-10-03",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 7.0126
+      }
+     },
+     {
+      "asOfDate": "2026-09-10",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 11.7925
+      }
+     },
+     {
+      "asOfDate": "2026-09-14",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 11.5741
+      }
+     },
+     {
+      "asOfDate": "2026-09-23",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 10.9649
+      }
+     }
+    ]
+   },
+   {
+    "meta": {
+     "symbol": [
+      "JET2.L"
+     ],
+     "type": [
+      "annualEBITDA"
+     ]
+    },
+    "annualEBITDA": [
+     {
+      "asOfDate": "2023-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 620700000.0
+      }
+     },
+     {
+      "asOfDate": "2024-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 849200000.0
+      }
+     },
+     {
+      "asOfDate": "2025-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 933300000.0
+      }
+     },
+     {
+      "asOfDate": "2026-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 893400000.0
+      }
+     }
+    ]
+   },
+   {
+    "meta": {
+     "symbol": [
+      "JET2.L"
+     ],
+     "type": [
+      "trailingPeRatio"
+     ]
+    },
+    "trailingPeRatio": [
+     {
+      "asOfDate": "2020-10-22",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 11.638161
+      }
+     },
+     {
+      "asOfDate": "2023-03-09",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 17.0625
+      }
+     },
+     {
+      "asOfDate": "2023-03-23",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 15.98125
+      }
+     },
+     {
+      "asOfDate": "2024-06-10",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 7.179487
+      }
+     },
+     {
+      "asOfDate": "2024-07-12",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 8.34507
+      }
+     },
+     {
+      "asOfDate": "2024-09-19",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 8.409624
+      }
+     },
+     {
+      "asOfDate": "2025-08-20",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 7.833012
+      }
+     },
+     {
+      "asOfDate": "2025-10-03",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 6.940154
+      }
+     },
+     {
+      "asOfDate": "2026-09-10",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 7.041306
+      }
+     },
+     {
+      "asOfDate": "2026-09-14",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 6.911623
+      }
+     },
+     {
+      "asOfDate": "2026-09-23",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 6.54659
+      }
+     }
+    ]
+   },
+   {
+    "meta": {
+     "symbol": [
+      "JET2.L"
+     ],
+     "type": [
+      "annualCashAndCashEquivalents"
+     ]
+    },
+    "annualCashAndCashEquivalents": [
+     {
+      "asOfDate": "2023-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 953200000.0
+      }
+     },
+     {
+      "asOfDate": "2024-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 1438500000.0
+      }
+     },
+     {
+      "asOfDate": "2025-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 1185400000.0
+      }
+     },
+     {
+      "asOfDate": "2026-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 1518000000.0
+      }
+     }
+    ]
+   },
+   {
+    "meta": {
+     "symbol": [
+      "JET2.L"
+     ],
+     "type": [
+      "annualStockholdersEquity"
+     ]
+    },
+    "annualStockholdersEquity": [
+     {
+      "asOfDate": "2023-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 1012400000.0
+      }
+     },
+     {
+      "asOfDate": "2024-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 1408900000.0
+      }
+     },
+     {
+      "asOfDate": "2025-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 1611800000.0
+      }
+     },
+     {
+      "asOfDate": "2026-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 2060800000.0
+      }
+     }
+    ]
+   },
+   {
+    "meta": {
+     "symbol": [
+      "JET2.L"
+     ],
+     "type": [
+      "annualTotalDebt"
+     ]
+    },
+    "annualTotalDebt": [
+     {
+      "asOfDate": "2023-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 1375000000.0
+      }
+     },
+     {
+      "asOfDate": "2024-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 1455400000.0
+      }
+     },
+     {
+      "asOfDate": "2025-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 1137900000.0
+      }
+     },
+     {
+      "asOfDate": "2026-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 1279600000.0
+      }
+     }
+    ]
+   },
+   {
+    "meta": {
+     "symbol": [
+      "JET2.L"
+     ],
+     "type": [
+      "trailingDilutedAverageShares"
+     ]
+    },
+    "trailingDilutedAverageShares": [
+     {
+      "asOfDate": "2023-09-30",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 241600000.0
+      }
+     },
+     {
+      "asOfDate": "2024-03-31",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 242100000.0
+      }
+     },
+     {
+      "asOfDate": "2024-09-30",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 241050000.0
+      }
+     },
+     {
+      "asOfDate": "2025-03-31",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 215600000.0
+      }
+     },
+     {
+      "asOfDate": "2025-09-30",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 203450771.0
+      }
+     },
+     {
+      "asOfDate": "2026-03-31",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 197200000.0
+      }
+     }
+    ]
+   },
+   {
+    "meta": {
+     "symbol": [
+      "JET2.L"
+     ],
+     "type": [
+      "annualNetIncome"
+     ]
+    },
+    "annualNetIncome": [
+     {
+      "asOfDate": "2023-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 290800000.0
+      }
+     },
+     {
+      "asOfDate": "2024-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 399200000.0
+      }
+     },
+     {
+      "asOfDate": "2025-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 446800000.0
+      }
+     },
+     {
+      "asOfDate": "2026-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 410500000.0
+      }
+     }
+    ]
+   },
+   {
+    "meta": {
+     "symbol": [
+      "JET2.L"
+     ],
+     "type": [
+      "annualTotalRevenue"
+     ]
+    },
+    "annualTotalRevenue": [
+     {
+      "asOfDate": "2023-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 5033500000.0
+      }
+     },
+     {
+      "asOfDate": "2024-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 6255300000.0
+      }
+     },
+     {
+      "asOfDate": "2025-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 7173500000.0
+      }
+     },
+     {
+      "asOfDate": "2026-03-31",
+      "periodType": "12M",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 7482100000.0
+      }
+     }
+    ]
+   },
+   {
+    "meta": {
+     "symbol": [
+      "JET2.L"
+     ],
+     "type": [
+      "trailingMarketCap"
+     ]
+    },
+    "trailingMarketCap": [
+     {
+      "asOfDate": "2023-03-09",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 2930399485.0
+      }
+     },
+     {
+      "asOfDate": "2023-03-28",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 2726452268.0
+      }
+     },
+     {
+      "asOfDate": "2024-04-02",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 3091410446.0
+      }
+     },
+     {
+      "asOfDate": "2024-06-10",
+      "periodType": "TTM",
+      "currencyCode": null,
+      "reportedValue": {
+       "raw": 2825205657.0
+      }
+     },
+     {
+      "asOfDate": "2024-07-12",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 3052804347.0
+      }
+     },
+     {
+      "asOfDate": "2024-09-19",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 3076419570.0
+      }
+     },
+     {
+      "asOfDate": "2025-06-06",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 4030502467.0
+      }
+     },
+     {
+      "asOfDate": "2025-08-20",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 3183314562.0
+      }
+     },
+     {
+      "asOfDate": "2025-10-03",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 2723185537.0
+      }
+     },
+     {
+      "asOfDate": "2026-07-31",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 2776554365.0
+      }
+     },
+     {
+      "asOfDate": "2026-09-10",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 2660857465.0
+      }
+     },
+     {
+      "asOfDate": "2026-09-14",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 2605508456.0
+      }
+     },
+     {
+      "asOfDate": "2026-09-23",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 2463377855.0
+      }
+     }
+    ]
+   },
+   {
+    "meta": {
+     "symbol": [
+      "JET2.L"
+     ],
+     "type": [
+      "trailingDilutedEPS"
+     ]
+    },
+    "trailingDilutedEPS": [
+     {
+      "asOfDate": "2023-09-30",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 1.833
+      }
+     },
+     {
+      "asOfDate": "2024-03-31",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 1.704
+      }
+     },
+     {
+      "asOfDate": "2024-09-30",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 2.126
+      }
+     },
+     {
+      "asOfDate": "2025-03-31",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 2.072
+      }
+     },
+     {
+      "asOfDate": "2025-09-30",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 2.342
+      }
+     },
+     {
+      "asOfDate": "2026-03-31",
+      "periodType": "TTM",
+      "currencyCode": "GBP",
+      "reportedValue": {
+       "raw": 2.082
+      }
+     }
+    ]
+   }
+  ],
+  "error": null
+ }
+}

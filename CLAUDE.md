@@ -17,6 +17,8 @@ have been chosen yet beyond what's listed below — **never assume any**. Ask wh
 depends on that choice.
 
 Current state:
+- **Strategy: long trades seeking bursty profits over ~2-16 weeks** (held longer while the stock
+  keeps climbing). Models are judged by usefulness over that horizon.
 - **Trading frequency is weekly** unless the owner says otherwise. Weekly bars end Friday
   (`to_weekly`), and only completed weeks are used.
 - Working on **single-stock analysis**; first example is Jet2 (`JET2.L`, AIM-listed).
@@ -24,7 +26,12 @@ Current state:
 - Price history: fetch the **last 5 years** (default), then cut per stock to the span after
   the last blocking data issue (`trim_to_consistent`). Don't pull long history yet.
 - The technical models (`analysis/technical.py`, `analysis/levels.py`) must stay **generic across
-  stocks** — no per-stock tuning. Other models (e.g. fundamentals) are stock-specific.
+  stocks** — no per-stock tuning. Other models (e.g. fundamentals) are stock-specific: the
+  scoring in `analysis/fundamentals.py` is generic, and per-stock adjustments (accounting
+  quirks) are added only when a stock needs one.
+- Fundamentals are fetched fresh each run too (`fetch_fundamentals`). Statement dates are
+  **period ends, not publication dates**: anything as-of a past date goes through `known()`
+  (statutory reporting lags), never the raw frame.
 - Model outputs for the scorecard are scores in **[-1, +1]** (+ = bullish / favourable).
 - All price data must pass through `check_prices` (review the issues), `clean_prices` and
   `trim_to_consistent` before use.
@@ -56,6 +63,7 @@ Current state:
 | Stock prices + quality report | `uv run python scripts/stock_prices.py JET2.L` |
 | Technical scorecard | `uv run python scripts/technical.py JET2.L [--entry-date D]` |
 | Levels + trade plan | `uv run python scripts/levels.py JET2.L [--short]` |
+| Fundamentals scorecard | `uv run python scripts/fundamentals.py JET2.L [--as-of D]` |
 | Notebooks | `make notebook` |
 
 Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `uv.lock` by hand.
@@ -70,12 +78,16 @@ src/solaraalpha/        importable package — all reusable code lives here
     http.py             shared requests session with retry/backoff — use for all HTTP
     cache.py            @parquet_cache decorator for DataFrame-returning fetchers
     prices.py           daily OHLCV for one stock (Yahoo chart API)
+    fundamentals.py     statements, TTM EPS, P/E / forward P/E / market cap for one stock
+                        (Yahoo fundamentals-timeseries API), tidy long frame
     clean.py            check_prices / clean_prices / trim_to_consistent / to_weekly
   analysis/             research & analytics code
     technical.py        weekly technical model (any stock): trend/momentum/entry scores,
                         open-position assessment — see docs/decisions/0003
     levels.py           weekly levels model (any stock): S/R zones, trendlines, 52w/5y
                         highs/lows, blue sky; stop/targets/reward:risk — see docs/decisions/0004
+    fundamentals.py     fundamentals model (one stock): growth/value/quality scores,
+                        point-in-time via publication lags — see docs/decisions/0005
   portfolio/            portfolio construction / risk (later phase)
 scripts/                thin CLI entry points (argparse) that call into the package
 notebooks/              exploration only; promote anything reused into src/
