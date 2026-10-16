@@ -187,10 +187,10 @@ research. Its job is to catch model artefacts: bad data, a score driven by one o
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S2.1 | As the owner I want a `/validate <TICKER> [--run N]` skill that reads the saved cards, steps and price snapshot for that run, and judges each toolkit's label as *warranted / not warranted* with a reason. | R1 | ⬜ · #118 |
-| S2.2 | As the validator I want a fixed checklist: data issues (`check_prices`, trim span, gaps, suspensions); one-off spikes (bid, placing, results gap) inflating trend or momentum; overextension vs ATR; levels that are stale or that the price just broke; RS driven by one peer; fundamentals stale, a one-off, or currency-mismatched; agreement between the toolkits. | R1 | ⬜ · #118 |
-| S2.3 | As the owner I want its output to be ACT / WATCH / PASS / ERROR + confidence + reasons, written to the DB as a `validate` card and step on the **same run**. | R1 | 🟡 `record.py verdict` writes the label + card + evidence (#117); the skill · #118 |
-| S2.4 | As the owner I want it to be **independent**: it sees the raw data and the cards, never the other agents' notes, and can only *downgrade* (ACT → WATCH / PASS), never upgrade. | R1 | ⬜ (proposal: downgrade only) · #118 |
+| S2.1 | As the owner I want a `/validate <TICKER> [--run N]` skill that reads the saved cards, steps and price snapshot for that run, and judges each toolkit's label as *warranted / not warranted* with a reason. | R1 | ✅ `/validate`, `scripts/validate_pack.py` · #118 |
+| S2.2 | As the validator I want a fixed checklist: data issues (`check_prices`, trim span, gaps, suspensions); one-off spikes (bid, placing, results gap) inflating trend or momentum; overextension vs ATR; levels that are stale or that the price just broke; RS driven by one peer; fundamentals stale, a one-off, or currency-mismatched; agreement between the toolkits. | R1 | ✅ the seven-item checklist in the skill, answered in `checks` · #118 |
+| S2.3 | As the owner I want its output to be ACT / WATCH / PASS / ERROR + confidence + reasons, written to the DB as a `validate` card and step on the **same run**. | R1 | ✅ `record.py verdict` (#117), `/validate` records `stage = validate` (#118) |
+| S2.4 | As the owner I want it to be **independent**: it sees the raw data and the cards, never the other agents' notes, and can only *downgrade* (ACT → WATCH / PASS), never upgrade. | R1 | ✅ pack excludes other agents' cards; `record.py` enforces downgrade only · #118 |
 | S2.5 | As the owner I want it rendered as a short chart pack (weekly bars, MAs, levels, stop, target) the agent can read, so it judges the picture as well as the numbers. | R2 | ⬜ · #126 |
 | S2.6 | As the owner I want the validator's disagreements logged and counted, so bad toolkit rules surface (feeds A11). | R2 | ⬜ · #126 |
 

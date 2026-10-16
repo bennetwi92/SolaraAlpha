@@ -504,17 +504,22 @@ def _as_seen(ts: str | pd.Timestamp | None) -> str | None:
 
 
 def load_prices(
-    ticker: str, as_seen: str | pd.Timestamp | None = None, path: Path | None = None
+    ticker: str,
+    as_seen: str | pd.Timestamp | None = None,
+    path: Path | None = None,
+    conn: Conn | None = None,
 ) -> pd.DataFrame:
     """Saved daily prices for ``ticker`` as last seen by ``as_seen`` (default: latest).
 
     Same shape as :func:`solaraalpha.data.prices.fetch_daily` (UTC date index, ``attrs``).
     """
-    conn = connect(path)
+    own = conn is None
+    conn = conn or connect(path)
     try:
         df = _latest(_read(conn, "prices", ticker, _as_seen(as_seen)), ["date"])
     finally:
-        conn.close()
+        if own:
+            conn.close()
     currency = df["currency"].iloc[-1] if len(df) else None
     df.index = pd.DatetimeIndex(pd.to_datetime(df.pop("date")), name="date").tz_localize(UTC)
     df = df.sort_index()[_PRICE_COLS[:-1]].astype("float64")
@@ -523,18 +528,23 @@ def load_prices(
 
 
 def load_fundamentals(
-    ticker: str, as_seen: str | pd.Timestamp | None = None, path: Path | None = None
+    ticker: str,
+    as_seen: str | pd.Timestamp | None = None,
+    path: Path | None = None,
+    conn: Conn | None = None,
 ) -> pd.DataFrame:
     """Saved fundamentals for ``ticker`` as last seen by ``as_seen`` (default: latest).
 
     Same shape as :func:`solaraalpha.data.fundamentals.fetch_fundamentals`. ``as_seen`` is when
     *we* saw the data; it does not replace :func:`solaraalpha.analysis.fundamentals.known`.
     """
-    conn = connect(path)
+    own = conn is None
+    conn = conn or connect(path)
     try:
         df = _latest(_read(conn, "fundamentals", ticker, _as_seen(as_seen)), ["field", "date"])
     finally:
-        conn.close()
+        if own:
+            conn.close()
     df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(UTC)
     df = df.sort_values(["field", "date"], ignore_index=True)[
         ["field", "date", "value", "currency"]
