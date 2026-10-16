@@ -282,9 +282,9 @@ and WATCH stock**, and **the agent only when a check fires**.
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S7.1 | As the pipeline I want a **daily job** (weekday evenings after the 16:35 close) that fetches daily prices for open positions and WATCH stocks. | R1 | ⬜ (ADR 0010 says daily isn't built) · #120 |
-| S7.2 | As the owner I want **price triggers**: close below the stop (exit), intraday through the stop (check the fill), hit a target (take profit / trail), gap over N ATR, WATCH coil `trigger` broken (promote to ACT mid-week). | R1 | ⬜ · #120 |
-| S7.3 | As the owner I want **new regulatory announcements** for open positions checked daily (NSM by LEI) and new headlines from the news feed. | R1 | 🟡 fetchers exist (`announcements`, `news`); no daily job · #120 |
+| S7.1 | As the pipeline I want a **daily job** (weekday evenings after the 16:35 close) that fetches daily prices for open positions and WATCH stocks. | R1 | ✅ `scripts/daily.py`, `daily.yml` (ADR 0017) · #120 |
+| S7.2 | As the owner I want **price triggers**: close below the stop (exit), intraday through the stop (check the fill), hit a target (take profit / trail), gap over N ATR, WATCH coil `trigger` broken (promote to ACT mid-week). | R1 | ✅ `portfolio/triggers.py`: stop_close, stop_touched, target_hit, gap, watch_break, entry_break · #120 |
+| S7.3 | As the owner I want **new regulatory announcements** for open positions checked daily (NSM by LEI) and new headlines from the news feed. | R1 | ✅ `filing` (agent) and `news` (listed) triggers since the last daily run · #120 |
 | S7.4 | As the owner I want **thesis conditions** (S4.7) that are machine-checkable evaluated daily. | R2 | ⬜ · #131 |
 | S7.5 | As the owner I want the **monitor agent** run only for positions with a fired trigger: read the filing / news, compare it with the entry conditions and the thesis, and propose **hold / tighten stop / take partial / exit / revise target**, with evidence logged (as S3.4). | R1 | ⬜ · #121 |
 | S7.6 | As the owner I want "structural change" defined so the agent doesn't churn: guidance or estimate change; a thesis kill criterion hit; a capital event (placing, bid, delisting); a regulatory or legal event; a weekly-trend break (stage 2 → 3). Noise (no new information, a move inside 2 ATR) is ignored. | R1 | ⬜ (proposal) · #121 |
@@ -341,7 +341,7 @@ and WATCH stock**, and **the agent only when a check fires**.
 | S12.2 | As the owner I want one stock run on demand. | R1 | ✅ `stock.yml` |
 | S12.3 | As the owner I want a **durable DB** that Actions, cloud sessions and my machine all reach (today the DB is an Actions artifact for 90 days). | R1 | ✅ Turso client (#103, ADR 0013); `scripts/db.py` push/pull and the dual-backend `db_backend` fixture (#116) |
 | S12.4 | As the owner I want the agent stages (A2, A3, A7) runnable unattended (Actions or a scheduled Claude session) after the scan, reading the run from the DB. | R1 | ⬜ needs a key / subscription token (ADR 0010) · #123 |
-| S12.5 | As the owner I want a daily workflow (A7) alongside the weekly one. | R1 | ⬜ · #120 |
+| S12.5 | As the owner I want a daily workflow (A7) alongside the weekly one. | R1 | ✅ `daily.yml`, 17:47 UTC weekdays, `concurrency: book` shared with the scan · #120 |
 | S12.6 | As the owner I want failures reported (ERROR labels, source outages, agent errors) without stopping the rest of the run. | R1 | ✅ for toolkits; ⬜ for agents · #123 |
 | S12.7 | As the owner I want notifications (email / push) for the weekly pack and the daily actions. | R2 | ⬜ · #132 |
 | S12.8 | As the owner I want agent cost and runtime per run logged, so the free / subscription limits aren't hit by surprise. | R2 | ⬜ · #139 |

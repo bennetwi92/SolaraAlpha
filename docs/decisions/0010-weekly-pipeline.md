@@ -37,3 +37,7 @@ condition-driven DAG are more machinery than that needs.
 from `act` and `watch` bands instead of pass / fail, labels combine as ERROR > PASS > WATCH >
 ACT, stages carry `runs_on` (fundamentals runs on WATCH too; events on ACT only, no longer a
 gate), and the scan saves one `labels` row per stock. See docs/decisions/0014.
+
+**Amendment (0017).** The daily pipeline is built: `scripts/daily.py` / `daily.yml` check open
+positions, the watch list and pending breakout entries every weekday evening and record the
+fired triggers; the agent runs only when a trigger needs judgement. See docs/decisions/0017.

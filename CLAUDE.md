@@ -58,8 +58,13 @@ Current state:
   bands and is the input to research, not a gate). The **screen label** combines the four
   screening toolkits and is saved per stock in the `labels` table (`store.shortlist`). Stocks:
   `config/watchlist.toml`. GitHub Actions run it Sunday (`scan.yml`) or on demand for one stock
-  (`stock.yml`). Bands are placeholders until backtested. Daily tasks (news, announcements,
-  volatility) are not built yet.
+  (`stock.yml`). Bands are placeholders until backtested.
+- **Daily job** (docs/decisions/0017): `scripts/daily.py` / `daily.yml` run every weekday after
+  the close over open positions, the latest scan's WATCH tickers and pending breakout entries:
+  price triggers (stop closed through / touched, target hit, gap > 2 ATR), coil and entry
+  breaks, new filings and headlines since the last daily run, saved to the `triggers` table.
+  Owner actions and agent reviews are separated in the report; the monitor agent runs only on
+  agent triggers. Market-wide volatility is not built yet.
 - **Agents write through one door** (docs/decisions/0016): a `verdict.json` (schema:
   `record.py schema`) recorded with `scripts/record.py verdict`, which writes the `labels` row,
   a card under `model = stage` and the `evidence` rows on the same run. Agents can only
@@ -113,6 +118,7 @@ Current state:
 | Validator pack (DB only, independent of other agents) | `uv run python scripts/validate_pack.py JET2.L --run N` / `--run N --all` |
 | Validator (agent) | `/validate JET2.L --run N` or `/validate --run N` in Claude Code |
 | Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `prior JET2.L [--stage research]` / `schema` |
+| Daily check: prices, triggers (stops, targets, gaps, breaks), new filings and headlines | `uv run python scripts/daily.py [--save] [--report FILE]` |
 | Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
@@ -185,11 +191,15 @@ src/solaraalpha/        importable package — all reusable code lives here
     planner.py          plan_run: a saved scan run's final labels → plans → fit → draft positions
                         with entry conditions (frozen cards) and thesis conditions (kill criteria)
     weekly_pack.py      build_pack (run + book → data) and render_pack (→ markdown), the Sunday page
+    triggers.py         daily triggers (pure): stop_close / stop_touched / target_hit / gap /
+                        watch_break / entry_break / filing / news — see docs/decisions/0017
+    daily.py            run_daily (what to check, fetch, evaluate, save the triggers) + render_daily
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM UK 50 snapshot)
 config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)
 config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeholders until confirmed)
-.github/workflows/      ci.yml (checks), scan.yml (weekly pipeline + weekly pack, Sunday), stock.yml (one stock)
+.github/workflows/      ci.yml (checks), scan.yml (weekly pipeline + weekly pack, Sunday), daily.yml
+                        (weekday daily check), stock.yml (one stock)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
 .claude/skills/validate/  agent skill: re-checks a run's screen labels against the pack; downgrade only
