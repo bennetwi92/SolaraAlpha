@@ -154,6 +154,10 @@ GitHub issues are the backlog and the hand-off between threads/agents.
 
 - Work on the branch you're given; small, focused commits with descriptive messages.
 - Before committing: `make fmt && make check`.
+- **Always raise a PR** against `main` once the work is pushed — no need to ask. Reference the
+  issue (`Closes #N`) when there is one. Then **enable auto-merge (squash)** on it so it merges
+  as soon as CI passes; keep it open (no auto-merge) only if the owner says to or a decision is
+  still open on the issue.
 - When adding a data source: add the fetcher in `src/solaraalpha/data/`, a fixture-based test,
   and an entry in `docs/data-sources.md`.
 - When making a non-obvious design choice, add a short ADR in `docs/decisions/`.
