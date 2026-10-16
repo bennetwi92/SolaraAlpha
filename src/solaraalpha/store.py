@@ -99,14 +99,16 @@ def save_run(
     fund: pd.DataFrame | None = None,
     path: Path | None = None,
     steps: list[tuple[str, str, str, str]] | None = None,
+    others: dict[str, pd.DataFrame] | None = None,
 ) -> int:
     """Record one run: its model ``cards`` (``{model: dataclass}``) and input snapshots.
 
     ``steps`` are pipeline outcomes ``(node, toolkit, status, reason)`` for ``ticker``.
 
     ``daily`` is the frame from :func:`solaraalpha.data.prices.fetch_daily` as fetched (before
-    cleaning), ``fund`` the one from :func:`solaraalpha.data.fundamentals.fetch_fundamentals`.
-    Returns the new ``run_id``.
+    cleaning), ``fund`` the one from :func:`solaraalpha.data.fundamentals.fetch_fundamentals`;
+    ``others`` the daily prices of instruments it was compared with (indices, peers, FX), by
+    ticker. Returns the new ``run_id``.
     """
     conn = connect(path)
     try:
@@ -120,6 +122,8 @@ def save_run(
             )
             if daily is not None:
                 _save_snapshot(conn, run_id, "prices", ["date"], _price_rows(ticker, daily))
+            for other, prices in (others or {}).items():
+                _save_snapshot(conn, run_id, "prices", ["date"], _price_rows(other, prices))
             if fund is not None:
                 rows = fund.assign(ticker=ticker, date=_days(fund["date"]))
                 _save_snapshot(conn, run_id, "fundamentals", ["field", "date"], rows)

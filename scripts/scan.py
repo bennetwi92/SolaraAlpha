@@ -38,7 +38,9 @@ def _save(args: argparse.Namespace, x: Inputs, steps: list[Step]) -> int:
     cards = {model: card for s in steps for model, card in s.cards.items()}
     rows = [(s.toolkit, s.toolkit, s.status, s.reason) for s in steps]
     daily, fund = x.fetched("daily"), x.fetched("fund")
-    return save_run("scan", vars(args), x.ticker, cards, daily=daily, fund=fund, steps=rows)
+    return save_run(
+        "scan", vars(args), x.ticker, cards, daily=daily, fund=fund, steps=rows, others=x.others
+    )
 
 
 def _report(results: dict[str, list[Step]]) -> str:
@@ -60,8 +62,8 @@ def _list() -> None:
         print(f"  {i}. {st.name:<14} {' + '.join(st.toolkits)}")
     print("\nToolkits:")
     for t in REGISTRY.values():
-        print(f"  {t.id:<14} {t.doc}")
-        print(f"  {'':<14} passes: {', '.join(t.passes) or '(always, once run)'}")
+        print(f"  {t.id:<18} {t.doc}")
+        print(f"  {'':<18} passes: {', '.join(t.passes) or '(always, once run)'}")
 
 
 def main() -> None:

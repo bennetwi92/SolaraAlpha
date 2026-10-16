@@ -1,0 +1,24 @@
+# What each stock is compared against by the relative-strength toolkit
+# (solaraalpha.analysis.relative_strength; docs/decisions/0011). Any Yahoo ticker; series in
+# another currency are converted to the stock's at weekly FX closes.
+#
+#   market   — broad index of the stock's home market. Defaults by listing suffix (below).
+#   industry — sector index; if Yahoo has no history for it, the closest sector ETF. Optional.
+#   peers    — listed companies in the same business, any exchange. Optional; aim for 4-8.
+#
+# A stock with no entry is compared with its market only.
+
+[market]          # default market index by Yahoo ticker suffix
+".L" = "^FTAS"    # FTSE All-Share: the UK opportunity set (AIM stocks too — see 0011)
+
+[stocks."JET2.L"]
+# FTSE 350 Travel & Leisure (UB6010.FGI) has no history on Yahoo, so the sector ETF:
+industry = "EXV9.DE"  # iShares STOXX Europe 600 Travel & Leisure (EUR)
+peers = [
+    "EZJ.L",    # easyJet: UK short-haul airline + package holidays
+    "RYA.IR",   # Ryanair (EUR)
+    "WIZZ.L",   # Wizz Air
+    "IAG.L",    # IAG (BA, Vueling, Aer Lingus)
+    "TUI1.DE",  # TUI: package holidays + own airline (EUR)
+    "OTB.L",    # On the Beach: UK online package holidays
+]
