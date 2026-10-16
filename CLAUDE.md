@@ -38,8 +38,12 @@ Current state:
 - Events & catalysts are split: `scripts/events.py` gathers facts programmatically (filings,
   market reactions, expected events, headlines) into an event pack; interpretation is done by
   an agent via the `/events` skill (`.claude/skills/events/SKILL.md`). See docs/decisions/0006.
+- **Jet2 fair value** (`analysis/jet2_value.py`, `/jet2-value` skill) is deliberately Jet2-only:
+  a driver P&L calibrated to consensus EPS (`CONSENSUS`, `REFERENCE` — hand-updated, dated;
+  refresh after each results / trading update), updated for the live fuel curve and FX, valued
+  at the holding horizon; news goes in as driver shocks. See docs/decisions/0009.
 - Model outputs for the scorecard are scores in **[-1, +1]** (+ = bullish / favourable).
-- Toolkits run as **one serialised weekly pipeline** (docs/decisions/0009): toolkits are
+- Toolkits run as **one serialised weekly pipeline** (docs/decisions/0010): toolkits are
   registered by id in `solaraalpha/toolkits.py`, each with a fixed pass/fail verdict; the stages
   are `WEEKLY` in `solaraalpha/pipeline.py` — `screen` (technical + levels, independent, both must
   pass) → `fundamentals` → `events`. Each stage runs on every stock still in before the next
@@ -78,12 +82,14 @@ Current state:
 | Levels + trade plan | `uv run python scripts/levels.py JET2.L [--short]` |
 | Fundamentals scorecard | `uv run python scripts/fundamentals.py JET2.L [--as-of D]` |
 | Event pack (filings, reactions, expected events, news) | `uv run python scripts/events.py JET2.L [--days 7] [--horizon 16]` |
+| Jet2 fair value + news/scenario shocks | `uv run python scripts/jet2_value.py [--weeks 12] [--scenario fuel_spike] [--shock seats=+2%] [--list]` |
+| Jet2 news analyst (agent) | `/jet2-value <news or question>` in Claude Code |
 | Read one announcement | `uv run python scripts/announcement.py <NSM url>` |
 | Events analyst (agent) | `/events JET2.L` in Claude Code |
 | Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
-| Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `fundamentals` / `scan` |
+| Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `fundamentals` / `jet2_value` / `scan` |
 | Notebooks | `make notebook` |
 
 Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `uv.lock` by hand.
@@ -100,7 +106,7 @@ src/solaraalpha/        importable package — all reusable code lives here
   toolkits.py           toolkit register: id -> run fn + pass conditions; Inputs (lazy,
                         shared per-ticker data)
   pipeline.py           WEEKLY stages, conditions, run_pipeline (stage by stage) — see
-                        docs/decisions/0009
+                        docs/decisions/0010
   data/                 fetching, cleaning, storage of external data
     http.py             shared requests session with retry/backoff — use for all HTTP
     cache.py            @parquet_cache decorator for DataFrame-returning fetchers
@@ -110,6 +116,7 @@ src/solaraalpha/        importable package — all reusable code lives here
     announcements.py    regulatory filings for one issuer (FCA NSM, by LEI), ticker → LEI
                         (LSE + GLEIF), announcement full text
     news.py             press headlines (Google News RSS), discovery only
+    futures.py          commodity futures curves, one Yahoo ticker per contract month
     clean.py            check_prices / clean_prices / trim_to_consistent / to_weekly
   analysis/             research & analytics code
     technical.py        weekly technical model (any stock): trend/momentum/entry scores,
@@ -120,11 +127,14 @@ src/solaraalpha/        importable package — all reusable code lives here
                         point-in-time via publication lags — see docs/decisions/0005
     events.py           events model (any stock): market reaction per filing, expected
                         scheduled events from the issuer's own history — see docs/decisions/0006
+    jet2_value.py       Jet2-only fair value: consensus-calibrated FY27/FY28 driver P&L, live
+                        fuel curve / FX, horizon valuation, news shocks, Monte Carlo — 0009
   portfolio/            portfolio construction / risk (later phase)
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs
 .github/workflows/      ci.yml (checks), scan.yml (weekly pipeline, Sunday), stock.yml (one stock)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
+.claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
 notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure
 data/                   gitignored; raw/ processed/ cache/ created on demand

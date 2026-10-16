@@ -1,4 +1,4 @@
-# 0009 — One serialised weekly pipeline, stage by stage (supersedes 0008)
+# 0010 — One serialised weekly pipeline, stage by stage (supersedes 0008)
 
 **Context.** 0008 ran each stock through its own TOML dependency graph, stock by stock. The
 owner thinks of it differently: one scheduled run that does the week's tasks in sequence —

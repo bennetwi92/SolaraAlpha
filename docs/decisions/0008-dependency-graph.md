@@ -1,6 +1,6 @@
 # 0008 — Toolkits run as a dependency graph, per universe, from TOML config
 
-**Superseded by [0009](0009-weekly-pipeline.md)** — graphs and universes replaced by one
+**Superseded by [0010](0010-weekly-pipeline.md)** — graphs and universes replaced by one
 stage-by-stage weekly pipeline. The toolkit register and conditions carried over.
 
 **Context.** We will run many instruments, each through several toolkits (technical, levels,
