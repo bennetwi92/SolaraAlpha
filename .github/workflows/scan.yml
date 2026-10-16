@@ -1,7 +1,9 @@
 # Weekly pipeline: every stock in config/watchlist.toml through the stages in
 # solaraalpha.pipeline (scripts/scan.py), one stage at a time. Results go to the job summary
 # and the hosted results DB (Turso, from the SOLARA_TURSO_* secrets; without them, the local
-# data/solara.db). data/ (event packs) is kept as an artifact (docs/decisions/0007, 0010, 0013).
+# data/solara.db), then the weekly pack for the saved run (scripts/weekly_pack.py) is appended
+# to the summary. data/ (event packs, packs/) is kept as an artifact (docs/decisions/0007,
+# 0010, 0013, 0014, 0015).
 name: Weekly pipeline
 
 on:
@@ -34,7 +36,18 @@ jobs:
           TICKERS: ${{ inputs.tickers }}
         run: >
           uv run --no-sync python scripts/scan.py $TICKERS
-          --save --report "$GITHUB_STEP_SUMMARY"
+          --save --report "$GITHUB_STEP_SUMMARY" --run-id-file run_id.txt
+      - name: Weekly pack
+        if: always()
+        env:
+          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+        run: |
+          if [ -s run_id.txt ]; then
+            uv run --no-sync python scripts/weekly_pack.py --run "$(cat run_id.txt)" --report "$GITHUB_STEP_SUMMARY"
+          else
+            echo "no saved run: weekly pack skipped" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
