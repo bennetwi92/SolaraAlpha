@@ -25,7 +25,7 @@ Current state:
 - Price data is **fetched fresh each run** (no `@parquet_cache`). With `--save` the raw fetch is
   also snapshotted into the results DB (`solaraalpha.store`) — for the record, never as a cache.
 - **Results DB**: scripts' `--save` records the run, model cards and input snapshots in
-  `data/solara.db` (append-only SQLite) — see docs/decisions/0006. Hosted copy (Turso) not set up yet.
+  `data/solara.db` (append-only SQLite) — see docs/decisions/0007. Hosted copy (Turso) not set up yet.
 - Price history: fetch the **last 5 years** (default), then cut per stock to the span after
   the last blocking data issue (`trim_to_consistent`). Don't pull long history yet.
 - The technical models (`analysis/technical.py`, `analysis/levels.py`) must stay **generic across
@@ -35,6 +35,9 @@ Current state:
 - Fundamentals are fetched fresh each run too (`fetch_fundamentals`). Statement dates are
   **period ends, not publication dates**: anything as-of a past date goes through `known()`
   (statutory reporting lags), never the raw frame.
+- Events & catalysts are split: `scripts/events.py` gathers facts programmatically (filings,
+  market reactions, expected events, headlines) into an event pack; interpretation is done by
+  an agent via the `/events` skill (`.claude/skills/events/SKILL.md`). See docs/decisions/0006.
 - Model outputs for the scorecard are scores in **[-1, +1]** (+ = bullish / favourable).
 - All price data must pass through `check_prices` (review the issues), `clean_prices` and
   `trim_to_consistent` before use.
@@ -67,7 +70,10 @@ Current state:
 | Technical scorecard | `uv run python scripts/technical.py JET2.L [--entry-date D]` |
 | Levels + trade plan | `uv run python scripts/levels.py JET2.L [--short]` |
 | Fundamentals scorecard | `uv run python scripts/fundamentals.py JET2.L [--as-of D]` |
-| Save a run to the results DB | add `--save` to any of the scripts above |
+| Event pack (filings, reactions, expected events, news) | `uv run python scripts/events.py JET2.L [--days 7] [--horizon 16]` |
+| Read one announcement | `uv run python scripts/announcement.py <NSM url>` |
+| Events analyst (agent) | `/events JET2.L` in Claude Code |
+| Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `fundamentals` |
 | Notebooks | `make notebook` |
 
 Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `uv.lock` by hand.
@@ -79,13 +85,16 @@ src/solaraalpha/        importable package — all reusable code lives here
   config.py             Settings (env vars prefixed SOLARA_, loaded from .env); data paths
   log.py                get_logger(__name__)
   store.py              results DB (SQLite): runs, model cards, price/fundamental snapshots;
-                        save_run / load_results / latest / load_prices — see docs/decisions/0006
+                        save_run / load_results / latest / load_prices — see docs/decisions/0007
   data/                 fetching, cleaning, storage of external data
     http.py             shared requests session with retry/backoff — use for all HTTP
     cache.py            @parquet_cache decorator for DataFrame-returning fetchers
     prices.py           daily OHLCV for one stock (Yahoo chart API)
     fundamentals.py     statements, TTM EPS, P/E / forward P/E / market cap for one stock
                         (Yahoo fundamentals-timeseries API), tidy long frame
+    announcements.py    regulatory filings for one issuer (FCA NSM, by LEI), ticker → LEI
+                        (LSE + GLEIF), announcement full text
+    news.py             press headlines (Google News RSS), discovery only
     clean.py            check_prices / clean_prices / trim_to_consistent / to_weekly
   analysis/             research & analytics code
     technical.py        weekly technical model (any stock): trend/momentum/entry scores,
@@ -94,8 +103,11 @@ src/solaraalpha/        importable package — all reusable code lives here
                         highs/lows, blue sky; stop/targets/reward:risk — see docs/decisions/0004
     fundamentals.py     fundamentals model (one stock): growth/value/quality scores,
                         point-in-time via publication lags — see docs/decisions/0005
+    events.py           events model (any stock): market reaction per filing, expected
+                        scheduled events from the issuer's own history — see docs/decisions/0006
   portfolio/            portfolio construction / risk (later phase)
 scripts/                thin CLI entry points (argparse) that call into the package
+.claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure
 data/                   gitignored; raw/ processed/ cache/ created on demand
@@ -134,6 +146,15 @@ docs/
 - Exploration only. Name `NN-short-topic.ipynb`. Import from `solaraalpha`; don't define
   reusable logic in notebooks.
 - Clear outputs before committing large notebooks.
+
+## Issues
+
+GitHub issues are the backlog and the hand-off between threads/agents.
+- One issue = one deliverable. Title is imperative ("Persist events notes to the DB").
+- Body: **Context** (why, links to ADRs/PRs), **Scope** (what's in / out), **Acceptance**
+  (checkable list), **Open questions** (anything needing the owner's choice — don't assume).
+- State dependencies explicitly ("Blocked by #N"). Keep it short; detail goes in the PR/ADR.
+- PRs reference their issue (`Closes #N`). Note decisions taken during the work on the issue.
 
 ## Workflow for Claude
 

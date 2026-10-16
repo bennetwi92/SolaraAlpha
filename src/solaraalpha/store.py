@@ -12,7 +12,7 @@ deleted, so every number can be traced to the run (time, git commit, arguments) 
   differs from the latest stored version, so :func:`load_prices` / :func:`load_fundamentals`
   can rebuild what was known on any past date (``as_seen``) without duplicating history.
 
-Plain SQLite SQL only, so the file can move to a hosted SQLite (see docs/decisions/0006).
+Plain SQLite SQL only, so the file can move to a hosted SQLite (see docs/decisions/0007).
 """
 
 from __future__ import annotations

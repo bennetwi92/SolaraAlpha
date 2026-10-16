@@ -1,4 +1,4 @@
-# 0006 — Results database: append-only SQLite, hosted SQLite (Turso) later
+# 0007 — Results database: append-only SQLite, hosted SQLite (Turso) later
 
 **Context.** We need to keep model outputs (scorecards, trade plans, position assessments) and
 the input data they were computed from, to track stocks over time, screen many stocks, feed
