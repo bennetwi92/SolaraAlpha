@@ -251,3 +251,52 @@ def prior(conn: Conn, ticker: str, stage: str = "research", limit: int = 3) -> d
         "verdicts": verdicts,
         "filings": filings.to_dict("records"),
     }
+
+
+REVISION_KEYS = (
+    "action",
+    "stop",
+    "target",
+    "target_2",
+    "qty",
+    "type",
+    "price",
+    "trigger",
+    "structural",
+)
+
+
+def record_revision(conn: Conn, verdict: Verdict, position_id: int, actor: str) -> dict[str, Any]:
+    """Record a monitor verdict (card + evidence) and, unless the action is ``hold``, propose
+    the plan revision it carries in ``checks`` (``action``, ``stop`` / ``target`` / ``qty`` /
+    ``type`` / ``price`` as strings, ``trigger``, ``structural``). Returns the record result
+    plus ``revision_id`` (None for hold)."""
+    if verdict.stage != "monitor":
+        raise ValueError(f"a revision needs stage 'monitor', got {verdict.stage!r}")
+    action = verdict.checks.get("action", "hold")
+    out = record_verdict(conn, verdict, actor)
+    out["revision_id"] = None
+    if action == "hold":
+        return out
+    new: dict[str, Any] = {}
+    for key in ("stop", "target", "target_2", "price"):
+        if verdict.checks.get(key) not in (None, ""):
+            new[key] = float(verdict.checks[key])
+    if verdict.checks.get("qty") not in (None, ""):
+        new["qty"] = int(float(verdict.checks["qty"]))
+    if verdict.checks.get("type"):
+        new["type"] = verdict.checks["type"]
+    from solaraalpha.portfolio import book  # local import: book depends on store, not on agents
+
+    with conn:
+        out["revision_id"] = book.propose_revision(
+            conn,
+            position_id,
+            action,
+            new,
+            "; ".join(verdict.reasons),
+            actor,
+            out["evidence_ids"],
+            verdict.checks.get("trigger", ""),
+        )
+    return out

@@ -138,8 +138,12 @@ def run_daily(
     targets = {}
     for pid in states:
         ev = book.position_events(conn, pid)
-        payloads = [x for x in ev.loc[ev["kind"].isin(["drafted", "amended"]), "payload"]]
-        targets[pid] = payloads[-1].get("target") if payloads else None
+        payloads = [
+            x for x in ev.loc[ev["kind"].isin(["drafted", "amended", "revised"]), "payload"]
+        ]
+        targets[pid] = next(
+            (p.get("target") for p in reversed(payloads) if p.get("target") is not None), None
+        )
     watch = latest_watch(conn)
     pending = pending_breaks(conn)
 

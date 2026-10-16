@@ -1,6 +1,7 @@
 """Record an agent's output in the results DB: the one door agents write through.
 
 uv run python scripts/record.py verdict FILE [--actor agent:NAME] [--run N | --new-run] [--db PATH]
+uv run python scripts/record.py revision FILE --position ID [--actor agent:monitor] [--db PATH]
 uv run python scripts/record.py prior TICKER [--stage research] [--limit 3] [--db PATH]
 uv run python scripts/record.py schema
 
@@ -10,7 +11,10 @@ run's screen week, and one `evidence` row per source (ids printed). Agents can o
 a validate / research label may not be better than the previous stage's (ACT > WATCH > PASS);
 ERROR is always allowed. Violations and invalid files exit 2. --run N overrides the file's
 run_id; --new-run starts a run named after the stage (a standalone `/events JET2.L`) and
-records under it. prior prints the ticker's latest
+records under it. revision records a monitor verdict (card + evidence) and proposes the plan
+revision in its `checks` (action hold / tighten_stop / take_partial / exit / revise_target
+with the new stop / target / qty) as a `revision_proposed` event the owner accepts or declines
+with `book.py accept|decline`; the agent never changes orders. prior prints the ticker's latest
 verdicts and evidence and every filing already interpreted (nsm_id), so a run reuses earlier
 work instead of re-interpreting it. See docs/decisions/0016.
 """
@@ -55,6 +59,37 @@ def _verdict(args: argparse.Namespace) -> None:
     if out["label"]:
         print("labels row written")
     print(f"evidence ids: {', '.join(map(str, out['evidence_ids'])) or 'none'}")
+
+
+def _revision(args: argparse.Namespace) -> None:
+    try:
+        verdict = agents.load_verdict(Path(args.file).read_text())
+    except ValidationError as e:
+        print(f"error: {args.file} is not a valid verdict:")
+        for err in e.errors():
+            print(f"  {'.'.join(str(x) for x in err['loc']) or '(root)'}: {err['msg']}")
+        sys.exit(2)
+    actor = args.actor or "agent:monitor"
+    conn = store.connect(args.db)
+    try:
+        conn.executescript(
+            __import__("solaraalpha.portfolio.book", fromlist=["BOOK_SCHEMA"]).BOOK_SCHEMA
+        )
+        out = agents.record_revision(conn, verdict, args.position, actor)
+    except ValueError as e:
+        print(f"error: {e}")
+        sys.exit(2)
+    finally:
+        conn.close()
+    action = verdict.checks.get("action", "hold")
+    print(
+        f"recorded monitor {verdict.label} ({verdict.confidence:.2f}) for {verdict.ticker}, position {args.position}: {action}"
+    )
+    print(f"evidence ids: {', '.join(map(str, out['evidence_ids'])) or 'none'}")
+    if out["revision_id"] is not None:
+        print(
+            f"revision {out['revision_id']} proposed: `book.py accept {out['revision_id']}` or `book.py decline {out['revision_id']} --reason ...`"
+        )
 
 
 def _prior(args: argparse.Namespace) -> None:
@@ -109,6 +144,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     v.add_argument("--new-run", action="store_true", help="start a run named after the stage")
     v.add_argument("--db", type=Path, default=None, help="local DB file (default: configured DB)")
+    rv = sub.add_parser("revision", help="record a monitor verdict and propose its revision")
+    rv.add_argument("file")
+    rv.add_argument("--position", type=int, required=True)
+    rv.add_argument("--actor", help="default agent:monitor")
+    rv.add_argument("--db", type=Path, default=None)
     pr = sub.add_parser("prior", help="earlier verdicts, evidence and interpreted filings")
     pr.add_argument("ticker")
     pr.add_argument("--stage", default="research")
@@ -120,6 +160,8 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(agents.Verdict.model_json_schema(), indent=2))
     elif args.cmd == "verdict":
         _verdict(args)
+    elif args.cmd == "revision":
+        _revision(args)
     else:
         _prior(args)
 

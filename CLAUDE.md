@@ -63,8 +63,10 @@ Current state:
   the close over open positions, the latest scan's WATCH tickers and pending breakout entries:
   price triggers (stop closed through / touched, target hit, gap > 2 ATR), coil and entry
   breaks, new filings and headlines since the last daily run, saved to the `triggers` table.
-  Owner actions and agent reviews are separated in the report; the monitor agent runs only on
-  agent triggers. Market-wide volatility is not built yet.
+  Owner actions and agent reviews are separated in the report; the **monitor agent**
+  (`/monitor`, docs/decisions/0018) runs only on agent triggers and *proposes* plan revisions
+  (`revision_proposed` events) that the owner accepts or declines in `book.py`; agents never
+  change orders. Market-wide volatility is not built yet.
 - **Agents write through one door** (docs/decisions/0016): a `verdict.json` (schema:
   `record.py schema`) recorded with `scripts/record.py verdict`, which writes the `labels` row,
   a card under `model = stage` and the `evidence` rows on the same run. Agents can only
@@ -117,7 +119,9 @@ Current state:
 | Research analyst (agent): 9-section pre-trade note with web search, evidence logged | `/research JET2.L --run N` or `/research --run N` in Claude Code |
 | Validator pack (DB only, independent of other agents) | `uv run python scripts/validate_pack.py JET2.L --run N` / `--run N --all` |
 | Validator (agent) | `/validate JET2.L --run N` or `/validate --run N` in Claude Code |
-| Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `prior JET2.L [--stage research]` / `schema` |
+| Monitor pack for a daily run's triggered positions (then vs now, thesis, filing text) | `uv run python scripts/monitor_pack.py --run N [--position ID]` |
+| Monitor (agent): structural change? propose hold / tighten / partial / exit / revise target | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions` / `accept REV_ID` / `decline REV_ID --reason` |
+| Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `revision FILE --position ID` / `prior JET2.L [--stage research]` / `schema` |
 | Daily check: prices, triggers (stops, targets, gaps, breaks), new filings and headlines | `uv run python scripts/daily.py [--save] [--report FILE]` |
 | Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
@@ -147,6 +151,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         card + evidence, downgrade-only), prior — see docs/decisions/0016
   validation.py         the validator's pack from the DB: independent cards, steps, label, price
                         snapshot as seen, fundamentals known at the card date, filing headlines
+  monitoring.py         the monitor's pack: position then (entry conditions) vs now (fresh cards),
+                        thesis conditions evaluated, triggers + filing text — docs/decisions/0018
   toolkits.py           toolkit register: id -> run fn + act / watch bands; Inputs (lazy,
                         shared per-ticker data)
   pipeline.py           WEEKLY stages (runs_on), clauses, band / combine / screen_label,
@@ -204,6 +210,7 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
 .claude/skills/validate/  agent skill: re-checks a run's screen labels against the pack; downgrade only
 .claude/skills/research/  agent skill: strategist's 9-section pre-trade note, web search, evidence → record.py
+.claude/skills/monitor/   agent skill: structural change or noise on a triggered position; proposes one action
 notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure; fakes.py (FakeTurso), conftest.py (db_backend)
 data/                   gitignored; raw/ processed/ cache/ created on demand
