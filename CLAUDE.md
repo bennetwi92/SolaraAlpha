@@ -70,6 +70,12 @@ Current state:
   (`/monitor`, docs/decisions/0018) runs only on agent triggers and *proposes* plan revisions
   (`revision_proposed` events) that the owner accepts or declines in `book.py`; agents never
   change orders. Market-wide volatility is not built yet.
+- **Agents run unattended when the owner adds a Claude secret** (docs/decisions/0019):
+  `agents.yml` runs after the scan (`/validate` → `/research` → `plan.py` → `weekly_pack.py`)
+  and after the daily job (`/monitor`) via `claude-code-action`, capped by
+  `max_agent_tickers` and `--max-turns`; without `CLAUDE_CODE_OAUTH_TOKEN` or
+  `ANTHROPIC_API_KEY` it skips and nothing is spent. A failed invocation is recorded as an
+  ERROR verdict (`record.py error`); the job fails only if every item errored.
 - **Agents write through one door** (docs/decisions/0016): a `verdict.json` (schema:
   `record.py schema`) recorded with `scripts/record.py verdict`, which writes the `labels` row,
   a card under `model = stage` and the `evidence` rows on the same run. Agents can only
@@ -124,7 +130,7 @@ Current state:
 | Validator (agent) | `/validate JET2.L --run N` or `/validate --run N` in Claude Code |
 | Monitor pack for a daily run's triggered positions (then vs now, thesis, filing text) | `uv run python scripts/monitor_pack.py --run N [--position ID]` |
 | Monitor (agent): structural change? propose hold / tighten / partial / exit / revise target | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions` / `accept REV_ID` / `decline REV_ID --reason` |
-| Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `revision FILE --position ID` / `prior JET2.L [--stage research]` / `schema` |
+| Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `revision FILE --position ID` / `prior JET2.L [--stage research]` / `schema`; runner: `error TICKER --run N --stage S --reason ...` / `queue --run N --stage S` / `latest-run` / `outcome --run N --stage S` |
 | Daily check: prices, triggers (stops, targets, gaps, breaks), new filings and headlines | `uv run python scripts/daily.py [--save] [--report FILE]` |
 | Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
@@ -210,7 +216,8 @@ config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM UK 50 snapshot
 config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)
 config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeholders until confirmed)
 .github/workflows/      ci.yml (checks), scan.yml (weekly pipeline + weekly pack, Sunday), daily.yml
-                        (weekday daily check), stock.yml (one stock)
+                        (weekday daily check), agents.yml (unattended agents after both; inert
+                        without a Claude secret), stock.yml (one stock)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
 .claude/skills/validate/  agent skill: re-checks a run's screen labels against the pack; downgrade only

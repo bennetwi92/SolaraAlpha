@@ -35,6 +35,7 @@ class Rules:
     horizon_weeks: tuple[int, int]  # holding horizon (min, max)
     trail_atr: float  # chandelier trailing stop, in ATRs
     event_flag_days: int  # a scheduled event within this many days of entry is flagged
+    max_agent_tickers: int  # cap on tickers the unattended agents work per run, by rank
 
     @property
     def warning(self) -> str | None:
@@ -61,6 +62,7 @@ _TYPES = {
     "stop_entry_orders": bool,
     "trail_atr": float,
     "event_flag_days": int,
+    "max_agent_tickers": int,
 }
 _FRACTIONS = ("max_position_pct", "max_sector_pct", "max_heat", "max_adv_pct", "cash_buffer")
 
@@ -109,7 +111,7 @@ def _validate(r: Rules) -> None:
         raise ValueError(f"max_positions: must be >= 1, got {r.max_positions}")
     if not r.horizon_weeks[0] < r.horizon_weeks[1]:
         raise ValueError(f"horizon_weeks: min must be < max, got {list(r.horizon_weeks)}")
-    for name in ("entry_validity_days", "event_flag_days"):
+    for name in ("entry_validity_days", "event_flag_days", "max_agent_tickers"):
         if getattr(r, name) < 1:
             raise ValueError(f"{name}: must be >= 1, got {getattr(r, name)}")
     if r.entry_limit_buffer < 0:

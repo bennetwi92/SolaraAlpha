@@ -4,6 +4,10 @@ uv run python scripts/record.py verdict FILE [--actor agent:NAME] [--run N | --n
 uv run python scripts/record.py revision FILE --position ID [--actor agent:monitor] [--db PATH]
 uv run python scripts/record.py prior TICKER [--stage research] [--limit 3] [--db PATH]
 uv run python scripts/record.py schema
+uv run python scripts/record.py error TICKER --run N --stage S --reason TEXT     # runner: skill failed
+uv run python scripts/record.py queue --run N --stage validate|research|monitor  # runner: what to work
+uv run python scripts/record.py latest-run [--script scan|daily]                 # runner: which run
+uv run python scripts/record.py outcome --run N --stage S                        # runner: exit 1 if all ERROR
 
 verdict validates FILE against the Verdict schema (`schema` prints it) and, in one transaction,
 writes a `labels` row (events / validate / research), a card under model = stage dated with the
@@ -133,6 +137,57 @@ def _prior(args: argparse.Namespace) -> None:
     )
 
 
+def _error(args: argparse.Namespace) -> None:
+    verdict = agents.error_verdict(args.ticker, args.run, args.stage, args.reason)
+    conn = store.connect(args.db)
+    try:
+        agents.record_verdict(conn, verdict, args.actor or f"agent:{args.stage}")
+    except ValueError as e:
+        print(f"error: {e}")
+        sys.exit(2)
+    finally:
+        conn.close()
+    print(f"recorded {args.stage} ERROR for {args.ticker} in run {args.run}: {args.reason}")
+
+
+def _queue(args: argparse.Namespace) -> None:
+    from solaraalpha.portfolio.book import connect as book_connect
+    from solaraalpha.portfolio.rules import load_rules
+
+    cap = args.cap if args.cap is not None else load_rules().max_agent_tickers
+    conn = book_connect(args.db)
+    try:
+        items = agents.queue(conn, args.run, args.stage, cap)
+    finally:
+        conn.close()
+    for item in items:
+        print(item)
+
+
+def _latest_run(args: argparse.Namespace) -> None:
+    conn = store.connect(args.db)
+    try:
+        row = conn.execute(
+            "SELECT run_id FROM runs WHERE script = ? ORDER BY run_id DESC LIMIT 1", (args.script,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        sys.exit(f"no {args.script} run in the DB")
+    print(int(row[0]))
+
+
+def _outcome(args: argparse.Namespace) -> None:
+    conn = store.connect(args.db)
+    try:
+        counts = agents.outcome(conn, args.run, args.stage)
+    finally:
+        conn.close()
+    print(f"{args.stage} in run {args.run}: {counts['total']} recorded, {counts['errors']} ERROR")
+    if counts["total"] and counts["errors"] == counts["total"]:
+        sys.exit(1)
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -155,6 +210,31 @@ def main(argv: list[str] | None = None) -> None:
     pr.add_argument("--limit", type=int, default=3)
     pr.add_argument("--db", type=Path, default=None)
     sub.add_parser("schema", help="print the Verdict JSON schema")
+    er = sub.add_parser("error", help="record an ERROR verdict without an agent")
+    er.add_argument("ticker")
+    er.add_argument("--run", type=int, required=True)
+    er.add_argument(
+        "--stage",
+        required=True,
+        choices=("validate", "research", "events", "monitor", "postmortem"),
+    )
+    er.add_argument("--reason", required=True)
+    er.add_argument("--actor")
+    er.add_argument("--db", type=Path, default=None)
+    qu = sub.add_parser(
+        "queue", help="tickers (or position ids) the agents should work, best first"
+    )
+    qu.add_argument("--run", type=int, required=True)
+    qu.add_argument("--stage", required=True, choices=("validate", "research", "monitor"))
+    qu.add_argument("--cap", type=int, default=None, help="default Rules.max_agent_tickers")
+    qu.add_argument("--db", type=Path, default=None)
+    lr = sub.add_parser("latest-run", help="the latest run id of a script")
+    lr.add_argument("--script", default="scan")
+    lr.add_argument("--db", type=Path, default=None)
+    oc = sub.add_parser("outcome", help="counts per stage; exit 1 when every item errored")
+    oc.add_argument("--run", type=int, required=True)
+    oc.add_argument("--stage", required=True)
+    oc.add_argument("--db", type=Path, default=None)
     args = p.parse_args(argv)
     if args.cmd == "schema":
         print(json.dumps(agents.Verdict.model_json_schema(), indent=2))
@@ -162,6 +242,14 @@ def main(argv: list[str] | None = None) -> None:
         _verdict(args)
     elif args.cmd == "revision":
         _revision(args)
+    elif args.cmd == "error":
+        _error(args)
+    elif args.cmd == "queue":
+        _queue(args)
+    elif args.cmd == "latest-run":
+        _latest_run(args)
+    elif args.cmd == "outcome":
+        _outcome(args)
     else:
         _prior(args)
 
