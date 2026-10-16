@@ -14,7 +14,9 @@ absent):
 * ``executescript(script)``: statements split on ``;``, so a script may hold several
   ``CREATE TABLE IF NOT EXISTS`` / ``ALTER TABLE ... ADD COLUMN`` statements but no literal ``;``
   inside a statement;
-* ``with conn:`` (``BEGIN`` ... ``COMMIT`` / ``ROLLBACK``), ``commit`` / ``rollback``, ``close``;
+* ``with conn:`` (``BEGIN`` ... ``COMMIT`` / ``ROLLBACK``; nested blocks join the outer
+  transaction, as code that composes store and book writes needs), ``commit`` / ``rollback``,
+  ``close``;
 * ``PRAGMA table_info(t)`` and ``sqlite_master`` queries behave as in SQLite.
 
 Values: ints (incl. numpy and bool), floats (NaN -> NULL; ±inf <-> ±``MAX``), str, bytes, None.
@@ -69,6 +71,7 @@ class Connection:
         self.url = url.replace("libsql://", "https://", 1).rstrip("/")
         self.token = token
         self.baton: str | None = None
+        self._depth = 0  # nested ``with conn:`` blocks share the outer transaction
 
     def execute(self, sql: str, params: tuple[Any, ...] | list[Any] = ()) -> Cursor:
         return Cursor(self._pipeline([_stmt(sql, params)])[0])
@@ -95,13 +98,17 @@ class Connection:
             self.baton = None
 
     def __enter__(self) -> Connection:
-        self.execute("BEGIN")
+        if self._depth == 0:
+            self.execute("BEGIN")
+        self._depth += 1
         return self
 
     def __exit__(
         self, typ: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
     ) -> None:
-        self.rollback() if typ else self.commit()
+        self._depth -= 1
+        if self._depth == 0:
+            self.rollback() if typ else self.commit()
 
     def _pipeline(self, reqs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         out = []

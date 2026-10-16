@@ -871,9 +871,12 @@ def fill(
         out["stop_order_id"] = protect(conn, pid, actor=actor, at=t)
     out["shares"] = position_state(conn, pid).shares
     out["closed"] = None
-    if order["purpose"] not in BUY_PURPOSES and out["shares"] == 0:
-        reason = exit_reason_for(conn, order_id)
-        out["closed"] = close_position(conn, pid, reason, actor=actor, at=t)
+    if order["purpose"] not in BUY_PURPOSES:
+        if out["shares"] == 0:
+            reason = exit_reason_for(conn, order_id)
+            out["closed"] = close_position(conn, pid, reason, actor=actor, at=t)
+        elif order["purpose"] != "stop":  # a partial exit: the stop covers what is left
+            out["stop_order_id"] = protect(conn, pid, actor=actor, at=t)
     return out
 
 
@@ -1117,4 +1120,199 @@ def close_summary(
         mae=mae,
         mfe_r=mfe_r,
         mae_r=mae_r,
+    )
+
+
+# ---------------------------------------------------------------------------- revisions
+
+REVISION_ACTIONS = ("hold", "tighten_stop", "take_partial", "exit", "revise_target")
+
+
+def propose_revision(
+    conn: Conn,
+    position_id: int,
+    action: str,
+    new: dict[str, Any],
+    reason: str,
+    actor: str,
+    evidence_ids: list[int] | None = None,
+    trigger: str = "",
+    at: str | None = None,
+) -> int:
+    """Record a ``revision_proposed`` event (payload: action, old → new, reason, evidence,
+    trigger) and return its event id, the revision id the owner accepts or declines."""
+    if action not in REVISION_ACTIONS:
+        raise ValueError(f"action must be one of {REVISION_ACTIONS}, got {action!r}")
+    st = position_state(conn, position_id)
+    ev = position_events(conn, position_id)
+    payloads = [x for x in ev.loc[ev["kind"].isin(["drafted", "amended", "revised"]), "payload"]]
+    target = next(
+        (p.get("target") for p in reversed(payloads) if p.get("target") is not None), None
+    )
+    old = {"stop": st.stop, "target": target, "qty": st.shares}
+    payload = {
+        "action": action,
+        "old": old,
+        "new": {k: v for k, v in new.items() if v is not None},
+        "reason": reason,
+        "evidence_ids": list(evidence_ids or []),
+        "trigger": trigger,
+    }
+    return position_event(conn, position_id, "revision_proposed", payload, actor, reason, at)
+
+
+def revisions(
+    conn: Conn, position_id: int | None = None, status: str | None = None
+) -> pd.DataFrame:
+    """Proposed revisions with their decision (``proposed`` / ``accepted`` / ``declined``)."""
+    sql = "SELECT * FROM position_events WHERE kind IN ('revision_proposed', 'revision_accepted', 'revision_declined')"
+    params: list[Any] = []
+    if position_id is not None:
+        sql += " AND position_id = ?"
+        params.append(position_id)
+    ev = query(sql + " ORDER BY event_id", conn, params)
+    ev["payload"] = ev["payload"].map(json.loads)
+    decided = {
+        int(p["revision_id"]): (kind.removeprefix("revision_"), at)
+        for kind, p, at in zip(ev["kind"], ev["payload"], ev["at"], strict=True)
+        if kind != "revision_proposed" and "revision_id" in p
+    }
+    rows = []
+    for r in ev[ev["kind"] == "revision_proposed"].to_dict("records"):
+        p = r["payload"]
+        state, when = decided.get(int(r["event_id"]), ("proposed", None))
+        rows.append(
+            {
+                "revision_id": int(r["event_id"]),
+                "position_id": int(r["position_id"]),
+                "at": r["at"],
+                "actor": r["actor"],
+                "action": p.get("action"),
+                "old": p.get("old"),
+                "new": p.get("new"),
+                "reason": p.get("reason", r["reason"]),
+                "trigger": p.get("trigger"),
+                "status": state,
+                "decided_at": when,
+            }
+        )
+    df = pd.DataFrame(
+        rows,
+        columns=[
+            "revision_id",
+            "position_id",
+            "at",
+            "actor",
+            "action",
+            "old",
+            "new",
+            "reason",
+            "trigger",
+            "status",
+            "decided_at",
+        ],
+    )
+    if status is not None:
+        df = df[df["status"] == status]
+    return df.reset_index(drop=True)
+
+
+def _revision(conn: Conn, revision_id: int) -> dict[str, Any]:
+    df = revisions(conn)
+    row = df[df["revision_id"] == revision_id]
+    if row.empty:
+        raise ValueError(f"no revision {revision_id}")
+    rev = {str(k): v for k, v in row.iloc[0].items()}
+    if rev["status"] != "proposed":
+        raise ValueError(f"revision {revision_id} is already {rev['status']}")
+    return rev
+
+
+def accept_revision(
+    conn: Conn, revision_id: int, actor: str = OWNER, at: str | None = None
+) -> dict[str, Any]:
+    """Accept a proposed revision: a ``revision_accepted`` event, then the orders it implies,
+    all ``approved`` (tighten_stop: replace the stop, ratchet only, + ``stop_raised``;
+    take_partial: an exit order for the qty; exit: an exit order with reason thesis_broken;
+    revise_target: a ``revised`` event). Returns what was done."""
+    rev = _revision(conn, revision_id)
+    pid, action, new = int(rev["position_id"]), str(rev["action"]), dict(rev["new"] or {})
+    t = iso(at)
+    position_event(
+        conn, pid, "revision_accepted", {"revision_id": revision_id, "action": action}, actor, "", t
+    )
+    done: dict[str, Any] = {"revision_id": revision_id, "action": action}
+    st = position_state(conn, pid)
+    if action == "tighten_stop":
+        price = float(new["stop"])
+        if st.stop is not None and price <= st.stop:
+            raise ValueError(
+                f"new stop {price} is not above the current stop {st.stop}: never lower a stop"
+            )
+        od = orders(conn, pid)
+        live = od[(od["purpose"] == "stop") & od["status"].isin(LIVE_ORDER)]
+        if live.empty:
+            done["stop_order_id"] = add_order(
+                conn, pid, -st.side, "stop", st.shares, price, "stop", None, "approved", actor, at=t
+            )
+        else:
+            done["stop_order_id"] = replace_order(
+                conn, int(live["order_id"].iloc[-1]), None, price, "revision accepted", actor, t
+            )
+        position_event(
+            conn,
+            pid,
+            "stop_raised",
+            {"old": st.stop, "new": price, "revision_id": revision_id},
+            actor,
+            "",
+            t,
+        )
+    elif action == "take_partial":
+        qty = int(new.get("qty") or 0)
+        if qty <= 0:
+            raise ValueError("take_partial needs a positive qty")
+        done["exit_order_id"] = exit_position(
+            conn,
+            pid,
+            "discretionary",
+            str(new.get("type", "market")),
+            new.get("price"),
+            qty,
+            actor,
+            t,
+        )
+    elif action == "exit":
+        done["exit_order_id"] = exit_position(
+            conn,
+            pid,
+            "thesis_broken",
+            str(new.get("type", "market")),
+            new.get("price"),
+            None,
+            actor,
+            t,
+        )
+    elif action == "revise_target":
+        payload = {k: new[k] for k in ("target", "target_2") if k in new}
+        if not payload:
+            raise ValueError("revise_target needs a new target")
+        position_event(conn, pid, "revised", {**payload, "revision_id": revision_id}, actor, "", t)
+    return done
+
+
+def decline_revision(
+    conn: Conn, revision_id: int, reason: str, actor: str = OWNER, at: str | None = None
+) -> None:
+    if not reason:
+        raise ValueError("declining needs a reason")
+    rev = _revision(conn, revision_id)
+    position_event(
+        conn,
+        int(rev["position_id"]),
+        "revision_declined",
+        {"revision_id": revision_id},
+        actor,
+        reason,
+        at,
     )

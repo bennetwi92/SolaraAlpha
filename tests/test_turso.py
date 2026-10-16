@@ -90,3 +90,18 @@ def test_live_turso_select() -> None:
     conn = turso.Connection(settings.turso_url, settings.turso_token.get_secret_value())
     assert conn.execute("SELECT ?, ?", (1, math.inf)).fetchall() == [(1, math.inf)]
     conn.close()
+
+
+def test_nested_with_blocks_share_one_transaction(fake: FakeTurso) -> None:
+    conn = store.connect()
+    with conn:
+        conn.execute("INSERT INTO runs VALUES (1, 't', 's', '{}', 'sha')")
+        with conn:  # no second BEGIN
+            conn.execute("INSERT INTO runs VALUES (2, 't', 's', '{}', 'sha')")
+        assert fake.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 2  # still open
+    assert fake.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 2
+    with pytest.raises(turso.TursoError), conn:
+        conn.execute("INSERT INTO runs VALUES (3, 't', 's', '{}', 'sha')")
+        with conn:
+            conn.execute("INSERT INTO nope VALUES (1)")
+    assert fake.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 2  # outer rolled back

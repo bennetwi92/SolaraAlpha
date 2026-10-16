@@ -15,6 +15,9 @@ uv run python scripts/book.py cancel ORDER_ID [--reason TEXT]
 uv run python scripts/book.py expire [--as-of DATE]               # entry orders past valid_until
 uv run python scripts/book.py show POSITION_ID --price P          # adds R so far at price P
 uv run python scripts/book.py cash deposit|withdraw AMOUNT [--at ISO] [--note TEXT]   # GBP
+uv run python scripts/book.py revisions [--status proposed|accepted|declined]   # agent proposals
+uv run python scripts/book.py accept REV_ID          # drafts the orders the revision implies
+uv run python scripts/book.py decline REV_ID --reason TEXT
 uv run python scripts/book.py exit POSITION_ID --reason stop|trailing_stop|target|thesis_broken|time|discretionary|corporate_action
                                  [--type market|limit] [--price P] [--qty N]
 
@@ -268,6 +271,50 @@ def _cash(conn: Conn, a: argparse.Namespace) -> None:
     print(f"{kind} £{a.amount:,.2f} recorded; cash balance £{book.cash_balance(conn):,.2f}")
 
 
+@command("revisions")
+def _revisions(conn: Conn, a: argparse.Namespace) -> None:
+    rv = book.revisions(conn, status=None if a.status == "all" else a.status)
+    if rv.empty:
+        print("  (none)")
+        return
+    rv["at"] = rv["at"].str[:16]
+    rv["old"] = rv["old"].map(_short)
+    rv["new"] = rv["new"].map(_short)
+    rv["reason"] = rv["reason"].str[:60]
+    print(
+        table(
+            rv,
+            [
+                "revision_id",
+                "position_id",
+                "at",
+                "actor",
+                "action",
+                "old",
+                "new",
+                "reason",
+                "status",
+            ],
+        )
+    )
+
+
+@command("accept")
+def _accept(conn: Conn, a: argparse.Namespace) -> None:
+    done = book.accept_revision(conn, a.revision_id)
+    extra = ", ".join(f"{k} {v}" for k, v in done.items() if k not in ("revision_id", "action"))
+    print(
+        f"revision {a.revision_id} accepted ({done['action']})"
+        + (f": {extra}; see `tickets`" if extra else "")
+    )
+
+
+@command("decline")
+def _decline(conn: Conn, a: argparse.Namespace) -> None:
+    book.decline_revision(conn, a.revision_id, a.reason)
+    print(f"revision {a.revision_id} declined")
+
+
 @command("exit")
 def _exit(conn: Conn, a: argparse.Namespace) -> None:
     oid = book.exit_position(conn, a.position_id, a.reason, a.type, a.price, a.qty)
@@ -364,6 +411,16 @@ def build_parser() -> argparse.ArgumentParser:
     ca.add_argument("amount", type=float)
     ca.add_argument("--at", help="ISO time (default now)")
     ca.add_argument("--note", default="")
+
+    rv = sub.add_parser("revisions", help="plan revisions proposed by the monitor")
+    rv.add_argument(
+        "--status", choices=("proposed", "accepted", "declined", "all"), default="proposed"
+    )
+    ac = sub.add_parser("accept", help="accept a proposed revision and draft its orders")
+    ac.add_argument("revision_id", type=int)
+    dc = sub.add_parser("decline", help="decline a proposed revision")
+    dc.add_argument("revision_id", type=int)
+    dc.add_argument("--reason", required=True)
 
     xo = sub.add_parser("exit", help="draft an exit order with a tagged reason")
     xo.add_argument("position_id", type=int)
