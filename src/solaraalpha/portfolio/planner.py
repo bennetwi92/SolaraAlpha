@@ -59,6 +59,8 @@ class PlanRun:
     written: dict[str, int] = field(default_factory=dict)  # ticker -> position_id
     skipped: list[str] = field(default_factory=list)  # already drafted from this run
     equity: risk.Equity | None = None
+    held: pd.DataFrame | None = None  # risk.holdings at the run's closes
+    prices: dict[str, float] = field(default_factory=dict)  # the closes used
 
 
 def final_labels(conn: Conn, run_id: int) -> list[Candidate]:
@@ -202,7 +204,17 @@ def plan_run(conn: Conn, run_id: int, rules: Rules | None = None, dry_run: bool 
             returns[ticker] = r
 
     report = fit(plans, held, pending_positions(conn), equity, rules, scores, returns)
-    out = PlanRun(run_id, candidates, plans, errors, report, skipped=skipped, equity=equity)
+    out = PlanRun(
+        run_id,
+        candidates,
+        plans,
+        errors,
+        report,
+        skipped=skipped,
+        equity=equity,
+        held=held,
+        prices=prices,
+    )
     if dry_run:
         return out
     for plan in report.accepted:
