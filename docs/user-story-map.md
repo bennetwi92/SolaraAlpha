@@ -339,7 +339,7 @@ and WATCH stock**, and **the agent only when a check fires**.
 |---|---|---|---|
 | S12.1 | As the pipeline I want the Sunday scan scheduled. | R1 | ✅ `scan.yml` |
 | S12.2 | As the owner I want one stock run on demand. | R1 | ✅ `stock.yml` |
-| S12.3 | As the owner I want a **durable DB** that Actions, cloud sessions and my machine all reach (today the DB is an Actions artifact for 90 days). | R1 | 🟡 Turso client built (#103, ADR 0013); local ↔ hosted copy and dual-backend tests · #116 |
+| S12.3 | As the owner I want a **durable DB** that Actions, cloud sessions and my machine all reach (today the DB is an Actions artifact for 90 days). | R1 | ✅ Turso client (#103, ADR 0013); `scripts/db.py` push/pull and the dual-backend `db_backend` fixture (#116) |
 | S12.4 | As the owner I want the agent stages (A2, A3, A7) runnable unattended (Actions or a scheduled Claude session) after the scan, reading the run from the DB. | R1 | ⬜ needs a key / subscription token (ADR 0010) · #123 |
 | S12.5 | As the owner I want a daily workflow (A7) alongside the weekly one. | R1 | ⬜ · #120 |
 | S12.6 | As the owner I want failures reported (ERROR labels, source outages, agent errors) without stopping the rest of the run. | R1 | ✅ for toolkits; ⬜ for agents · #123 |

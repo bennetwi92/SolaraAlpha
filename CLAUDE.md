@@ -97,6 +97,7 @@ Current state:
 | Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
+| Results DB: which is in use, copy local ↔ Turso | `uv run python scripts/db.py status` / `push [--from PATH] [--append-new-runs]` / `pull [--to PATH]` |
 | Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `relative_strength` / `fundamentals` / `jet2_value` / `scan` |
 | Notebooks | `make notebook` |
 
@@ -150,7 +151,7 @@ config/benchmarks.toml  per-stock market / industry / peers for relative strengt
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
 notebooks/              exploration only; promote anything reused into src/
-tests/                  pytest; mirrors src/ structure
+tests/                  pytest; mirrors src/ structure; fakes.py (FakeTurso), conftest.py (db_backend)
 data/                   gitignored; raw/ processed/ cache/ created on demand
 docs/
   data-sources.md       register of every external data source, its terms and limits
@@ -182,6 +183,8 @@ docs/
 - For fetchers, test parsing against a small saved fixture (in `tests/fixtures/`), not the
   live API.
 - Use the `tmp_cache` fixture (or `tmp_path`) — tests must never write into `data/`.
+- Every DB table is proven on both backends: DB tests take the `db_backend` fixture (a `tmp_path`
+  SQLite file, then `FakeTurso` from `tests/fakes.py`) as the `path` argument to store functions.
 
 ## Notebooks
 

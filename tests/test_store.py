@@ -40,8 +40,9 @@ CARD = Card(
 
 
 @pytest.fixture
-def db(tmp_path: Path) -> Path:
-    return tmp_path / "solara.db"
+def db(db_backend: Path | None) -> Path | None:
+    """Runs every test on both backends (a tmp_path file and the fake Turso)."""
+    return db_backend
 
 
 @pytest.fixture
@@ -49,21 +50,21 @@ def daily() -> pd.DataFrame:
     return parse_chart(json.loads(FIXTURE.read_text()))
 
 
-def _set_run_time(db: Path, run_id: int, ts: str) -> None:
+def _set_run_time(db: Path | None, run_id: int, ts: str) -> None:
     conn = store.connect(db)
     with conn:
         conn.execute("UPDATE runs SET started_at = ? WHERE run_id = ?", (ts, run_id))
     conn.close()
 
 
-def _count(db: Path, table: str) -> int:
+def _count(db: Path | None, table: str) -> int:
     conn = store.connect(db)
     n = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
     conn.close()
     return int(n)
 
 
-def test_save_run_records_run(db: Path) -> None:
+def test_save_run_records_run(db: Path | None) -> None:
     run_id = store.save_run("technical", {"ticker": "JET2.L", "short": False}, "JET2.L", path=db)
     conn = store.connect(db)
     q = "SELECT script, args, git_sha, started_at FROM runs WHERE run_id = ?"
@@ -75,7 +76,7 @@ def test_save_run_records_run(db: Path) -> None:
     assert pd.Timestamp(started).tz is not None
 
 
-def test_card_round_trip(db: Path) -> None:
+def test_card_round_trip(db: Path | None) -> None:
     store.save_run("technical", {}, "JET2.L", {"technical": CARD}, path=db)
     res = store.load_results("JET2.L", "technical", path=db).set_index("field")
     assert set(res["date"]) == {"2026-10-09"}
@@ -89,7 +90,7 @@ def test_card_round_trip(db: Path) -> None:
     assert "date" not in res.index
 
 
-def test_latest_one_row_per_ticker(db: Path) -> None:
+def test_latest_one_row_per_ticker(db: Path | None) -> None:
     store.save_run("technical", {}, "JET2.L", {"technical": CARD}, path=db)
     newer = Card(**{**CARD.__dict__, "score": -0.1})
     store.save_run("technical", {}, "JET2.L", {"technical": newer}, path=db)
@@ -102,7 +103,7 @@ def test_latest_one_row_per_ticker(db: Path) -> None:
     assert store.latest("levels", path=db).empty
 
 
-def test_price_snapshot_stores_only_changes(db: Path, daily: pd.DataFrame) -> None:
+def test_price_snapshot_stores_only_changes(db: Path | None, daily: pd.DataFrame) -> None:
     first = store.save_run("stock_prices", {}, "JET2.L", daily=daily, path=db)
     assert _count(db, "prices") == len(daily)
 
@@ -131,7 +132,7 @@ def test_price_snapshot_stores_only_changes(db: Path, daily: pd.DataFrame) -> No
     assert store.load_prices("JET2.L", as_seen="2026-09-30", path=db).empty
 
 
-def test_fundamentals_snapshot(db: Path) -> None:
+def test_fundamentals_snapshot(db: Path | None) -> None:
     fund = pd.DataFrame(
         {
             "field": ["annualNetIncome", "trailingPeRatio"],
@@ -154,7 +155,7 @@ def test_as_seen_end_of_day() -> None:
     assert store._as_seen(None) is None
 
 
-def test_float_jitter_is_not_a_revision(db: Path, daily: pd.DataFrame) -> None:
+def test_float_jitter_is_not_a_revision(db: Path | None, daily: pd.DataFrame) -> None:
     store.save_run("stock_prices", {}, "JET2.L", daily=daily, path=db)
     jittered = daily.copy()
     jittered["adj_close"] = jittered["adj_close"] + 1.2e-4  # one float32 ulp at ~1300p
@@ -162,7 +163,7 @@ def test_float_jitter_is_not_a_revision(db: Path, daily: pd.DataFrame) -> None:
     assert _count(db, "prices") == len(daily)
 
 
-def test_steps_round_trip(db: Path) -> None:
+def test_steps_round_trip(db: Path | None) -> None:
     steps = [
         ("screen", "technical", "pass", "trend=0.50"),
         ("screen", "levels", "fail", "failed reward_risk >= 2"),
@@ -179,7 +180,7 @@ def test_steps_round_trip(db: Path) -> None:
     assert store.load_steps("OTHER.L", path=db).empty
 
 
-def test_one_run_covers_many_tickers(db: Path, daily: pd.DataFrame) -> None:
+def test_one_run_covers_many_tickers(db: Path | None, daily: pd.DataFrame) -> None:
     run_id = store.start_run("scan", {"save": True}, path=db)
     for ticker in ("JET2.L", "EZJ.L"):
         steps = [("screen", "technical", "pass", "")]
@@ -190,7 +191,8 @@ def test_one_run_covers_many_tickers(db: Path, daily: pd.DataFrame) -> None:
     assert _count(db, "prices") == 2 * len(daily)
 
 
-def test_old_steps_layout_is_migrated(db: Path) -> None:
+def test_old_steps_layout_is_migrated(tmp_path: Path) -> None:
+    db = tmp_path / "solara.db"
     conn = sqlite3.connect(db)
     conn.executescript(
         "CREATE TABLE steps (run_id INTEGER NOT NULL, ticker TEXT NOT NULL, node TEXT NOT NULL,"

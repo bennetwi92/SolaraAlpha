@@ -1,10 +1,24 @@
 """Hosted results DB: a minimal sqlite3-style connection to Turso over its HTTP API.
 
 Speaks Hrana over HTTP (``POST /v2/pipeline``) with our shared ``requests`` session, so there
-is no driver dependency and it works through the cloud sessions' HTTPS proxy. Covers only what
-:mod:`solaraalpha.store` uses: ``execute`` / ``executemany`` / ``executescript``, ``with conn:``
-transactions and ``close``. One connection is one Hrana stream (kept open with its baton).
-See docs/decisions/0013.
+is no driver dependency and it works through the cloud sessions' HTTPS proxy. One connection is
+one Hrana stream (kept open with its baton). See docs/decisions/0013.
+
+Supported (what :mod:`solaraalpha.store` and the book use; anything else is deliberately
+absent):
+
+* ``execute(sql, params)`` -> cursor with ``fetchall`` / ``fetchone`` / iteration,
+  ``description``, ``lastrowid`` (so ``INSERT`` into an ``INTEGER PRIMARY KEY`` table returns
+  the new id) and ``rowcount``;
+* ``executemany(sql, rows)``, batched ``BATCH`` statements per HTTP request;
+* ``executescript(script)``: statements split on ``;``, so a script may hold several
+  ``CREATE TABLE IF NOT EXISTS`` / ``ALTER TABLE ... ADD COLUMN`` statements but no literal ``;``
+  inside a statement;
+* ``with conn:`` (``BEGIN`` ... ``COMMIT`` / ``ROLLBACK``), ``commit`` / ``rollback``, ``close``;
+* ``PRAGMA table_info(t)`` and ``sqlite_master`` queries behave as in SQLite.
+
+Values: ints (incl. numpy and bool), floats (NaN -> NULL; ±inf <-> ±``MAX``), str, bytes, None.
+Every new table is tested over both backends with the ``db_backend`` fixture (tests/conftest.py).
 """
 
 from __future__ import annotations

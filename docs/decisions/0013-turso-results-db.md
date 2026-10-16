@@ -24,3 +24,11 @@ all land in one DB. There is no automatic copy between the local file and Turso;
 built before this stays local. Each `connect()` costs ~3 round trips (schema + migration check)
 and each `save_ticker` a few more — fine for a weekly scan. Scans still upload `data/` as an
 artifact for event packs.
+
+**Amendments.**
+- #116: `scripts/db.py` copies between the backends (`push` local → Turso, refusing a non-empty
+  Turso unless `--append-new-runs`, which remaps run ids; `pull` Turso → a new local file;
+  `status`). `store.query` is public. Every table, now and later (book, labels, evidence,
+  triggers), is tested over both backends with the `db_backend` pytest fixture, parametrised
+  over a `tmp_path` file and `FakeTurso` (tests/fakes.py); workflows that touch the DB pass the
+  two secrets as `scan.yml` does.
