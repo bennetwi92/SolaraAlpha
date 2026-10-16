@@ -42,7 +42,9 @@ Current state:
   (statutory reporting lags), never the raw frame.
 - Events & catalysts are split: `scripts/events.py` gathers facts programmatically (filings,
   market reactions, expected events, headlines) into an event pack; interpretation is done by
-  an agent via the `/events` skill (`.claude/skills/events/SKILL.md`). See docs/decisions/0006.
+  an agent via the `/events` skill (`.claude/skills/events/SKILL.md`), and the Sunday research
+  stage is the `/research` skill (nine-section strategist's note with web search), both
+  persisted through `record.py`. See docs/decisions/0006, 0016.
 - **Jet2 fair value** (`analysis/jet2_value.py`, `/jet2-value` skill) is deliberately Jet2-only:
   a driver P&L calibrated to consensus EPS (`CONSENSUS`, `REFERENCE` — hand-updated, dated;
   refresh after each results / trading update), updated for the live fuel curve and FX, valued
@@ -106,7 +108,8 @@ Current state:
 | Jet2 fair value + news/scenario shocks | `uv run python scripts/jet2_value.py [--weeks 12] [--scenario fuel_spike] [--shock seats=+2%] [--list]` |
 | Jet2 news analyst (agent) | `/jet2-value <news or question>` in Claude Code |
 | Read one announcement | `uv run python scripts/announcement.py <NSM url>` |
-| Events analyst (agent) | `/events JET2.L` in Claude Code |
+| Events analyst (agent; persists its note via `record.py`) | `/events JET2.L [--run N]` in Claude Code |
+| Research analyst (agent): 9-section pre-trade note with web search, evidence logged | `/research JET2.L --run N` or `/research --run N` in Claude Code |
 | Validator pack (DB only, independent of other agents) | `uv run python scripts/validate_pack.py JET2.L --run N` / `--run N --all` |
 | Validator (agent) | `/validate JET2.L --run N` or `/validate --run N` in Claude Code |
 | Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `prior JET2.L [--stage research]` / `schema` |
@@ -190,6 +193,7 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
 .claude/skills/validate/  agent skill: re-checks a run's screen labels against the pack; downgrade only
+.claude/skills/research/  agent skill: strategist's 9-section pre-trade note, web search, evidence → record.py
 notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure; fakes.py (FakeTurso), conftest.py (db_backend)
 data/                   gitignored; raw/ processed/ cache/ created on demand

@@ -64,3 +64,13 @@ add a dependency without reading the numbers against guidance, which is the actu
 - Where agent output persists between scheduled runs (e.g. committed research notes, an
   artifact, Notion) is still to be decided. Each run is stateless: it reviews the last
   `--days` and re-derives expected events.
+
+**Amendment (#119, ADR 0016).** The agent's output now persists: `/events` records its note
+as a verdict (`stage = "events"`, label ACT unless it errored, `catalyst_score` and
+`event_risk` as scores, one evidence row per catalyst and dated event with the filing's
+`nsm_id`) through `scripts/record.py`, and starts each run from `record.py prior` so filings
+already interpreted are not re-read and estimated dates can move to confirmed. **Research
+supersedes events as the Sunday agent stage**: `/research` (`.claude/skills/research/SKILL.md`)
+extends the events note into the nine-section strategist's note with web search and logged
+evidence, and its verdict is the stage the planner reads; `events` stays the fact layer (the
+pack and the toolkit card) that research starts from.

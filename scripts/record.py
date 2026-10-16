@@ -1,6 +1,6 @@
 """Record an agent's output in the results DB: the one door agents write through.
 
-uv run python scripts/record.py verdict FILE [--actor agent:NAME] [--db PATH]
+uv run python scripts/record.py verdict FILE [--actor agent:NAME] [--run N | --new-run] [--db PATH]
 uv run python scripts/record.py prior TICKER [--stage research] [--limit 3] [--db PATH]
 uv run python scripts/record.py schema
 
@@ -8,7 +8,9 @@ verdict validates FILE against the Verdict schema (`schema` prints it) and, in o
 writes a `labels` row (events / validate / research), a card under model = stage dated with the
 run's screen week, and one `evidence` row per source (ids printed). Agents can only downgrade:
 a validate / research label may not be better than the previous stage's (ACT > WATCH > PASS);
-ERROR is always allowed. Violations and invalid files exit 2. prior prints the ticker's latest
+ERROR is always allowed. Violations and invalid files exit 2. --run N overrides the file's
+run_id; --new-run starts a run named after the stage (a standalone `/events JET2.L`) and
+records under it. prior prints the ticker's latest
 verdicts and evidence and every filing already interpreted (nsm_id), so a run reuses earlier
 work instead of re-interpreting it. See docs/decisions/0016.
 """
@@ -35,6 +37,11 @@ def _verdict(args: argparse.Namespace) -> None:
             print(f"  {loc}: {err['msg']}")
         sys.exit(2)
     actor = args.actor or f"agent:{verdict.stage}"
+    if args.new_run:
+        run_id = store.start_run(verdict.stage, {"ticker": verdict.ticker, "actor": actor}, args.db)
+        verdict = verdict.model_copy(update={"run_id": run_id})
+    elif args.run is not None:
+        verdict = verdict.model_copy(update={"run_id": args.run})
     conn = store.connect(args.db)
     try:
         out = agents.record_verdict(conn, verdict, actor)
@@ -97,6 +104,10 @@ def main(argv: list[str] | None = None) -> None:
     v = sub.add_parser("verdict", help="validate and record a verdict JSON file")
     v.add_argument("file")
     v.add_argument("--actor", help="default agent:<stage>")
+    v.add_argument(
+        "--run", type=int, default=None, help="record under this run instead of the file's"
+    )
+    v.add_argument("--new-run", action="store_true", help="start a run named after the stage")
     v.add_argument("--db", type=Path, default=None, help="local DB file (default: configured DB)")
     pr = sub.add_parser("prior", help="earlier verdicts, evidence and interpreted filings")
     pr.add_argument("ticker")

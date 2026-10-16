@@ -230,12 +230,12 @@ labelled as such (no look-ahead in the record, and the live decision uses what's
 | ID | Story | Rel | Status |
 |---|---|---|---|
 | S3.1 | As the strategist I want the event pack (filings with reactions, expected events, headlines) as the starting facts. | R1 | ✅ `scripts/events.py`, `events` toolkit |
-| S3.2 | As the strategist I want an interpretation skill for catalysts and upcoming events. | R1 | ✅ `/events` skill (writes `analysis.json/md` to disk) |
-| S3.3 | As the owner I want a `/research <TICKER>` skill (extending `/events`) that follows the 9-section structure above and **searches the web** for fresh information. | R1 | ⬜ · #119 |
+| S3.2 | As the strategist I want an interpretation skill for catalysts and upcoming events. | R1 | ✅ `/events` skill (persists via `record.py`, #119) |
+| S3.3 | As the owner I want a `/research <TICKER>` skill (extending `/events`) that follows the 9-section structure above and **searches the web** for fresh information. | R1 | ✅ `/research` skill · #119 |
 | S3.4 | As the owner I want every source the agent relies on logged in the DB as an **evidence** row: url, title, publisher, published, retrieved, section, summary, discretionary impact (score, confidence, horizon, which driver), and a link to the run and ticker. | R1 | ✅ `evidence` table, `record.py verdict` · #117 |
-| S3.5 | As the owner I want the research verdict saved as a `research` card and step on the same run, so it reads like any other stage. | R1 | 🟡 `record.py` saves `research` cards and labels (#117); the skill · #119 |
-| S3.6 | As the owner I want the agent to separate facts (quoted, cited) from interpretation, and never invent consensus or dates. | R1 | ✅ rule in `/events`; carry into `/research` · #119 |
-| S3.7 | As the owner I want the free web/news sources it uses listed in `docs/data-sources.md`, with terms checked. | R1 | 🟡 Google News, NSM listed; web search not · #119 |
+| S3.5 | As the owner I want the research verdict saved as a `research` card and step on the same run, so it reads like any other stage. | R1 | ✅ `record.py verdict` (#117); `/research` records `stage = research` (#119) |
+| S3.6 | As the owner I want the agent to separate facts (quoted, cited) from interpretation, and never invent consensus or dates. | R1 | ✅ rule in `/events` and `/research` · #119 |
+| S3.7 | As the owner I want the free web/news sources it uses listed in `docs/data-sources.md`, with terms checked. | R1 | ✅ web search row in `docs/data-sources.md` (owner to confirm source types, §6 Q6) · #119 |
 | S3.8 | As the owner I want stock-specific value models (e.g. `/jet2-value`) called from research when they exist, so news is turned into earnings impact. | R2 | 🟡 Jet2 only, not wired in · #127 |
 | S3.9 | As the owner I want the prior week's research for a stock reused as background and only the delta researched, so repeat candidates are cheap. | R2 | ⬜ · #127 |
 | S3.10 | As the owner I want a sector / macro note shared across the week's candidates (the same headwind researched once). | R3 | ⬜ · #140 |
