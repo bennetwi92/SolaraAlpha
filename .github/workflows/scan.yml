@@ -1,7 +1,7 @@
 # Weekly pipeline: every stock in config/watchlist.toml through the stages in
-# solaraalpha.pipeline (scripts/scan.py), one stage at a time. Results go to the job summary;
-# the results DB and event packs are kept as an artifact until the hosted DB exists
-# (docs/decisions/0007, 0010).
+# solaraalpha.pipeline (scripts/scan.py), one stage at a time. Results go to the job summary
+# and the hosted results DB (Turso, from the SOLARA_TURSO_* secrets; without them, the local
+# data/solara.db). data/ (event packs) is kept as an artifact (docs/decisions/0007, 0010, 0013).
 name: Weekly pipeline
 
 on:
@@ -29,6 +29,8 @@ jobs:
       - run: uv sync --no-default-groups
       - name: Pipeline
         env:
+          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
           TICKERS: ${{ inputs.tickers }}
         run: >
           uv run --no-sync python scripts/scan.py $TICKERS

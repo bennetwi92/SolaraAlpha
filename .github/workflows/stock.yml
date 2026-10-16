@@ -26,6 +26,8 @@ jobs:
       - run: uv sync --no-default-groups
       - name: Run
         env:
+          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
           TICKER: ${{ inputs.ticker }}
           TOOLKIT: ${{ inputs.toolkit }}
           PARAMS: ${{ inputs.params }}

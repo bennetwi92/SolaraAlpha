@@ -1,0 +1,157 @@
+from __future__ import annotations
+
+import json
+import math
+import os
+import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+import pytest
+from pydantic import SecretStr
+
+from solaraalpha import store, turso
+from solaraalpha.config import Settings, settings
+from solaraalpha.data.prices import parse_chart
+
+FIXTURE = Path(__file__).parent / "fixtures" / "yahoo_chart_jet2.json"
+
+
+@dataclass(frozen=True)
+class Card:
+    date: pd.Timestamp
+    score: float
+    missing: float
+    target: float
+    currency: str
+
+
+CARD = Card(pd.Timestamp("2026-10-09", tz="UTC"), 0.42, math.nan, math.inf, "GBP")
+
+
+class FakeTurso:
+    """Hrana-over-HTTP endpoint backed by an in-memory SQLite database."""
+
+    def __init__(self) -> None:
+        self.db = sqlite3.connect(":memory:", isolation_level=None)
+        self.posts = 0
+
+    def post(self, url: str, json: dict[str, Any], headers: dict[str, str], timeout: int) -> Any:
+        assert url == "https://fake.turso.io/v2/pipeline"
+        assert headers["Authorization"] == "Bearer t0ken"
+        self.posts += 1
+        results = []
+        for req in json["requests"]:
+            if req["type"] == "close":
+                results.append({"type": "ok", "response": {"type": "close"}})
+                continue
+            stmt = req["stmt"]
+            try:
+                cur = self.db.execute(stmt["sql"], [_arg(a) for a in stmt["args"]])
+            except sqlite3.Error as e:
+                results.append({"type": "error", "error": {"message": str(e)}})
+                continue
+            result = {
+                "cols": [{"name": d[0]} for d in cur.description or []],
+                "rows": [[_value(v) for v in row] for row in cur.fetchall()],
+                "affected_row_count": cur.rowcount,
+                "last_insert_rowid": str(cur.lastrowid),
+            }
+            results.append({"type": "ok", "response": {"type": "execute", "result": result}})
+        body = {"baton": "b", "base_url": None, "results": results}
+        return _Response(_json_roundtrip(body))
+
+
+class _Response:
+    status_code = 200
+
+    def __init__(self, body: dict[str, Any]) -> None:
+        self.body = body
+
+    def json(self) -> dict[str, Any]:
+        return self.body
+
+
+def _arg(a: dict[str, Any]) -> Any:
+    return a["value"] if a["type"] == "float" else turso._decode(a)  # as sent, no ±MAX mapping
+
+
+def _value(v: Any) -> dict[str, Any]:
+    if isinstance(v, float) and not math.isfinite(v):
+        return {"type": "float", "value": None}  # what Turso returns for ±inf
+    return turso._encode(v)
+
+
+def _json_roundtrip(body: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = json.loads(json.dumps(body, allow_nan=False))
+    return out
+
+
+@pytest.fixture
+def fake(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FakeTurso:
+    server = FakeTurso()
+    monkeypatch.setattr(turso, "session", lambda: server)
+    monkeypatch.setattr(settings, "turso_url", "libsql://fake.turso.io")
+    monkeypatch.setattr(settings, "turso_token", SecretStr("t0ken"))
+    monkeypatch.setattr(settings, "data_dir", tmp_path)  # a stray local write would land here
+    return server
+
+
+def test_encode_decode_roundtrip() -> None:
+    for v in [None, 0, -7, np.int64(3), True, 1.5, np.float64(2.25), "GBP", b"\x00\x01"]:
+        enc = _json_roundtrip(turso._encode(v))
+        assert turso._decode(enc) == (int(v) if isinstance(v, bool) else v)
+    assert turso._decode(turso._encode(math.nan)) is None  # NaN stored as NULL, like sqlite3
+    for v in (math.inf, -math.inf):
+        assert turso._decode(_json_roundtrip(turso._encode(v))) == v
+
+
+def test_store_uses_turso_when_configured(fake: FakeTurso, tmp_path: Path) -> None:
+    daily = parse_chart(json.loads(FIXTURE.read_text()))
+    steps = [("screen", "technical", "pass", "")]
+    run_id = store.save_run("scan", {}, "JET2.L", {"technical": CARD}, daily=daily, steps=steps)
+    assert fake.posts > 0
+    assert not (tmp_path / "solara.db").exists()
+
+    res = store.load_results("JET2.L", "technical").set_index("field")
+    assert res.loc["score", "value"] == 0.42
+    assert res.loc["target", "value"] == math.inf
+    assert pd.isna(res.loc["missing", "value"])
+    assert res.loc["currency", "text"] == "GBP"
+    assert store.latest("technical").loc["JET2.L", "run_id"] == run_id
+    assert list(store.load_steps("JET2.L")["status"]) == ["pass"]
+
+    pd.testing.assert_frame_equal(store.load_prices("JET2.L"), store_local_prices(daily, tmp_path))
+    store.save_run("stock_prices", {}, "JET2.L", daily=daily)  # unchanged: nothing new stored
+    assert fake.db.execute("SELECT COUNT(*) FROM prices").fetchone()[0] == len(daily)
+
+
+def store_local_prices(daily: pd.DataFrame, tmp_path: Path) -> pd.DataFrame:
+    db = tmp_path / "local.db"
+    store.save_run("stock_prices", {}, "JET2.L", daily=daily, path=db)
+    return store.load_prices("JET2.L", path=db)
+
+
+def test_failed_transaction_rolls_back(fake: FakeTurso) -> None:
+    conn = store.connect()
+    with pytest.raises(turso.TursoError), conn:
+        conn.execute("INSERT INTO runs VALUES (1, 't', 's', '{}', 'sha')")
+        conn.execute("INSERT INTO nope VALUES (1)")
+    assert fake.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+
+
+def test_settings_strip_pasted_quotes() -> None:
+    s = Settings(turso_url=' "libsql://x.turso.io" ', turso_token="'tok'")
+    assert s.turso_url == "libsql://x.turso.io"
+    assert s.turso_token.get_secret_value() == "tok"
+
+
+@pytest.mark.network
+@pytest.mark.skipif(not os.environ.get("SOLARA_TURSO_URL"), reason="Turso not configured")
+def test_live_turso_select() -> None:
+    conn = turso.Connection(settings.turso_url, settings.turso_token.get_secret_value())
+    assert conn.execute("SELECT ?, ?", (1, math.inf)).fetchall() == [(1, math.inf)]
+    conn.close()

@@ -17,7 +17,9 @@ deleted, so every number can be traced to the run (time, git commit, arguments) 
 A run can cover many tickers (a weekly scan is one run): :func:`start_run`, then
 :func:`save_ticker` per ticker. :func:`save_run` does both for a single-ticker script.
 
-Plain SQLite SQL only, so the file can move to a hosted SQLite (see docs/decisions/0007).
+With ``SOLARA_TURSO_URL`` / ``SOLARA_TURSO_TOKEN`` set, the same tables live in the hosted
+Turso database instead (:mod:`solaraalpha.turso`); unset, the local file is used. Passing
+``path`` always uses that local file. Plain SQLite SQL only (docs/decisions/0007, 0013).
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from solaraalpha import turso
 from solaraalpha.config import REPO_ROOT, settings
 from solaraalpha.log import get_logger
 
@@ -88,9 +91,17 @@ RTOL = 1e-6
 _PRICE_COLS = ["open", "high", "low", "close", "adj_close", "volume", "currency"]
 
 
-def connect(path: Path | None = None) -> sqlite3.Connection:
-    """Open (creating if needed) the results database."""
-    conn = sqlite3.connect(path or settings.db_path)
+Conn = sqlite3.Connection | turso.Connection
+
+
+def connect(path: Path | None = None) -> Conn:
+    """Open (creating tables if needed) the results database: the local file at ``path``, else
+    Turso when configured, else ``settings.db_path``."""
+    conn: Conn
+    if path is None and settings.turso_url:
+        conn = turso.Connection(settings.turso_url, settings.turso_token.get_secret_value())
+    else:
+        conn = sqlite3.connect(path or settings.db_path)
     conn.executescript(SCHEMA)
     if "node" in _columns(conn, "steps"):  # 0008 layout: node (= toolkit id), no stage
         conn.executescript(
@@ -200,7 +211,7 @@ def _cell(v: Any) -> tuple[float | None, str | None]:
     return float(v), None  # numbers and bools; NaN is stored as NULL
 
 
-def _save_card(conn: sqlite3.Connection, run_id: int, ticker: str, model: str, card: Any) -> None:
+def _save_card(conn: Conn, run_id: int, ticker: str, model: str, card: Any) -> None:
     fields = asdict(card)
     date = _day(fields.pop("date"))
     conn.executemany(
@@ -223,9 +234,7 @@ def _price_rows(ticker: str, daily: pd.DataFrame) -> pd.DataFrame:
     return rows
 
 
-def _save_snapshot(
-    conn: sqlite3.Connection, run_id: int, table: str, key: list[str], new: pd.DataFrame
-) -> int:
+def _save_snapshot(conn: Conn, run_id: int, table: str, key: list[str], new: pd.DataFrame) -> int:
     """Insert rows of ``new`` that are absent from, or differ (beyond ``RTOL``) from, the latest
     stored version."""
     cols = [c for c in _columns(conn, table) if c not in ("ticker", "run_id", *key)]
@@ -251,19 +260,22 @@ def _save_snapshot(
     return len(rows)
 
 
-def _columns(conn: sqlite3.Connection, table: str) -> list[str]:
+def _columns(conn: Conn, table: str) -> list[str]:
     return [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
 
 
-def _read(
-    conn: sqlite3.Connection, table: str, ticker: str, as_seen: str | None = None
-) -> pd.DataFrame:
+def _read(conn: Conn, table: str, ticker: str, as_seen: str | None = None) -> pd.DataFrame:
     sql = f"SELECT t.* FROM {table} t JOIN runs r USING (run_id) WHERE t.ticker = ?"
     params: list[str] = [ticker]
     if as_seen is not None:
         sql += " AND r.started_at <= ?"
         params.append(as_seen)
-    return pd.read_sql_query(sql, conn, params=params)
+    return _query(sql, conn, params=params)
+
+
+def _query(sql: str, conn: Conn, params: list[str] | None = None) -> pd.DataFrame:
+    cur = conn.execute(sql, params or [])
+    return pd.DataFrame(cur.fetchall(), columns=[d[0] for d in cur.description or []])
 
 
 def _latest(df: pd.DataFrame, key: list[str]) -> pd.DataFrame:
@@ -335,7 +347,7 @@ def load_results(
         sql += " WHERE " + " AND ".join(where)
     conn = connect(path)
     try:
-        return pd.read_sql_query(sql + " ORDER BY x.run_id", conn, params=params)
+        return _query(sql + " ORDER BY x.run_id", conn, params=params)
     finally:
         conn.close()
 
@@ -348,7 +360,7 @@ def load_steps(ticker: str | None = None, path: Path | None = None) -> pd.DataFr
         sql += " WHERE s.ticker = ?"
     conn = connect(path)
     try:
-        return pd.read_sql_query(sql + " ORDER BY s.run_id, s.rowid", conn, params=params)
+        return _query(sql + " ORDER BY s.run_id, s.rowid", conn, params=params)
     finally:
         conn.close()
 
