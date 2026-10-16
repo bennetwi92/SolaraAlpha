@@ -268,10 +268,10 @@ labelled as such (no look-ahead in the record, and the live decision uses what's
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S6.1 | As the owner I want to enter a fill against an order: date-time, qty, price, commission, stamp duty / fees (AIM shares are currently exempt from UK stamp duty; record any fee anyway). | R1 | ⬜ · #108 |
-| S6.2 | As the owner I want to mark an order **not filled / expired / cancelled**, and a part fill to leave the rest open. | R1 | ⬜ · #108 |
-| S6.3 | As the owner I want a first fill to open the position, and it to show average cost, shares, risk at the stop and R. | R1 | 🟡 `position_state` (#106); opening on first fill · #108 |
-| S6.4 | As the owner I want each newly opened position to get a **protective stop order** drafted for me to place. | R1 | ⬜ · #108 |
+| S6.1 | As the owner I want to enter a fill against an order: date-time, qty, price, commission, stamp duty / fees (AIM shares are currently exempt from UK stamp duty; record any fee anyway). | R1 | ✅ `book.py fill` (commission and fees in GBP) · #108 |
+| S6.2 | As the owner I want to mark an order **not filled / expired / cancelled**, and a part fill to leave the rest open. | R1 | ✅ `book.py unfilled / cancel / expire` · #108 |
+| S6.3 | As the owner I want a first fill to open the position, and it to show average cost, shares, risk at the stop and R. | R1 | ✅ first fill opens the position; `show [--price P]` gives cost, shares, risk, R · #106, #108 |
+| S6.4 | As the owner I want each newly opened position to get a **protective stop order** drafted for me to place. | R1 | ✅ protective stop drafted (approved) on the first fill, re-sized on later fills · #108 |
 | S6.5 | As the owner I want a reminder of orders past their validity with no fill entered. | R2 | ⬜ · #130 |
 | S6.6 | As the owner I want fills reconciled against a broker statement / CSV export, if the broker offers one, so manual entry errors show up. | R3 | ⬜ (depends on the broker; owner to choose) · #141 |
 
