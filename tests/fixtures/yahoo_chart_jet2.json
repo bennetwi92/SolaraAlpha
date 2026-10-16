@@ -1,0 +1,172 @@
+{
+    "chart": {
+        "result": [
+            {
+                "meta": {
+                    "currency": "GBp",
+                    "symbol": "JET2.L",
+                    "exchangeName": "LSE",
+                    "fullExchangeName": "LSE",
+                    "instrumentType": "EQUITY",
+                    "firstTradeDate": 597052800,
+                    "regularMarketTime": 1792159320,
+                    "hasPrePostMarketData": false,
+                    "gmtoffset": 3600,
+                    "timezone": "BST",
+                    "exchangeTimezoneName": "Europe/London",
+                    "regularMarketPrice": 1422.0,
+                    "regularMarketChangePercent": 0.851,
+                    "fulldayPrice": 1422.0,
+                    "fulldayChange": 12.0,
+                    "fulldayChangePercent": 0.851,
+                    "fiftyTwoWeekHigh": 1612.0,
+                    "fiftyTwoWeekLow": 980.0,
+                    "regularMarketDayHigh": 1453.0,
+                    "regularMarketDayLow": 1397.0,
+                    "regularMarketVolume": 131990,
+                    "longName": "Jet2 plc",
+                    "shortName": "JET2 PLC ORD 1.25P",
+                    "chartPreviousClose": 1414.0,
+                    "priceHint": 2,
+                    "currentTradingPeriod": {
+                        "pre": {
+                            "timezone": "BST",
+                            "end": 1792134000,
+                            "start": 1792131300,
+                            "gmtoffset": 3600
+                        },
+                        "regular": {
+                            "timezone": "BST",
+                            "end": 1792164600,
+                            "start": 1792134000,
+                            "gmtoffset": 3600
+                        },
+                        "post": {
+                            "timezone": "BST",
+                            "end": 1792167300,
+                            "start": 1792164600,
+                            "gmtoffset": 3600
+                        }
+                    },
+                    "dataGranularity": "1d",
+                    "range": "",
+                    "validRanges": [
+                        "1d",
+                        "5d",
+                        "1mo",
+                        "3mo",
+                        "6mo",
+                        "1y",
+                        "2y",
+                        "5y",
+                        "10y",
+                        "ytd",
+                        "max"
+                    ]
+                },
+                "timestamp": [
+                    1759302000,
+                    1759388400,
+                    1759474800,
+                    1759734000,
+                    1759820400,
+                    1759906800,
+                    1759993200,
+                    1760079600,
+                    1760338800,
+                    1760425200,
+                    1760511600
+                ],
+                "indicators": {
+                    "quote": [
+                        {
+                            "high": [
+                                1479.0,
+                                1455.0,
+                                1441.199951171875,
+                                1469.0,
+                                1433.0,
+                                1434.0,
+                                1414.0,
+                                1422.0,
+                                1397.0,
+                                1411.0,
+                                1425.0
+                            ],
+                            "open": [
+                                1479.0,
+                                1446.0,
+                                1430.0,
+                                1441.0,
+                                1414.0,
+                                1401.0,
+                                1400.0,
+                                1390.0,
+                                1374.0,
+                                1387.0,
+                                1425.0
+                            ],
+                            "close": [
+                                1430.0,
+                                1422.0,
+                                1438.0,
+                                1429.0,
+                                1401.0,
+                                1395.0,
+                                1384.0,
+                                1375.0,
+                                1387.0,
+                                1396.0,
+                                1337.0
+                            ],
+                            "volume": [
+                                775702,
+                                772271,
+                                723052,
+                                857662,
+                                400747,
+                                670518,
+                                597570,
+                                797333,
+                                2228867,
+                                981306,
+                                1021321
+                            ],
+                            "low": [
+                                1400.0,
+                                1422.0,
+                                1412.0,
+                                1426.0,
+                                1401.0,
+                                1375.0,
+                                1384.0,
+                                1365.0,
+                                1365.0,
+                                1372.0,
+                                1337.0
+                            ]
+                        }
+                    ],
+                    "adjclose": [
+                        {
+                            "adjclose": [
+                                1429.83056640625,
+                                1421.8314208984375,
+                                1437.82958984375,
+                                1428.83056640625,
+                                1400.833984375,
+                                1394.834716796875,
+                                1383.8359375,
+                                1374.8370361328125,
+                                1386.8355712890625,
+                                1395.8345947265625,
+                                1336.841552734375
+                            ]
+                        }
+                    ]
+                }
+            }
+        ],
+        "error": null
+    }
+}
