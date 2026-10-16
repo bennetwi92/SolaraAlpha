@@ -1,12 +1,13 @@
 """The weekly pipeline: every stock through the toolkits, one stage at a time.
 
 A stage runs each of its toolkits on every ticker still in; a ticker moves on to the next stage
-only if all of them pass. Toolkits within a stage are independent (neither sees the other's
-result), so technical and levels are judged side by side and neither gates the other::
+only if all of them pass. Toolkits within a stage are independent (none sees another's
+result), so technical, levels and relative strength are judged side by side and none gates
+another::
 
-    screen        technical + levels    every ticker in the watchlist
-    fundamentals  fundamentals          tickers that passed the screen
-    events        events                tickers that passed fundamentals
+    screen        technical + levels + relative_strength    every ticker in the watchlist
+    fundamentals  fundamentals                              tickers that passed the screen
+    events        events                                    tickers that passed fundamentals
 
 Running stage by stage (not stock by stock) puts each stage's results for all stocks side by
 side before the next starts, which the later agent stage needs to work from a shortlist.
@@ -90,7 +91,7 @@ class Stage:
 
 
 WEEKLY: tuple[Stage, ...] = (
-    Stage("screen", ("technical", "levels")),
+    Stage("screen", ("technical", "levels", "relative_strength")),
     Stage("fundamentals", ("fundamentals",)),
     Stage("events", ("events",)),
 )

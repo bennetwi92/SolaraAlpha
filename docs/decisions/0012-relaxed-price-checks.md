@@ -1,4 +1,4 @@
-# 0011 — Relaxed price-quality rules for thinly traded AIM stocks
+# 0012 — Relaxed price-quality rules for thinly traded AIM stocks
 
 **Context.** The blocking rules in `data/clean.py` were set on Jet2. With the watchlist widened
 to the FTSE AIM UK 50, `trim_to_consistent` cut 6 illiquid stocks (CAM, GHH, RKH, ARBB, BTG,
