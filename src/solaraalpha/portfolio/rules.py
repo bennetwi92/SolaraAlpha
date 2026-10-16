@@ -36,6 +36,7 @@ class Rules:
     trail_atr: float  # chandelier trailing stop, in ATRs
     event_flag_days: int  # a scheduled event within this many days of entry is flagged
     max_agent_tickers: int  # cap on tickers the unattended agents work per run, by rank
+    benchmark: str  # Yahoo ticker the equity curve is compared with
 
     @property
     def warning(self) -> str | None:
@@ -63,6 +64,7 @@ _TYPES = {
     "trail_atr": float,
     "event_flag_days": int,
     "max_agent_tickers": int,
+    "benchmark": str,
 }
 _FRACTIONS = ("max_position_pct", "max_sector_pct", "max_heat", "max_adv_pct", "cash_buffer")
 
@@ -118,3 +120,5 @@ def _validate(r: Rules) -> None:
         raise ValueError(f"entry_limit_buffer: must be >= 0, got {r.entry_limit_buffer}")
     if r.trail_atr <= 0:
         raise ValueError(f"trail_atr: must be > 0, got {r.trail_atr}")
+    if not r.benchmark:
+        raise ValueError("benchmark: must be a Yahoo ticker, e.g. ^FTAS")

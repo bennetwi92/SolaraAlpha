@@ -141,6 +141,7 @@ Current state:
 | Draft the week's trade plans from a saved scan run (final ACT labels → plan → fit → draft positions) | `uv run python scripts/plan.py --run N [--dry-run]` |
 | Weekly pack for a run (new plans with approve/reject commands, fit rejections, watch list, open positions, money, errors) | `uv run python scripts/weekly_pack.py --run N [--out FILE] [--report FILE]` |
 | Portfolio view: holdings, cash, equity, heat, sector exposure, breaches | `uv run python scripts/portfolio.py [--save] [--price JET2.L=1520]` (cash in: `book.py cash deposit 10000`) |
+| Equity curve, time-weighted return, drawdown, vs benchmark, correlated holdings | `uv run python scripts/portfolio.py --history` |
 | Results DB: which is in use, copy local ↔ Turso | `uv run python scripts/db.py status` / `push [--from PATH] [--append-new-runs]` / `pull [--to PATH]` |
 | Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `relative_strength` / `fundamentals` / `jet2_value` / `scan` |
 | Notebooks | `make notebook` |
@@ -215,6 +216,8 @@ src/solaraalpha/        importable package — all reusable code lives here
     daily.py            run_daily (what to check, fetch, evaluate, save the triggers) + render_daily
     review.py           weekly review of open positions: every toolkit re-run with the entry,
                         ReviewCard (ratcheted stop, deterioration, horizon rule, action), raise_stop
+    performance.py      equity_curve (rebuilt from cash + fills + closes), drawdown, time-weighted
+                        return vs Rules.benchmark, correlation of holdings' weekly returns
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM UK 50 snapshot)
 config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)
