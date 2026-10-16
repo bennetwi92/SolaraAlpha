@@ -103,7 +103,8 @@ src/solaraalpha/        importable package — all reusable code lives here
   config.py             Settings (env vars prefixed SOLARA_, loaded from .env); data paths
   log.py                get_logger(__name__)
   store.py              results DB (SQLite): runs, model cards, pipeline steps, price/fundamental
-                        snapshots; save_run / load_results / load_steps / latest / load_prices
+                        snapshots; start_run + save_ticker (a scan = one run) / save_run /
+                        load_results / load_steps / latest / load_prices
                         — see docs/decisions/0007
   toolkits.py           toolkit register: id -> run fn + pass conditions; Inputs (lazy,
                         shared per-ticker data)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -163,16 +164,47 @@ def test_float_jitter_is_not_a_revision(db: Path, daily: pd.DataFrame) -> None:
 
 def test_steps_round_trip(db: Path) -> None:
     steps = [
-        ("technical", "technical", "pass", "trend=0.50"),
-        ("levels", "levels", "fail", "failed reward_risk >= 2"),
-        ("events", "events", "skip", "needs levels"),
+        ("screen", "technical", "pass", "trend=0.50"),
+        ("screen", "levels", "fail", "failed reward_risk >= 2"),
+        ("events", "events", "skip", "out at screen"),
     ]
     run_id = store.save_run("scan", {}, "JET2.L", {"technical": CARD}, path=db, steps=steps)
     got = store.load_steps("JET2.L", path=db)
     assert list(got["run_id"].unique()) == [run_id]
-    assert list(zip(got["node"], got["status"], strict=True)) == [
-        ("technical", "pass"),
-        ("levels", "fail"),
-        ("events", "skip"),
+    assert list(zip(got["stage"], got["toolkit"], got["status"], strict=True)) == [
+        ("screen", "technical", "pass"),
+        ("screen", "levels", "fail"),
+        ("events", "events", "skip"),
     ]
     assert store.load_steps("OTHER.L", path=db).empty
+
+
+def test_one_run_covers_many_tickers(db: Path, daily: pd.DataFrame) -> None:
+    run_id = store.start_run("scan", {"save": True}, path=db)
+    for ticker in ("JET2.L", "EZJ.L"):
+        steps = [("screen", "technical", "pass", "")]
+        store.save_ticker(run_id, ticker, {"technical": CARD}, daily, path=db, steps=steps)
+    assert _count(db, "runs") == 1
+    assert set(store.load_steps(path=db)["ticker"]) == {"JET2.L", "EZJ.L"}
+    assert set(store.latest("technical", path=db)["run_id"]) == {run_id}
+    assert _count(db, "prices") == 2 * len(daily)
+
+
+def test_old_steps_layout_is_migrated(db: Path) -> None:
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        "CREATE TABLE steps (run_id INTEGER NOT NULL, ticker TEXT NOT NULL, node TEXT NOT NULL,"
+        " toolkit TEXT NOT NULL, status TEXT NOT NULL, reason TEXT NOT NULL,"
+        " PRIMARY KEY (run_id, ticker, node));"
+        "INSERT INTO steps VALUES (99, 'JET2.L', 'levels', 'levels', 'fail', 'rr=1.2');"
+    )
+    conn.close()
+    store.connect(db).close()  # migrates
+    run_id = store.start_run("scan", {}, path=db)
+    store.save_ticker(run_id, "JET2.L", path=db, steps=[("screen", "levels", "pass", "")])
+    conn = sqlite3.connect(db)
+    rows = conn.execute(
+        "SELECT run_id, stage, toolkit, status FROM steps ORDER BY rowid"
+    ).fetchall()
+    conn.close()
+    assert rows == [(99, None, "levels", "fail"), (run_id, "screen", "levels", "pass")]
