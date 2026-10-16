@@ -12,13 +12,19 @@ used once it is confirmed.
   ``MIN_TOUCHES`` pivots. Highs and lows are pooled because broken resistance tends to become
   support and vice versa.
 * **trendlines** — upper (through swing highs) and lower (through swing lows) lines in log price,
-  not broken by any weekly close since their first anchor; the one with most touches wins.
+  not broken by any weekly close since their first anchor and projected within ``TREND_MAX_ATR``
+  x ATR of the close; the one with most touches wins.
+* **coil** — the last ``COIL_WEEKS`` weeks: their high-low span in ATRs, and least-squares lines
+  through their highs and lows (converging lines = a triangle squeezing into its apex). A tight
+  span (``COIL_ATR``) means the stock is coiled, and the plan becomes a breakout plan.
 * **significant levels** — prior 52-week and 5-year highs/lows (5-year = as far back as the
   supplied history goes, up to 5 years). ``blue_sky`` = closed above the 5-year high, so no
   overhead supply.
 
 :func:`levels_card` turns the level map into a plan for a position on ``side`` and two scores in
 [-1, +1]: ``structure`` (market view, + bullish) and ``setup`` (reward:risk for ``side``).
+When coiled the plan is entered on a stop order beyond the coil (``trigger``) rather than at the
+close, so reward:risk is measured from where the trade would actually start.
 All levels use raw ``high``/``low``/``close`` so they are real price levels.
 Parameters are documented in ``docs/decisions/0004-levels.md``.
 """
@@ -38,6 +44,10 @@ ZONE_ATR = 0.5  # pivots within this many ATRs of a zone's lowest member join th
 MIN_TOUCHES = 2  # zones with fewer swing pivots are left out of the level map
 TREND_PIVOTS = 6  # trendlines are drawn through pairs of the last N swing highs / lows
 TREND_TOL_ATR = 0.25  # closes may poke this far through a trendline; pivots this near touch it
+TREND_MAX_ATR = 3.0  # trendlines projected further than this from the close are ignored
+COIL_WEEKS = 4  # recent weeks that make up the coil
+COIL_ATR = 1.5  # coiled when those weeks span at most this many ATRs (high to low)
+TRIGGER_ATR = 0.1  # breakout entry sits this far beyond the coil's line
 STOP_BUFFER_ATR = 0.5  # stop sits this far beyond the nearest support / resistance
 MIN_STOP_ATR = 1.0  # ...but at least this far from the close
 YEAR = 52  # weeks
@@ -110,8 +120,9 @@ def trendline(weekly: pd.DataFrame, kind: str) -> Trendline | None:
 
     Candidates join pairs of the last ``TREND_PIVOTS`` confirmed swing highs (upper) or lows
     (lower) with a straight line in log price. A candidate is dropped if any weekly close since
-    its first anchor is more than ``TREND_TOL_ATR`` x ATR through it. The survivor with the most
-    pivots touching it wins; ties go to the most recent anchors."""
+    its first anchor is more than ``TREND_TOL_ATR`` x ATR through it, or if its projection to the
+    coming week is more than ``TREND_MAX_ATR`` x ATR from the close (no longer in play). The
+    survivor with the most pivots touching it wins; ties go to the most recent anchors."""
     if kind not in ("upper", "lower"):
         raise ValueError("kind must be 'upper' or 'lower'")
     sign = 1 if kind == "upper" else -1
@@ -119,7 +130,8 @@ def trendline(weekly: pd.DataFrame, kind: str) -> Trendline | None:
     piv = piv[piv["kind"] == ("high" if kind == "upper" else "low")].tail(TREND_PIVOTS)
     log_close = np.log(weekly["close"].to_numpy())
     n = len(log_close)
-    tol = TREND_TOL_ATR * float(atr(weekly).iloc[-1]) / float(weekly["close"].iloc[-1])
+    atr_log = float(atr(weekly).iloc[-1]) / float(weekly["close"].iloc[-1])
+    tol, far = TREND_TOL_ATR * atr_log, TREND_MAX_ATR * atr_log
     p_pos, p_log = piv["pos"].to_numpy(), np.log(piv["price"].to_numpy())
 
     best: tuple[tuple[int, int, int], Trendline] | None = None
@@ -127,7 +139,8 @@ def trendline(weekly: pd.DataFrame, kind: str) -> Trendline | None:
         ia, ib = int(p_pos[a]), int(p_pos[b])
         slope = (p_log[b] - p_log[a]) / (ib - ia)
         line = p_log[a] + slope * (np.arange(ia, n) - ia)
-        if (sign * (log_close[ia:] - line) > tol).any():
+        nxt = p_log[a] + slope * (n - ia)
+        if (sign * (log_close[ia:] - line) > tol).any() or abs(nxt - log_close[-1]) > far:
             continue
         on = p_pos >= ia
         touches = int((np.abs(p_log[on] - p_log[a] - slope * (p_pos[on] - ia)) <= tol).sum())
@@ -143,10 +156,41 @@ def trendline(weekly: pd.DataFrame, kind: str) -> Trendline | None:
                     end_price=float(np.exp(p_log[b])),
                     slope=float(np.expm1(slope)),
                     touches=touches,
-                    value=float(np.exp(p_log[a] + slope * (n - ia))),
+                    value=float(np.exp(nxt)),
                 ),
             )
     return best[1] if best else None
+
+
+@dataclass(frozen=True)
+class Coil:
+    span_atr: float  # high-to-low span of the last ``COIL_WEEKS`` weeks, in ATRs
+    coiled: bool  # span_atr <= COIL_ATR
+    upper: float  # least-squares line through those weeks' highs, projected to the coming week
+    upper_slope: float  # per week
+    lower: float  # same through the lows
+    lower_slope: float
+    apex_weeks: float  # weeks until the lines meet (NaN unless converging)
+
+
+def coil(weekly: pd.DataFrame, n: int = COIL_WEEKS) -> Coil:
+    """The last ``n`` weeks as a coil: how tight they are and where their high/low lines go.
+    Lines are fitted in log price; they converge when the upper falls faster than the lower."""
+    w = weekly.iloc[-n:]
+    x = np.arange(n)
+    (su, iu), (sl, il) = (np.polyfit(x, np.log(w[c].to_numpy()), 1) for c in ("high", "low"))
+    upper, lower = iu + su * n, il + sl * n  # log, projected to the coming week
+    span = float(w["high"].max() - w["low"].min()) / _atr_now(weekly)
+    apex = (upper - lower) / (sl - su) if su < sl and upper > lower else np.nan
+    return Coil(
+        span_atr=span,
+        coiled=span <= COIL_ATR,
+        upper=float(np.exp(upper)),
+        upper_slope=float(np.expm1(su)),
+        lower=float(np.exp(lower)),
+        lower_slope=float(np.expm1(sl)),
+        apex_weeks=float(apex),
+    )
 
 
 def _atr_now(weekly: pd.DataFrame) -> float:
@@ -217,11 +261,20 @@ class LevelsCard:
     blue_sky: bool  # closed above the 5-year high
     new_low: bool  # closed below the 5-year low
     breakout: int  # +1 closed above last week's nearest resistance, -1 below its support, else 0
+    box_atr: float  # nearest resistance minus nearest support, in ATRs
+    coil_atr: float  # span of the last COIL_WEEKS weeks, in ATRs
+    coiled: bool  # coil_atr <= COIL_ATR: plan a breakout from ``trigger``
+    coil_upper: float  # line through the coil's highs, projected to the coming week
+    coil_upper_slope: float  # per week
+    coil_lower: float  # line through the coil's lows
+    coil_lower_slope: float
+    apex_weeks: float  # weeks until the coil's lines meet (NaN unless converging)
+    trigger: float  # breakout entry (stop order) beyond the coil; NaN = enter at the close
     stop: float  # beyond the nearest level against ``side``
-    target: float  # nearest level in favour of ``side`` (NaN: nothing in the way)
+    target: float  # nearest level in favour of ``side`` beyond the entry (NaN: nothing)
     target_2: float  # the one after
-    reward_risk: float  # to ``target``; inf when nothing is in the way
-    risk_pct: float  # distance to the stop as a fraction of price
+    reward_risk: float  # from the entry to ``target``; inf when nothing is in the way
+    risk_pct: float  # distance from the entry to the stop as a fraction of the entry
     structure: float  # [-1, 1], + bullish: trendline slopes and place in the 52-week range
     setup: float  # [-1, 1], + good reward:risk for ``side``
 
@@ -237,7 +290,14 @@ def levels_card(weekly: pd.DataFrame, side: int = 1) -> LevelsCard:
 
     Stop: ``STOP_BUFFER_ATR`` beyond the nearest level against the position (support for a
     long), at least ``MIN_STOP_ATR`` from the close; ``STOP_ATR`` (technical model) if there is
-    no such level. Targets: the next two levels in the position's favour. ``setup`` is
+    no such level. Targets: the next two levels in the position's favour.
+
+    Coiled (the last ``COIL_WEEKS`` weeks span at most ``COIL_ATR`` ATRs): the entry is a stop
+    order ``TRIGGER_ATR`` beyond the coil's line (upper for a long), or beyond the close if that
+    is further, and beyond the nearest level ahead (resistance for a long) when that level lies
+    inside the coil's range. The stop still sits beyond the nearest level against the position
+    (the bottom of the box for a long), at least ``MIN_STOP_ATR`` from the entry, and targets,
+    reward:risk and ``risk_pct`` are measured from the entry. ``setup`` is
     log(reward:risk) / log(``FULL_RR``), clipped: 3:1 scores +1, 1:1 scores 0, 1:3 scores -1;
     nothing in the way (e.g. blue sky for a long) scores +1.
     """
@@ -246,16 +306,25 @@ def levels_card(weekly: pd.DataFrame, side: int = 1) -> LevelsCard:
     close, a = float(weekly["close"].iloc[-1]), _atr_now(weekly)
     lm = level_map(weekly)
     above, below = _nearest(lm, close)
-    against, favour = (below, above) if side == 1 else (above, below)
+    c = coil(weekly)
+    w = weekly.iloc[-COIL_WEEKS:]
+    edge = [c.upper, close] if side == 1 else [c.lower, close]
+    box = (above, w["high"].max()) if side == 1 else (below, w["low"].min())
+    if not box[0].empty and side * (box[0].iloc[0] - box[1]) <= 0:
+        edge.append(float(box[0].iloc[0]))  # the box edge lies inside the coil: clear it too
+    trigger = side * max(side * e for e in edge) + side * TRIGGER_ATR * a if c.coiled else np.nan
+    entry = trigger if c.coiled else close
+    against = below if side == 1 else above
+    favour = lm.loc[side * (lm["price"] - entry) > 0, "price"].sort_values(ascending=side == 1)
 
     if against.empty:
-        stop = close - side * STOP_ATR * a
+        stop = entry - side * STOP_ATR * a
     else:
         stop = float(against.iloc[0]) - side * STOP_BUFFER_ATR * a
-        stop = close - side * max(side * (close - stop), MIN_STOP_ATR * a)
+        stop = entry - side * max(side * (entry - stop), MIN_STOP_ATR * a)
     targets = [float(x) for x in favour.iloc[:2]] + [np.nan, np.nan]
-    risk = side * (close - stop)
-    reward_risk = side * (targets[0] - close) / risk if not favour.empty else np.inf
+    risk = side * (entry - stop)
+    reward_risk = side * (targets[0] - entry) / risk if not favour.empty else np.inf
 
     by = lm.set_index("source")["price"]
     upper, lower = trendline(weekly, "upper"), trendline(weekly, "lower")
@@ -290,11 +359,22 @@ def levels_card(weekly: pd.DataFrame, side: int = 1) -> LevelsCard:
         blue_sky=close > by["high_5y"],
         new_low=close < by["low_5y"],
         breakout=breakout,
+        box_atr=float(above.iloc[0] - below.iloc[0]) / a
+        if not (above.empty or below.empty)
+        else np.nan,
+        coil_atr=c.span_atr,
+        coiled=c.coiled,
+        coil_upper=c.upper,
+        coil_upper_slope=c.upper_slope,
+        coil_lower=c.lower,
+        coil_lower_slope=c.lower_slope,
+        apex_weeks=c.apex_weeks,
+        trigger=float(trigger),
         stop=stop,
         target=targets[0],
         target_2=targets[1],
         reward_risk=float(reward_risk),
-        risk_pct=risk / close,
+        risk_pct=risk / entry,
         structure=float(np.clip(parts, -1, 1).mean()),
         setup=float(np.clip(np.log(reward_risk) / np.log(FULL_RR), -1, 1)),
     )

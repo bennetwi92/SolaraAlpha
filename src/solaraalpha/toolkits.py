@@ -107,7 +107,8 @@ def _technical(
 
 @toolkit("levels", passes=("reward_risk >= 2",))
 def _levels(x: Inputs, side: int = 1) -> Cards:
-    """Support / resistance, trendlines, 52w and 5y highs; stop, target, reward:risk."""
+    """Support / resistance, trendlines, 52w and 5y highs, coil; stop, target, reward:risk
+    (from the breakout trigger when coiled)."""
     return {"levels": levels_card(x.weekly, side)}
 
 
