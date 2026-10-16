@@ -328,10 +328,10 @@ and WATCH stock**, and **the agent only when a check fires**.
 | ID | Story | Rel | Status |
 |---|---|---|---|
 | S11.1 | As the owner I want every week's labels stored point-in-time, so they can be scored against later returns. | R1 | ✅ results DB, `date` per card (ADR 0007) |
-| S11.2 | As the owner I want a **label scorecard**: forward 2/4/8/16-week returns (and excess vs market) for ACT vs WATCH vs PASS, per stage and per toolkit band. | R2 | ⬜ · #137 |
+| S11.2 | As the owner I want a **label scorecard**: forward 2/4/8/16-week returns (and excess vs market) for ACT vs WATCH vs PASS, per stage and per toolkit band. | R2 | ✅ · #137 |
 | S11.3 | As the owner I want a backtest of the screen rules over history (point-in-time, survivorship caveat noted) to set the bands in S1.5. | R2 | ⬜ · #138 |
 | S11.4 | As the owner I want agent value-added measured: did the validator's and strategist's downgrades avoid losers, did upgrades or retentions pick winners. | R3 | ⬜ · #144 |
-| S11.5 | As the owner I want a trade journal: hit rate, average R, expectancy, by exit reason and by set-up type (pullback vs breakout vs blue sky). | R2 | ⬜ · #137 |
+| S11.5 | As the owner I want a trade journal: hit rate, average R, expectancy, by exit reason and by set-up type (pullback vs breakout vs blue sky). | R2 | ✅ · #137 |
 
 ### A12 — Operate
 
