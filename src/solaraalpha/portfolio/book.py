@@ -518,6 +518,16 @@ def fills(conn: Conn, order_id: int | None = None, position_id: int | None = Non
     return query(sql + " ORDER BY f.at, f.fill_id", conn, params)
 
 
+def fills_with_tickers(conn: Conn) -> pd.DataFrame:
+    """Every fill with its position's ``ticker`` and ``currency`` (for the equity curve)."""
+    return query(
+        "SELECT f.*, o.position_id, o.side, o.purpose, p.ticker, p.currency FROM fills f"
+        " JOIN orders o USING (order_id) JOIN positions p USING (position_id)"
+        " ORDER BY f.at, f.fill_id",
+        conn,
+    )
+
+
 def cash(conn: Conn) -> pd.DataFrame:
     return query("SELECT * FROM cash ORDER BY at, rowid", conn)
 

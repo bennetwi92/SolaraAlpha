@@ -15,7 +15,7 @@ from typing import Any
 import pandas as pd
 
 from solaraalpha import store
-from solaraalpha.portfolio import book, risk
+from solaraalpha.portfolio import book, performance, risk
 from solaraalpha.portfolio.planner import Candidate, PlanRun, plan_run
 from solaraalpha.portfolio.rules import Rules, load_rules
 from solaraalpha.store import Conn
@@ -45,6 +45,8 @@ class Pack:
     breaches: list[str]
     errors: list[Candidate] = field(default_factory=list)
     watch: list[Candidate] = field(default_factory=list)
+    performance: performance.Summary | None = None
+    correlated: list[tuple[str, str, float]] = field(default_factory=list)
 
 
 def latest_review_cards(conn: Conn) -> dict[int, dict[str, Any]]:
@@ -96,6 +98,7 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> Pack:
 
     eq = plan.equity
     assert eq is not None
+    perf, pairs = performance_from_store(conn, started, rules)
     return Pack(
         run_id=run_id,
         started_at=started,
@@ -108,7 +111,31 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> Pack:
         breaches=risk.breaches(held, eq, rules),
         errors=[c for c in plan.candidates if c.label == "ERROR"],
         watch=[c for c in plan.candidates if c.label == "WATCH"],
+        performance=perf,
+        correlated=pairs,
     )
+
+
+def performance_from_store(
+    conn: Conn, as_seen: str, rules: Rules
+) -> tuple[performance.Summary | None, list[tuple[str, str, float]]]:
+    """Equity-curve summary and correlated holdings from the price snapshots in the DB (no
+    network); None when the book has no history."""
+    fl = book.fills_with_tickers(conn)
+    if fl.empty:
+        return None, []
+    prices = {}
+    for t in sorted(set(fl["ticker"])):
+        px = store.load_prices(str(t), as_seen, conn=conn)
+        if not px.empty:
+            prices[str(t)] = px
+    bench_px = store.load_prices(rules.benchmark, as_seen, conn=conn)
+    bench = bench_px["close"] if not bench_px.empty else None
+    summary = performance.history_from_book(conn, prices, bench)[2]
+    open_tickers = sorted(set(book.positions(conn, status="open")["ticker"]))
+    rets = {t: performance.weekly_returns(prices[t]) for t in open_tickers if t in prices}
+    _, pairs = performance.correlation(rets)
+    return summary, pairs
 
 
 def _money(v: float) -> str:
@@ -215,6 +242,18 @@ def render_pack(pack: Pack) -> str:
     lines.append("")
 
     lines += ["## Portfolio", ""]
+    perf = pack.performance
+    if perf is not None and perf.start is not None:
+        bench = f", {rules.benchmark} {perf.benchmark:+.1%}" if perf.benchmark is not None else ""
+        lines.append(
+            f"- performance since {perf.start:%Y-%m-%d}: P&L {_money(perf.pnl)} on net flows {_money(perf.net_flows)},"
+            f" time-weighted {perf.twr:+.1%}{bench}, max drawdown {perf.max_drawdown.max_drawdown:.1%}"
+        )
+    if pack.correlated:
+        lines.append(
+            "- correlated holdings (26w > 0.7): "
+            + ", ".join(f"{a}/{b} {c:.2f}" for a, b, c in pack.correlated)
+        )
     lines += [
         f"- equity {_money(eq.equity)} = cash {_money(eq.cash)} + market value {_money(eq.market_value)}",
         f"- heat {pack.heat:.1%} of equity (max {rules.max_heat:.0%}); {eq.positions} of {rules.max_positions} positions",

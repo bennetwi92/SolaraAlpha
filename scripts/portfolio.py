@@ -1,11 +1,15 @@
 """Holdings, cash, equity, heat and sector exposure against config/portfolio.toml.
 
 uv run python scripts/portfolio.py [--save] [--price JET2.L=1520 ...] [--db PATH]
+uv run python scripts/portfolio.py --history [--db PATH]
 
 Fetches the last daily close of every held ticker (check / clean before use); --price overrides
 or supplies a price (tests run offline this way). --save records a `portfolio` card per open
-position and one under ticker "_PORTFOLIO" (equity, cash, heat) in a `portfolio` run: the
-equity curve later on. Prints the placeholder-rules banner while `confirmed` is false.
+position and one under ticker "_PORTFOLIO" (equity, cash, heat) in a `portfolio` run.
+--history rebuilds the daily equity curve from the record (cash, fills, daily closes of every
+ticker ever held) and prints return, time-weighted return, max drawdown, the comparison with
+`Rules.benchmark` and the correlated pairs among holdings (portfolio.performance). Prints the
+placeholder-rules banner while `confirmed` is false.
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ import pandas as pd
 
 from solaraalpha.data.clean import check_prices, clean_prices
 from solaraalpha.data.prices import fetch_daily
-from solaraalpha.portfolio import book, risk
+from solaraalpha.portfolio import book, performance, risk
 from solaraalpha.portfolio.rules import load_rules
 from solaraalpha.store import save_ticker, start_run
 
@@ -74,14 +78,68 @@ def last_prices(tickers: list[str], given: dict[str, float]) -> tuple[dict[str, 
     return prices, notes
 
 
+def history(db: Path | None) -> str:
+    """The equity-curve summary and correlated pairs, as text."""
+    rules = load_rules()
+    fetch = fetch_daily  # looked up at call time so tests can monkeypatch it
+    conn = book.connect(db)
+    try:
+        fl = book.fills_with_tickers(conn)
+        tickers = sorted(set(fl["ticker"])) if not fl.empty else []
+        prices: dict[str, pd.DataFrame] = {}
+        notes = []
+        for t in [*tickers, rules.benchmark]:
+            try:
+                prices[t] = clean_prices(fetch(t))
+            except Exception as e:
+                notes.append(f"{t}: price history unavailable ({e})")
+        bench = prices.pop(rules.benchmark, pd.DataFrame())
+        bench_close = bench["close"] if not bench.empty else None
+        summary = performance.history_from_book(conn, prices, bench_close)[2]
+        open_tickers = sorted(set(book.positions(conn, status="open")["ticker"]))
+    finally:
+        conn.close()
+    lines = [f"NOTE: {n}" for n in notes]
+    if summary.start is None:
+        return "\n".join([*lines, "No history yet: no cash events or fills in the book."])
+    dd = summary.max_drawdown
+    lines += [
+        f"Equity curve {summary.start:%Y-%m-%d} → {summary.end:%Y-%m-%d}: £{summary.equity:,.0f}"
+        f" on net flows £{summary.net_flows:,.0f} (P&L £{summary.pnl:,.0f})",
+        f"Time-weighted return {summary.twr:+.2%}"
+        + (
+            f" vs {rules.benchmark} {summary.benchmark:+.2%} (excess {summary.excess:+.2%})"
+            if summary.benchmark is not None
+            else f" ({rules.benchmark} unavailable)"
+        ),
+        f"Max drawdown {dd.max_drawdown:.2%}"
+        + (f" from {dd.peak:%Y-%m-%d} to {dd.trough:%Y-%m-%d}" if dd.peak is not None else ""),
+    ]
+    rets = {t: performance.weekly_returns(prices[t]) for t in open_tickers if t in prices}
+    _, pairs = performance.correlation(rets)
+    lines.append(
+        "Correlated holdings (26w > 0.7): "
+        + (", ".join(f"{a}/{b} {c:.2f}" for a, b, c in pairs) or "none")
+    )
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument("--price", action="append", default=[], help="TICKER=PRICE (quote currency)")
     p.add_argument("--save", action="store_true", help="record portfolio cards in the results DB")
+    p.add_argument(
+        "--history", action="store_true", help="equity curve, drawdown, benchmark, correlation"
+    )
     p.add_argument("--db", type=Path, default=None, help="local DB file (default: configured DB)")
     args = p.parse_args(argv)
     given = {k: float(v) for k, v in (kv.split("=", 1) for kv in args.price)}
     rules = load_rules()
+    if args.history:
+        if rules.warning:
+            print(rules.warning)
+        print(history(args.db))
+        return
 
     conn = book.connect(args.db)
     try:

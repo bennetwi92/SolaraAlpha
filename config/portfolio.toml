@@ -24,3 +24,4 @@ horizon_weeks = [2, 16]    # holding horizon; held longer while the stock keeps 
 trail_atr = 3.0            # chandelier trailing stop distance in ATRs (ADR 0003)
 event_flag_days = 14       # results / trading update within this many days of entry = flag
 max_agent_tickers = 10     # PLACEHOLDER cap on tickers the unattended agents work per run (ADR 0019)
+benchmark = "^FTAS"        # equity-curve comparison (Yahoo ticker). ^FTAI = FTSE AIM All-Share is also served

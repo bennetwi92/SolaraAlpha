@@ -318,8 +318,8 @@ and WATCH stock**, and **the agent only when a check fires**.
 | S10.1 | As the owner I want a **holdings view**: positions, shares, cost, last price, P&L, R, stop, risk at the stop, weeks held, next event. | R1 | ✅ `scripts/portfolio.py`, `risk.holdings` · #110 |
 | S10.2 | As the owner I want **cash and equity** tracked (capital, deposits / withdrawals, realised and unrealised P&L), so sizing uses current equity. | R1 | ✅ `book.py cash`, `risk.equity` · #110 |
 | S10.3 | As the owner I want **portfolio heat** (sum of open risk to the stops) and exposure by sector vs the limits in S0.3. | R1 | ✅ `risk.heat / exposure / breaches` · #110 |
-| S10.4 | As the owner I want an equity curve, drawdown, and a benchmark comparison (e.g. FTSE AIM All-Share). | R2 | ⬜ · #135 |
-| S10.5 | As the owner I want a correlation / overlap check across holdings (same driver: fuel, consumer, rates). | R2 | ⬜ · #135 |
+| S10.4 | As the owner I want an equity curve, drawdown, and a benchmark comparison (e.g. FTSE AIM All-Share). | R2 | ✅ `portfolio.py --history`, `performance.py`; benchmark `Rules.benchmark` (default `^FTAS`) · #135 |
+| S10.5 | As the owner I want a correlation / overlap check across holdings (same driver: fuel, consumer, rates). | R2 | ✅ `performance.correlation`, in `--history` and the weekly pack · #135 |
 | S10.6 | As the owner I want a dashboard over the DB (holdings, weekly pack, history). | R2 | ⬜ · #136 |
 | S10.7 | As the owner I want a drawdown circuit breaker (e.g. stop new entries if equity is X% below its high). | R3 | ⬜ (proposal; owner to set) · #143 |
 
