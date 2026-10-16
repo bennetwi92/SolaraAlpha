@@ -19,7 +19,9 @@ A run can cover many tickers (a weekly scan is one run): :func:`start_run`, then
 
 With ``SOLARA_TURSO_URL`` / ``SOLARA_TURSO_TOKEN`` set, the same tables live in the hosted
 Turso database instead (:mod:`solaraalpha.turso`); unset, the local file is used. Passing
-``path`` always uses that local file. Plain SQLite SQL only (docs/decisions/0007, 0013).
+``path`` always uses that local file. Plain SQLite SQL only (docs/decisions/0007, 0013). Read
+frames with :func:`query` (not ``pd.read_sql_query``, which rejects the Turso client);
+``scripts/db.py`` copies a DB between the two backends with :func:`copy_db`.
 """
 
 from __future__ import annotations
@@ -270,12 +272,95 @@ def _read(conn: Conn, table: str, ticker: str, as_seen: str | None = None) -> pd
     if as_seen is not None:
         sql += " AND r.started_at <= ?"
         params.append(as_seen)
-    return _query(sql, conn, params=params)
+    return query(sql, conn, params=params)
 
 
-def _query(sql: str, conn: Conn, params: list[str] | None = None) -> pd.DataFrame:
+def query(sql: str, conn: Conn, params: list[Any] | None = None) -> pd.DataFrame:
+    """Run ``sql`` on ``conn`` and return the rows as a DataFrame (works on both backends;
+    ``pd.read_sql_query`` does not accept the Turso client)."""
     cur = conn.execute(sql, params or [])
     return pd.DataFrame(cur.fetchall(), columns=[d[0] for d in cur.description or []])
+
+
+def tables(conn: Conn) -> dict[str, str]:
+    """``{table: CREATE statement}`` for every table in ``conn``, in creation order."""
+    rows = conn.execute(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        " ORDER BY rowid"
+    ).fetchall()
+    return {str(name): str(sql) for name, sql in rows}
+
+
+def counts(conn: Conn) -> dict[str, int]:
+    """Row count per table."""
+    return {t: int(conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]) for t in tables(conn)}
+
+
+def copy_db(
+    src: Conn, dst: Conn, append_new_runs: bool = False, page: int = 5000
+) -> dict[str, int]:
+    """Copy every table of ``src`` into ``dst`` (tables are created in ``dst`` if missing).
+
+    By default ``dst`` must hold no ``runs`` row (``ValueError`` otherwise) and rows are copied
+    verbatim, run ids included. With ``append_new_runs``, only runs whose
+    ``(started_at, script, git_sha)`` is absent from ``dst`` are copied, under new run ids, with
+    the rows of every run-linked table remapped; tables without a ``run_id`` column are skipped.
+    Returns the rows copied per table.
+    """
+    run_map: dict[int, int] | None = None
+    existing = int(dst.execute("SELECT COUNT(*) FROM runs").fetchone()[0])
+    if not append_new_runs and existing:
+        raise ValueError(f"destination already holds {existing} runs; use append_new_runs")
+    copied: dict[str, int] = {}
+    with dst:
+        if append_new_runs:
+            seen = set(dst.execute("SELECT started_at, script, git_sha FROM runs").fetchall())
+            run_map = {}
+            for run_id, started, script, args, sha in src.execute(
+                "SELECT run_id, started_at, script, args, git_sha FROM runs ORDER BY run_id"
+            ).fetchall():
+                if (started, script, sha) in seen:
+                    continue
+                cur = dst.execute(
+                    "INSERT INTO runs (started_at, script, args, git_sha) VALUES (?, ?, ?, ?)",
+                    (started, script, args, sha),
+                )
+                assert cur.lastrowid is not None
+                run_map[int(run_id)] = int(cur.lastrowid)
+            copied["runs"] = len(run_map)
+        for name, sql in tables(src).items():
+            dst.execute(
+                sql
+                if "IF NOT EXISTS" in sql
+                else sql.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS", 1)
+            )
+            if name == "runs" and run_map is not None:
+                continue
+            cols = _columns(src, name)
+            if run_map is not None and "run_id" not in cols:
+                log.warning("%s: no run_id column, not copied in append mode", name)
+                continue
+            copied[name] = 0
+            insert = f"INSERT INTO {name} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})"
+            for offset in range(0, 10**9, page):
+                raw = src.execute(
+                    f"SELECT {', '.join(cols)} FROM {name} ORDER BY rowid LIMIT ? OFFSET ?",
+                    (page, offset),
+                ).fetchall()
+                rows = raw
+                if run_map is not None:
+                    i = cols.index("run_id")
+                    rows = [
+                        tuple(run_map[int(r[i])] if j == i else v for j, v in enumerate(r))
+                        for r in raw
+                        if int(r[i]) in run_map
+                    ]
+                if rows:
+                    dst.executemany(insert, rows)
+                    copied[name] += len(rows)
+                if len(raw) < page:
+                    break
+    return copied
 
 
 def _latest(df: pd.DataFrame, key: list[str]) -> pd.DataFrame:
@@ -347,7 +432,7 @@ def load_results(
         sql += " WHERE " + " AND ".join(where)
     conn = connect(path)
     try:
-        return _query(sql + " ORDER BY x.run_id", conn, params=params)
+        return query(sql + " ORDER BY x.run_id", conn, params=params)
     finally:
         conn.close()
 
@@ -360,7 +445,7 @@ def load_steps(ticker: str | None = None, path: Path | None = None) -> pd.DataFr
         sql += " WHERE s.ticker = ?"
     conn = connect(path)
     try:
-        return _query(sql + " ORDER BY s.run_id, s.rowid", conn, params=params)
+        return query(sql + " ORDER BY s.run_id, s.rowid", conn, params=params)
     finally:
         conn.close()
 
