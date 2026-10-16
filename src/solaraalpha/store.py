@@ -8,8 +8,8 @@ deleted, so every number can be traced to the run (time, git commit, arguments) 
   ``value`` (numbers, bools as 1/0) or ``text`` (strings, timestamps). ``date`` is the week the
   card describes, separate from the run time, so past scores can be joined to later returns
   without look-ahead. New card fields need no schema change.
-* ``steps`` — dependency-graph outcomes: (run, ticker, node) -> toolkit, status
-  (pass / fail / skip / error) and reason — see :mod:`solaraalpha.graph`.
+* ``steps`` — pipeline outcomes: (run, ticker, node = toolkit id) -> toolkit, status
+  (pass / fail / skip / error) and reason — see :mod:`solaraalpha.pipeline`.
 * ``prices`` / ``fundamentals`` — what the source returned, stored only when a row is new or
   differs from the latest stored version, so :func:`load_prices` / :func:`load_fundamentals`
   can rebuild what was known on any past date (``as_seen``) without duplicating history.
@@ -102,7 +102,7 @@ def save_run(
 ) -> int:
     """Record one run: its model ``cards`` (``{model: dataclass}``) and input snapshots.
 
-    ``steps`` are graph outcomes ``(node, toolkit, status, reason)`` for ``ticker``.
+    ``steps`` are pipeline outcomes ``(node, toolkit, status, reason)`` for ``ticker``.
 
     ``daily`` is the frame from :func:`solaraalpha.data.prices.fetch_daily` as fetched (before
     cleaning), ``fund`` the one from :func:`solaraalpha.data.fundamentals.fetch_fundamentals`.
@@ -303,7 +303,7 @@ def load_results(
 
 
 def load_steps(ticker: str | None = None, path: Path | None = None) -> pd.DataFrame:
-    """All saved graph outcomes, with each run's time, script and commit."""
+    """All saved pipeline outcomes, with each run's time, script and commit."""
     sql = "SELECT r.started_at, r.script, r.git_sha, s.* FROM steps s JOIN runs r USING (run_id)"
     params = [ticker] if ticker is not None else []
     if ticker is not None:

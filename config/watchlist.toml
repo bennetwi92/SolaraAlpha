@@ -1,0 +1,3 @@
+# Stocks the weekly pipeline runs (scripts/scan.py, .github/workflows/scan.yml).
+# Add instruments as they are chosen.
+tickers = ["JET2.L"]

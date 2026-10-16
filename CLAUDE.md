@@ -43,11 +43,13 @@ Current state:
   refresh after each results / trading update), updated for the live fuel curve and FX, valued
   at the holding horizon; news goes in as driver shocks. See docs/decisions/0009.
 - Model outputs for the scorecard are scores in **[-1, +1]** (+ = bullish / favourable).
-- Toolkits run as a **dependency graph** (docs/decisions/0008): toolkits are registered by id in
-  `solaraalpha/toolkits.py`, each with a pass/fail verdict; graphs (`config/graphs/`) chain them
-  (a node runs only if its `needs` passed); universes (`config/universes/`) map tickers to a graph.
-  `scripts/scan.py` runs a universe, a stock or one toolkit; GitHub Actions run it weekly
-  (`scan.yml`) or on demand for one stock (`stock.yml`). Gate thresholds are placeholders.
+- Toolkits run as **one serialised weekly pipeline** (docs/decisions/0010): toolkits are
+  registered by id in `solaraalpha/toolkits.py`, each with a fixed pass/fail verdict; the stages
+  are `WEEKLY` in `solaraalpha/pipeline.py` — `screen` (technical + levels, independent, both must
+  pass) → `fundamentals` → `events`. Each stage runs on every stock still in before the next
+  starts. Stocks: `config/watchlist.toml`. GitHub Actions run it Sunday (`scan.yml`) or on
+  demand for one stock (`stock.yml`). Thresholds are placeholders. Daily tasks (news,
+  announcements, volatility) and the agent stage are not built yet.
 - All price data must pass through `check_prices` (review the issues), `clean_prices` and
   `trim_to_consistent` before use.
 
@@ -84,9 +86,9 @@ Current state:
 | Jet2 news analyst (agent) | `/jet2-value <news or question>` in Claude Code |
 | Read one announcement | `uv run python scripts/announcement.py <NSM url>` |
 | Events analyst (agent) | `/events JET2.L` in Claude Code |
-| Scan a universe through its graph | `uv run python scripts/scan.py --universe watchlist [--save]` (`all` = every universe) |
-| One stock through a graph / one toolkit | `uv run python scripts/scan.py JET2.L --graph long_swing` / `--toolkit technical [--param k=v]` |
-| List toolkits, graphs, universes | `uv run python scripts/scan.py --list` |
+| Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
+| Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
+| List stages and toolkits | `uv run python scripts/scan.py --list` |
 | Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `fundamentals` / `jet2_value` / `scan` |
 | Notebooks | `make notebook` |
 
@@ -98,12 +100,13 @@ Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `u
 src/solaraalpha/        importable package — all reusable code lives here
   config.py             Settings (env vars prefixed SOLARA_, loaded from .env); data paths
   log.py                get_logger(__name__)
-  store.py              results DB (SQLite): runs, model cards, graph steps, price/fundamental
+  store.py              results DB (SQLite): runs, model cards, pipeline steps, price/fundamental
                         snapshots; save_run / load_results / load_steps / latest / load_prices
                         — see docs/decisions/0007
-  toolkits.py           toolkit register: id -> run fn + default pass conditions; Inputs (lazy,
-                        shared per-ticker data) — see docs/decisions/0008
-  graph.py              graphs + universes from config/ TOML, conditions, run_graph traversal
+  toolkits.py           toolkit register: id -> run fn + pass conditions; Inputs (lazy,
+                        shared per-ticker data)
+  pipeline.py           WEEKLY stages, conditions, run_pipeline (stage by stage) — see
+                        docs/decisions/0010
   data/                 fetching, cleaning, storage of external data
     http.py             shared requests session with retry/backoff — use for all HTTP
     cache.py            @parquet_cache decorator for DataFrame-returning fetchers
@@ -128,9 +131,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         fuel curve / FX, horizon valuation, news shocks, Monte Carlo — 0009
   portfolio/            portfolio construction / risk (later phase)
 scripts/                thin CLI entry points (argparse) that call into the package
-config/graphs/          dependency graphs (<id>.toml): nodes, needs, params, pass conditions
-config/universes/       universes (<id>.toml): tickers -> graph
-.github/workflows/      ci.yml (checks), scan.yml (weekly universe scan), stock.yml (one stock)
+config/watchlist.toml   stocks the weekly pipeline runs
+.github/workflows/      ci.yml (checks), scan.yml (weekly pipeline, Sunday), stock.yml (one stock)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
 notebooks/              exploration only; promote anything reused into src/
@@ -192,6 +194,6 @@ GitHub issues are the backlog and the hand-off between threads/agents.
 - When adding a data source: add the fetcher in `src/solaraalpha/data/`, a fixture-based test,
   and an entry in `docs/data-sources.md`.
 - When adding a toolkit: register it in `toolkits.py` with `@toolkit(id, passes=...)` (its
-  verdict card under its own id, with a `date` field), then use it in a graph by id.
+  verdict card under its own id, with a `date` field), then add it to a stage in `WEEKLY`.
 - When making a non-obvious design choice, add a short ADR in `docs/decisions/`.
 - Update this file when conventions, layout or commands change.

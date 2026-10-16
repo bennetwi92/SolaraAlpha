@@ -1,5 +1,8 @@
 # 0008 — Toolkits run as a dependency graph, per universe, from TOML config
 
+**Superseded by [0010](0010-weekly-pipeline.md)** — graphs and universes replaced by one
+stage-by-stage weekly pipeline. The toolkit register and conditions carried over.
+
 **Context.** We will run many instruments, each through several toolkits (technical, levels,
 fundamentals, events, more later). Most stocks are not worth the later, slower or costlier
 steps in a given week, so a cheap screen should gate the rest: a weekly scan runs the

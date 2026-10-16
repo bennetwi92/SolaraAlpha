@@ -1,5 +1,0 @@
-# A universe: instruments and the graph each runs (by id, config/graphs/<id>.toml).
-# Override the graph for one instrument under [graphs], e.g. "XYZ.L" = "other_graph".
-description = "Single-stock watchlist; add instruments as they are chosen."
-graph = "long_swing"
-tickers = ["JET2.L"]

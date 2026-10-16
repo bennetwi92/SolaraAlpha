@@ -1,14 +1,13 @@
-"""Toolkit register: every model the dependency graph can run, by id.
+"""Toolkit register: every model the weekly pipeline can run, by id.
 
 A toolkit is a function ``(Inputs, **params) -> {model: card}`` registered with
 :func:`toolkit`. The card stored under the toolkit's own id is its *verdict card*: the toolkit's
 ``passes`` conditions (e.g. ``"trend >= 0.25"``) are checked against it to give the overall
-pass / fail that lets a graph move on (see :mod:`solaraalpha.graph`). Graph nodes may override
-``passes``; with none, a toolkit passes whenever it runs. Other cards (e.g. ``position``) are
-saved but not gated.
+pass / fail that lets a stock move on (see :mod:`solaraalpha.pipeline`). With no conditions, a
+toolkit passes whenever it runs. Other cards (e.g. ``position``) are saved but not gated.
 
 :class:`Inputs` fetches each ticker's data once, on first use, and shares it across every
-toolkit run for that ticker, so a graph costs one price fetch however many nodes it has.
+toolkit run for that ticker, so a pipeline run costs one price fetch per stock.
 """
 
 from __future__ import annotations
@@ -92,7 +91,7 @@ def get(id: str) -> Toolkit:
         raise KeyError(f"unknown toolkit {id!r}; registered: {', '.join(REGISTRY)}") from None
 
 
-# Default verdicts are deliberately simple long-side screens; graphs override them per node.
+# Pass conditions are fixed long-side screens (placeholders until checked against returns).
 
 
 @toolkit("technical", passes=("trend >= 0.25", "momentum > 0"))
