@@ -151,6 +151,7 @@ tests/                  pytest; mirrors src/ structure
 data/                   gitignored; raw/ processed/ cache/ created on demand
 docs/
   data-sources.md       register of every external data source, its terms and limits
+  user-story-map.md     end-to-end portfolio flows (weekly + daily), what's built vs to deliver
   decisions/            short ADRs for non-obvious choices (NNNN-title.md)
 ```
 
