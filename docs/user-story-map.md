@@ -248,7 +248,7 @@ labelled as such (no look-ahead in the record, and the live decision uses what's
 | S4.2 | As the owner I want a **trade plan** per ACT stock: entry type (buy-stop at `trigger` if coiled, else limit near the close / Monday open), entry validity (e.g. good for 1 week), initial stop, targets, holding horizon (2–16 weeks), trailing rule (chandelier 3 ATR, ADR 0003), review dates (before known events). | R1 | ⬜ · #112 |
 | S4.3 | As the owner I want **position size** from risk: shares = (capital × `risk_per_trade`) ÷ (entry − stop), capped by `max_position_pct`, liquidity (`max_adv_pct`) and cash. | R1 | ⬜ · #112 |
 | S4.4 | As the owner I want a **portfolio fit check** before a plan is drafted: max positions, sector cap, total heat, correlation with open positions, event clash (results within N days of entry). It reports breaches and ranks candidates if the slots run out. | R1 | ⬜ · #113 |
-| S4.5 | As the owner I want **draft positions and draft orders** written to the DB (positions, orders tables) with a status, so there's one record from plan to close. | R1 | ⬜ · #106, #114 |
+| S4.5 | As the owner I want **draft positions and draft orders** written to the DB (positions, orders tables) with a status, so there's one record from plan to close. | R1 | 🟡 tables + domain layer `portfolio/book.py` (#106); drafting from plans · #114 |
 | S4.6 | As the owner I want every card that justified the trade (technical, levels, RS, fundamentals, validate, research) **linked to the position as its entry conditions**: run_id + ticker + model, plus a frozen copy of the key fields, so the monitor can compare "then" with "now". | R1 | ⬜ · #114 |
 | S4.7 | As the owner I want the research's kill criteria stored as **thesis conditions** on the position (e.g. "FY guidance cut", "close < 40w MA", "fuel > $X"), each either machine-checkable (field op value) or agent-checked text. | R1 | ⬜ · #114 |
 | S4.8 | As the owner I want a **weekly pack** (markdown / artifact): new ACT plans with size and orders, the WATCH list with what would trigger it, open-position actions, portfolio heat and cash. | R1 | 🟡 scan job summary lists stage outcomes only · #115 |
@@ -270,7 +270,7 @@ labelled as such (no look-ahead in the record, and the live decision uses what's
 |---|---|---|---|
 | S6.1 | As the owner I want to enter a fill against an order: date-time, qty, price, commission, stamp duty / fees (AIM shares are currently exempt from UK stamp duty; record any fee anyway). | R1 | ⬜ · #108 |
 | S6.2 | As the owner I want to mark an order **not filled / expired / cancelled**, and a part fill to leave the rest open. | R1 | ⬜ · #108 |
-| S6.3 | As the owner I want a first fill to open the position, and it to show average cost, shares, risk at the stop and R. | R1 | ⬜ · #106, #108 |
+| S6.3 | As the owner I want a first fill to open the position, and it to show average cost, shares, risk at the stop and R. | R1 | 🟡 `position_state` (#106); opening on first fill · #108 |
 | S6.4 | As the owner I want each newly opened position to get a **protective stop order** drafted for me to place. | R1 | ⬜ · #108 |
 | S6.5 | As the owner I want a reminder of orders past their validity with no fill entered. | R2 | ⬜ · #130 |
 | S6.6 | As the owner I want fills reconciled against a broker statement / CSV export, if the broker offers one, so manual entry errors show up. | R3 | ⬜ (depends on the broker; owner to choose) · #141 |

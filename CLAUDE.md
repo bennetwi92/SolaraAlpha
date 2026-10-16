@@ -27,7 +27,8 @@ Current state:
 - Price data is **fetched fresh each run** (no `@parquet_cache`). With `--save` the raw fetch is
   also snapshotted into the results DB (`solaraalpha.store`) — for the record, never as a cache.
 - **Results DB**: scripts' `--save` records the run, model cards and input snapshots in an
-  append-only SQLite DB — hosted on **Turso** when `SOLARA_TURSO_URL` / `SOLARA_TURSO_TOKEN` are
+  append-only SQLite DB (the **book** — positions, orders, fills, cash — lives in the same DB,
+  `portfolio/book.py`: state changes are new event rows, never updates) — hosted on **Turso** when `SOLARA_TURSO_URL` / `SOLARA_TURSO_TOKEN` are
   set (GitHub secrets, cloud env vars, `.env`), else the local `data/solara.db`. See
   docs/decisions/0007, 0013.
 - Price history: fetch the **last 5 years** (default), then cut per stock to the span after
@@ -149,6 +150,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         fuel curve / FX, horizon valuation, news shocks, Monte Carlo — 0009
   portfolio/            portfolio construction, booking and risk
     rules.py            Rules dataclass + load_rules (config/portfolio.toml, validated)
+    book.py             the book: positions, orders, fills, cash, entry/thesis conditions as
+                        append-only event tables in the results DB; position_state, to_account
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM UK 50 snapshot)
 config/benchmarks.toml  per-stock market / industry / peers for relative strength
