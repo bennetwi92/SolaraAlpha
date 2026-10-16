@@ -121,7 +121,8 @@ def _fundamentals(x: Inputs, as_of: str | None = None) -> Cards:
 class EventsCard:
     """Summary of an event pack; interpretation is the `/events` agent's job."""
 
-    date: pd.Timestamp  # when the pack was built
+    date: pd.Timestamp  # week (Friday) of the last completed weekly bar, as the other cards
+    generated: pd.Timestamp  # when the pack was built (news can run past ``date``)
     announcements: int  # material filings in the window
     max_abs_z: float  # largest reaction among them (NaN: none / no prices)
     next_event: pd.Timestamp | None  # likeliest date of the next expected scheduled event
@@ -140,7 +141,8 @@ def _events(x: Inputs, days: int = 7, horizon: int = 16, out: str | None = None)
     nxt = min((pd.Timestamp(e["likely"]) for e in pack["expected_events"]), default=None)
     return {
         "events": EventsCard(
-            date=now,
+            date=x.weekly.index[-1],
+            generated=now,
             announcements=len(pack["announcements"]),
             max_abs_z=max(zs, default=float("nan")),
             next_event=nxt,

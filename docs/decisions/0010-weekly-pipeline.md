@@ -19,8 +19,11 @@ condition-driven DAG are more machinery than that needs.
 - **Watchlist** is one list, `config/watchlist.toml`. `scripts/scan.py` runs it, or given
   tickers, or one toolkit on one stock (`--toolkit … --param k=v`).
 - **Schedule:** `scan.yml`, Sunday 18:17 UTC (after Friday's weekly bar, before Monday's open),
-  plus manual. `stock.yml` runs one stock on demand. Each stock is saved as one run in the
-  results DB (`steps` rows keyed by toolkit id).
+  plus manual. `stock.yml` runs one stock on demand. With `--save` the whole scan is one run
+  in the results DB (`start_run`, then `save_ticker` per stock): every stock's cards plus a
+  `steps` row per (stock, toolkit) with its stage, so a week's shortlist is one `run_id`.
+  Every card is dated by the week it describes (the last completed Friday), events included
+  (its build time is the card's `generated`), so a stock's cards join on `date`.
 
 **Consequences / open points.**
 - Daily tasks (news / announcements during the week, volatility events) will be a second,
