@@ -17,6 +17,7 @@ with ``with conn:`` where several must land together.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -638,3 +639,189 @@ def _planned_stop(conn: Conn, position_id: int) -> float | None:
         if p.get("stop") is not None:
             return float(p["stop"])
     return None
+
+
+# ---------------------------------------------------------------------------- operations
+# Multi-step bookings the CLI (scripts/book.py) and the planner call; each is several INSERTs
+# that the caller wraps in one ``with conn:`` transaction.
+
+
+def draft_position(
+    conn: Conn,
+    ticker: str,
+    entry: float | None,
+    stop: float,
+    qty: int,
+    type: str = "limit",
+    target: float | None = None,
+    valid_days: int | None = None,
+    horizon_weeks: int | None = None,
+    thesis: str = "",
+    opened_from_run_id: int | None = None,
+    payload: dict[str, Any] | None = None,
+    actor: str = OWNER,
+    at: str | None = None,
+    rules: Rules | None = None,
+) -> tuple[int, int]:
+    """Create a draft position with its entry order; returns ``(position_id, order_id)``.
+
+    The planned ``stop`` (and ``target``) live in the ``drafted`` payload, merged over
+    ``payload`` (e.g. a full trade plan); the protective stop order is drafted when the first
+    fill arrives. ``valid_days`` defaults to ``Rules.entry_validity_days``.
+    """
+    rules = rules or load_rules()
+    t = iso(at)
+    days = valid_days if valid_days is not None else rules.entry_validity_days
+    valid_until = (pd.Timestamp(t) + pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+    pid = new_position(
+        conn,
+        ticker,
+        1,
+        horizon_weeks,
+        thesis,
+        opened_from_run_id,
+        at=t,
+        rules=rules,
+    )
+    plan = {
+        **(payload or {}),
+        "entry": entry,
+        "entry_type": type,
+        "stop": stop,
+        "target": target,
+        "qty": qty,
+        "valid_until": valid_until,
+    }
+    position_event(conn, pid, "drafted", plan, actor=actor, at=t)
+    oid = add_order(conn, pid, 1, type, qty, entry, "entry", valid_until, "draft", actor, at=t)
+    return pid, oid
+
+
+def approve_position(conn: Conn, position_id: int, reason: str = "", actor: str = OWNER) -> None:
+    """Position ``approved``; its draft orders ``approved`` with it."""
+    t = now()
+    position_event(conn, position_id, "approved", actor=actor, reason=reason, at=t)
+    for oid in orders(conn, position_id, status="draft")["order_id"]:
+        order_event(conn, int(oid), "approved", actor=actor, reason=reason, at=t)
+
+
+def reject_position(conn: Conn, position_id: int, reason: str, actor: str = OWNER) -> None:
+    """Position ``rejected``; every open order ``cancelled``."""
+    if not reason:
+        raise ValueError("a rejection needs a reason")
+    t = now()
+    position_event(conn, position_id, "rejected", actor=actor, reason=reason, at=t)
+    cancel_open_orders(conn, position_id, reason=f"rejected: {reason}", actor=actor, at=t)
+
+
+def cancel_open_orders(
+    conn: Conn, position_id: int, reason: str, actor: str = OWNER, at: str | None = None
+) -> list[int]:
+    od = orders(conn, position_id)
+    ids = [int(o) for o in od.loc[od["status"].isin(OPEN_ORDER), "order_id"]]
+    for oid in ids:
+        order_event(conn, oid, "cancelled", actor=actor, reason=reason, at=at)
+    return ids
+
+
+def replace_order(
+    conn: Conn,
+    order_id: int,
+    qty: int | None = None,
+    price: float | None = None,
+    reason: str = "",
+    actor: str = OWNER,
+    at: str | None = None,
+    status: str | None = None,
+) -> int:
+    """Cancel ``order_id`` and add a copy with the new ``qty`` / ``price``; returns the new id.
+
+    The copy starts ``draft`` if the old order was a draft, else ``approved`` (a placed order's
+    replacement has to be placed again). Rows are never mutated.
+    """
+    old = _order(conn, order_id)
+    old_status = order_status(conn, order_id)
+    if old_status not in OPEN_ORDER:
+        raise ValueError(f"order {order_id} is {old_status}; nothing to replace")
+    t = iso(at)
+    order_event(conn, order_id, "cancelled", actor=actor, reason=reason or "replaced", at=t)
+    return add_order(
+        conn,
+        int(old["position_id"]),
+        int(old["side"]),
+        str(old["type"]),
+        int(qty if qty is not None else old["qty"]),
+        float(price) if price is not None else (None if old["type"] == "market" else old["price"]),
+        str(old["purpose"]),
+        old["valid_until"] if pd.notna(old["valid_until"]) else None,
+        status or ("draft" if old_status == "draft" else "approved"),
+        actor,
+        reason,
+        at=t,
+    )
+
+
+def amend_position(
+    conn: Conn,
+    position_id: int,
+    qty: int | None = None,
+    price: float | None = None,
+    stop: float | None = None,
+    reason: str = "",
+    actor: str = OWNER,
+) -> dict[str, Any]:
+    """Change the entry order's size / price and/or the planned stop on a draft or approved
+    position. Records an ``amended`` event (old → new) and replaces the entry order (cancel +
+    new row). Returns the event payload."""
+    if qty is None and price is None and stop is None:
+        raise ValueError("nothing to amend: pass qty, price or stop")
+    status = position_status(conn, position_id)
+    if status not in POSITION_TRANSITIONS["amended"]:
+        raise ValueError(f"position {position_id} is {status}; cannot record 'amended'")
+    t = now()
+    od = orders(conn, position_id)
+    entry = od[(od["purpose"] == "entry") & od["status"].isin(OPEN_ORDER)]
+    planned = _planned_stop(conn, position_id)
+    old: dict[str, Any] = {"stop": planned}
+    new: dict[str, Any] = {"stop": stop if stop is not None else planned}
+    if entry.empty:
+        if qty is not None or price is not None:
+            raise ValueError(f"position {position_id} has no open entry order to amend")
+    else:
+        row = entry.iloc[-1]
+        old |= {"order_id": int(row["order_id"]), "qty": int(row["qty"]), "price": row["price"]}
+        new |= {
+            "qty": int(qty) if qty is not None else int(row["qty"]),
+            "price": float(price) if price is not None else row["price"],
+        }
+        if qty is not None or price is not None:
+            new["order_id"] = replace_order(
+                conn, int(row["order_id"]), qty, price, reason or "amended", actor, t
+            )
+    payload = {"old": old, "new": new, "stop": new["stop"]}
+    position_event(conn, position_id, "amended", payload, actor=actor, reason=reason, at=t)
+    return payload
+
+
+def place_order(
+    conn: Conn, order_id: int, broker_ref: str | None = None, at: str | None = None
+) -> None:
+    order_event(conn, order_id, "placed", broker_ref=broker_ref, actor=OWNER, at=at)
+
+
+def tickets(conn: Conn) -> pd.DataFrame:
+    """Approved, not yet placed orders as a broker-ready table (oldest first)."""
+    od = orders(conn, status="approved")
+    pos = query("SELECT position_id, ticker, currency FROM positions", conn)
+    out = od.merge(pos, on="position_id", how="left")
+    cols = ["order_id", "position_id", "ticker", "side", "type", "qty", "price", "currency"]
+    return out[[*cols, "valid_until", "purpose"]].reset_index(drop=True)
+
+
+def fmt_price(price: float | None, currency: str | None) -> str:
+    """``1520.0, 'GBp'`` -> ``'1,520p'``; ``None`` -> ``'market'``."""
+    if price is None or (isinstance(price, float) and math.isnan(price)):
+        return "market"
+    if currency in ("GBp", "GBX"):
+        return f"{price:,.0f}p" if float(price).is_integer() else f"{price:,.2f}p"
+    return f"{price:,.2f} {currency or ''}".strip()

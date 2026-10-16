@@ -258,11 +258,11 @@ labelled as such (no look-ahead in the record, and the live decision uses what's
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S5.1 | As the owner I want to approve, amend (size, price) or reject each draft position with a reason, recorded in the DB. | R1 | ⬜ · #107 |
-| S5.2 | As the owner I want approved orders listed as broker-ready tickets (ticker, side, type, qty, limit/stop price, validity) to place by hand. | R1 | ⬜ · #107 |
-| S5.3 | As the owner I want to mark orders as **placed**, with the broker reference. | R1 | ⬜ · #107 |
+| S5.1 | As the owner I want to approve, amend (size, price) or reject each draft position with a reason, recorded in the DB. | R1 | ✅ `book.py approve / amend / reject` · #107 |
+| S5.2 | As the owner I want approved orders listed as broker-ready tickets (ticker, side, type, qty, limit/stop price, validity) to place by hand. | R1 | ✅ `book.py tickets` · #107 |
+| S5.3 | As the owner I want to mark orders as **placed**, with the broker reference. | R1 | ✅ `book.py placed ORDER_ID --ref` · #107 |
 | S5.4 | As the owner I want rejections and amendments counted, so I can see where the system and I disagree (A11). | R2 | ⬜ · #130 |
-| S5.5 | As the owner I want a simple CLI (`scripts/book.py approve|reject|placed ...`) and later a page, rather than raw SQL. | R1 / R2 | ⬜ · #107 |
+| S5.5 | As the owner I want a simple CLI (`scripts/book.py approve|reject|placed ...`) and later a page, rather than raw SQL. | R1 / R2 | ✅ CLI `scripts/book.py` (#107); a page is R2 |
 
 ### A6 — Record fills (owner, daily)
 
