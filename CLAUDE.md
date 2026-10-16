@@ -129,7 +129,8 @@ src/solaraalpha/        importable package — all reusable code lives here
     technical.py        weekly technical model (any stock): trend/momentum/entry scores,
                         open-position assessment — see docs/decisions/0003
     levels.py           weekly levels model (any stock): S/R zones, trendlines, 52w/5y
-                        highs/lows, blue sky; stop/targets/reward:risk — see docs/decisions/0004
+                        highs/lows, blue sky, coil (squeeze → breakout trigger);
+                        stop/targets/reward:risk — see docs/decisions/0004
     fundamentals.py     fundamentals model (one stock): growth/value/quality scores,
                         point-in-time via publication lags — see docs/decisions/0005
     relative_strength.py  relative strength (any stock) vs market, industry, peer basket:

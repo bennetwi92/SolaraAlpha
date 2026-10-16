@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict
 
-from solaraalpha.analysis.levels import level_map, levels_card, trendline
+from solaraalpha.analysis.levels import COIL_WEEKS, coil, level_map, levels_card, trendline
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.prices import fetch_daily
 from solaraalpha.store import save_run
@@ -46,6 +46,13 @@ def main() -> None:
             else f"{kind} trendline: {t.start:%Y-%m-%d} {t.start_price:.2f} -> {t.end:%Y-%m-%d} "
             f"{t.end_price:.2f}, {t.slope:+.2%}/wk, {t.touches} touches, next week {t.value:.2f}"
         )
+
+    c = coil(weekly)
+    print(
+        f"coil (last {COIL_WEEKS} weeks): span {c.span_atr:.2f} ATR{' — coiled' if c.coiled else ''}; "
+        f"highs {c.upper:.2f} {c.upper_slope:+.2%}/wk, lows {c.lower:.2f} {c.lower_slope:+.2%}/wk"
+        + (f", apex in {c.apex_weeks:.1f} weeks" if c.apex_weeks == c.apex_weeks else "")
+    )
 
     print(f"\nLevels card ({'short' if args.short else 'long'}):")
     card = levels_card(weekly, side)
