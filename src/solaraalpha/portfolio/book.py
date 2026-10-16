@@ -844,8 +844,10 @@ def fill(
 
     A fill on a buying order (``entry`` / ``add``) opens the position on its first fill and
     (re)drafts the **protective stop**: an ``approved`` stop order at the planned stop for every
-    share held, replacing the previous stop order so it always covers the whole holding. Returns
-    ``{"fill_id", "order_status", "opened", "stop_order_id", "shares"}``.
+    share held, replacing the previous stop order so it always covers the whole holding. A fill on
+    a selling order that brings the shares to zero **closes** the position (:func:`close_position`,
+    reason from :func:`exit_reason_for`). Returns ``{"fill_id", "order_status", "opened",
+    "stop_order_id", "shares", "closed"}`` (``closed`` is the :class:`CloseSummary` or None).
     """
     t = iso(at)
     fid = add_fill(conn, order_id, qty, price, t, commission, fees, actor)
@@ -865,6 +867,10 @@ def fill(
             out["opened"] = True
         out["stop_order_id"] = protect(conn, pid, actor=actor, at=t)
     out["shares"] = position_state(conn, pid).shares
+    out["closed"] = None
+    if order["purpose"] not in BUY_PURPOSES and out["shares"] == 0:
+        reason = exit_reason_for(conn, order_id)
+        out["closed"] = close_position(conn, pid, reason, actor=actor, at=t)
     return out
 
 
@@ -952,3 +958,160 @@ def expire_orders(conn: Conn, as_of: str | None = None, actor: str = OWNER) -> l
             as_of,
         )
     return ids
+
+
+# ---------------------------------------------------------------------------- closing
+
+EXIT_REASONS = (
+    "stop",
+    "trailing_stop",
+    "target",
+    "thesis_broken",
+    "time",
+    "discretionary",
+    "corporate_action",
+)
+
+
+@dataclass(frozen=True)
+class CloseSummary:
+    """Outcome of a closed trade, computed from the record (money in the account currency)."""
+
+    position_id: int
+    ticker: str
+    exit_reason: str
+    gross_pnl: float
+    costs: float
+    net_pnl: float
+    r_multiple: float  # net P&L / initial risk (NaN if the initial stop is unknown)
+    holding_weeks: float  # first fill to last fill
+    entry_avg: float  # quote currency
+    exit_avg: float
+    shares: int  # shares traded on entry
+    opened_at: str | None
+    closed_at: str | None
+    mfe: float  # max favourable excursion from entry_avg, fraction (NaN without prices)
+    mae: float  # max adverse excursion, fraction (<= 0)
+    mfe_r: float  # the same in R
+    mae_r: float
+
+
+def exit_position(
+    conn: Conn,
+    position_id: int,
+    reason: str,
+    type: str = "market",
+    price: float | None = None,
+    qty: int | None = None,
+    actor: str = OWNER,
+    at: str | None = None,
+) -> int:
+    """Draft an ``approved`` exit order for ``qty`` shares (default all) tagged with ``reason``
+    (one of :data:`EXIT_REASONS`, kept in the order's ``approved`` event). Returns the order id.
+    """
+    if reason not in EXIT_REASONS:
+        raise ValueError(f"exit reason must be one of {EXIT_REASONS}, got {reason!r}")
+    st = position_state(conn, position_id)
+    if st.status != "open" or st.shares <= 0:
+        raise ValueError(f"position {position_id} is {st.status} with {st.shares} shares; no exit")
+    n = int(qty) if qty is not None else st.shares
+    if n > st.shares:
+        raise ValueError(f"exit qty {n} exceeds the {st.shares} shares held")
+    return add_order(
+        conn, position_id, -st.side, type, n, price, "exit", None, "approved", actor, reason, at=at
+    )
+
+
+def exit_reason_for(conn: Conn, order_id: int) -> str:
+    """The exit reason a fill on ``order_id`` implies: the tag on an exit order's ``approved``
+    event; ``target`` for a target order; ``stop``, or ``trailing_stop`` once the stop was raised."""
+    order = _order(conn, order_id)
+    purpose = str(order["purpose"])
+    if purpose == "exit":
+        ev = order_events(conn, order_id)
+        tag = ev.loc[ev["status"] == "approved", "reason"]
+        return (
+            str(tag.iloc[-1]) if not tag.empty and tag.iloc[-1] in EXIT_REASONS else "discretionary"
+        )
+    if purpose == "target":
+        return "target"
+    if purpose == "stop":
+        ev = position_events(conn, int(order["position_id"]))
+        return "trailing_stop" if (ev["kind"] == "stop_raised").any() else "stop"
+    raise ValueError(f"order {order_id} ({purpose}) does not exit a position")
+
+
+def close_position(
+    conn: Conn, position_id: int, reason: str, actor: str = OWNER, at: str | None = None
+) -> CloseSummary:
+    """Record the ``closed`` event (payload: the close summary, excursions NaN) and cancel every
+    remaining open order. Only when no shares are held."""
+    st = position_state(conn, position_id)
+    if st.shares != 0:
+        raise ValueError(f"position {position_id} still holds {st.shares} shares; cannot close")
+    if reason not in EXIT_REASONS:
+        raise ValueError(f"exit reason must be one of {EXIT_REASONS}, got {reason!r}")
+    t = iso(at)
+    cancel_open_orders(conn, position_id, reason="position closed", actor=actor, at=t)
+    summary = close_summary(conn, position_id, reason=reason, closed_at=t)
+    position_event(conn, position_id, "closed", asdict(summary), actor=actor, reason=reason, at=t)
+    return summary
+
+
+def close_summary(
+    conn: Conn,
+    position_id: int,
+    daily: pd.DataFrame | None = None,
+    reason: str | None = None,
+    closed_at: str | None = None,
+) -> CloseSummary:
+    """Outcome numbers for a closed (or closing) position. With ``daily`` prices (checked and
+    cleaned by the caller), MFE / MAE use the highs and lows between the first and last fill."""
+    st = position_state(conn, position_id)
+    fl = fills(conn, position_id=position_id)
+    if fl.empty:
+        raise ValueError(f"position {position_id} has no fills")
+    sells = fl[fl["side"] != st.side]
+    exit_avg = (
+        float((sells["qty"] * sells["price"]).sum() / sells["qty"].sum())
+        if len(sells)
+        else float("nan")
+    )
+    first, last = pd.Timestamp(fl["at"].iloc[0]), pd.Timestamp(fl["at"].iloc[-1])
+    if reason is None:
+        ev = position_events(conn, position_id)
+        closed = ev[ev["kind"] == "closed"]
+        reason = str(closed["reason"].iloc[-1]) if not closed.empty else "unknown"
+        closed_at = str(closed["at"].iloc[-1]) if not closed.empty else None
+    gross = st.realised_pnl + st.costs
+    r_mult = st.realised_pnl / st.r_unit if st.r_unit else float("nan")
+    mfe = mae = mfe_r = mae_r = float("nan")
+    if daily is not None and not daily.empty and st.entry_shares:
+        span = daily[(daily.index >= first.normalize()) & (daily.index <= last.normalize())]
+        if not span.empty:
+            hi, lo = float(span["high"].max()), float(span["low"].min())
+            best, worst = (hi, lo) if st.side == 1 else (lo, hi)
+            mfe = max(0.0, st.side * (best / st.entry_avg - 1))
+            mae = min(0.0, st.side * (worst / st.entry_avg - 1))
+            if st.r_unit:
+                per_r = to_account(st.entry_avg * st.entry_shares, st.currency) / st.r_unit
+                mfe_r, mae_r = mfe * per_r, mae * per_r
+    return CloseSummary(
+        position_id=position_id,
+        ticker=st.ticker,
+        exit_reason=reason,
+        gross_pnl=gross,
+        costs=st.costs,
+        net_pnl=st.realised_pnl,
+        r_multiple=r_mult,
+        holding_weeks=(last - first).total_seconds() / (7 * 86400),
+        entry_avg=st.entry_avg,
+        exit_avg=exit_avg,
+        shares=st.entry_shares,
+        opened_at=st.opened_at,
+        closed_at=closed_at,
+        mfe=mfe,
+        mae=mae,
+        mfe_r=mfe_r,
+        mae_r=mae_r,
+    )

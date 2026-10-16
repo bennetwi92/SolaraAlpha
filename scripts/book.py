@@ -14,9 +14,13 @@ uv run python scripts/book.py unfilled ORDER_ID [--reason TEXT]   # entry never 
 uv run python scripts/book.py cancel ORDER_ID [--reason TEXT]
 uv run python scripts/book.py expire [--as-of DATE]               # entry orders past valid_until
 uv run python scripts/book.py show POSITION_ID --price P          # adds R so far at price P
+uv run python scripts/book.py exit POSITION_ID --reason stop|trailing_stop|target|thesis_broken|time|discretionary|corporate_action
+                                 [--type market|limit] [--price P] [--qty N]
 
 A first fill on an entry order opens the position and drafts its protective stop order
-(approved, so it appears in `tickets` at once); later entry fills re-size that stop.
+(approved, so it appears in `tickets` at once); later entry fills re-size that stop. A stop or
+exit fill that brings the shares to zero closes the position (exit reason, P&L, R-multiple,
+holding weeks) and cancels its remaining orders; `show` adds MFE / MAE from daily prices.
 
 Every command is one transaction in the results DB (Turso when configured, else data/solara.db;
 --db PATH forces a local file). State changes are new event rows, never updates
@@ -28,11 +32,14 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Callable
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
+from solaraalpha.data.clean import check_prices, clean_prices
+from solaraalpha.data.prices import fetch_daily
 from solaraalpha.portfolio import book
 from solaraalpha.portfolio.rules import load_rules
 from solaraalpha.store import Conn
@@ -173,6 +180,29 @@ def _show(conn: Conn, a: argparse.Namespace) -> None:
         unreal = book.to_account((a.price - st.avg_cost) * st.shares * st.side, ccy)
         r = f"{unreal / st.r_unit:+.2f}R" if st.r_unit else "R unknown (no initial stop)"
         print(f"  at {book.fmt_price(a.price, ccy)}: unrealised £{unreal:,.2f}  {r}")
+    if st.status == "closed":
+        print("\nClose summary:")
+        print(
+            table(
+                pd.DataFrame([asdict(_summary(conn, a.position_id, p["ticker"]))]).T.reset_index(),
+                ["index", 0],
+            )
+        )
+
+
+def _summary(conn: Conn, position_id: int, ticker: str) -> book.CloseSummary:
+    """Close summary with MFE / MAE from fresh daily prices (checked and cleaned); without
+    prices if the fetch fails."""
+    daily = None
+    try:
+        raw = fetch_daily(ticker)
+        daily = clean_prices(raw)
+        issues = check_prices(raw)
+        if not issues.empty:
+            print(f"  ({len(issues)} price data-quality issues; see scripts/stock_prices.py)")
+    except Exception as e:
+        print(f"  (excursions unavailable: {e})")
+    return book.close_summary(conn, position_id, daily)
 
 
 def _short(d: dict[str, Any]) -> str:
@@ -222,6 +252,18 @@ def _fill(conn: Conn, a: argparse.Namespace) -> None:
     if out["stop_order_id"]:
         msg += f"; protective stop order {out['stop_order_id']} approved (see `tickets`)"
     print(msg)
+    if out["closed"] is not None:
+        c = out["closed"]
+        print(
+            f"position closed ({c.exit_reason}): net £{c.net_pnl:,.2f}"
+            f"  {c.r_multiple:+.2f}R  {c.holding_weeks:.1f} weeks; remaining orders cancelled"
+        )
+
+
+@command("exit")
+def _exit(conn: Conn, a: argparse.Namespace) -> None:
+    oid = book.exit_position(conn, a.position_id, a.reason, a.type, a.price, a.qty)
+    print(f"exit order {oid} approved ({a.reason}); place it, then `fill {oid} ...`")
 
 
 @command("unfilled")
@@ -308,6 +350,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     ex = sub.add_parser("expire", help="expire entry orders past their validity")
     ex.add_argument("--as-of", help="date (default today)")
+
+    xo = sub.add_parser("exit", help="draft an exit order with a tagged reason")
+    xo.add_argument("position_id", type=int)
+    xo.add_argument("--reason", required=True, choices=book.EXIT_REASONS)
+    xo.add_argument("--type", choices=("market", "limit"), default="market")
+    xo.add_argument("--price", type=float, help="limit price (quote currency)")
+    xo.add_argument("--qty", type=int, help="default: all shares")
 
     return p
 
