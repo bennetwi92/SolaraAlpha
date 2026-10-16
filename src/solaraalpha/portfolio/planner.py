@@ -175,7 +175,11 @@ def plan_run(conn: Conn, run_id: int, rules: Rules | None = None, dry_run: bool 
             errors.append((c.ticker, "no levels / technical card in the run"))
             continue
         daily = _prices(c.ticker, started, conn)
-        adv = adv_gbp(daily) if daily is not None and not daily.empty else None
+        liq = (cards.get("liquidity") or {}).get("adv_gbp_20")
+        if liq is not None and not (isinstance(liq, float) and math.isnan(liq)):
+            adv: float | None = float(liq)
+        else:
+            adv = adv_gbp(daily) if daily is not None and not daily.empty else None
         currency = str(daily.attrs.get("currency") or "GBp") if daily is not None else "GBp"
         try:
             plans.append(

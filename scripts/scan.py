@@ -25,6 +25,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from solaraalpha.pipeline import (
     SCREEN_TOOLKITS,
     WEEKLY,
@@ -32,7 +34,9 @@ from solaraalpha.pipeline import (
     run_pipeline,
     run_toolkit,
     screen_label,
+    stale_watchlist,
     watchlist,
+    watchlist_snapshot,
 )
 from solaraalpha.portfolio import book
 from solaraalpha.portfolio.review import Reviewed, review_positions, review_report
@@ -68,6 +72,9 @@ def _report(
 ) -> str:
     cols = [s.toolkit for s in next(iter(results.values()))]
     lines = ["## Weekly pipeline", ""]
+    stale = stale_watchlist(watchlist_snapshot(), pd.Timestamp.now(tz="UTC"))
+    if stale:
+        lines += [f"> **WARNING:** {stale}", ""]
     lines += ["| ticker | " + " | ".join(cols) + " | label |", "|---" * (len(cols) + 2) + "|"]
     for ticker, steps in results.items():
         marks = " | ".join(MARK[s.status] for s in steps)

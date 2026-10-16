@@ -3,7 +3,9 @@
 # Universe: FTSE AIM UK 50 constituents as listed on the London Stock Exchange website on
 # 2026-10-16 (londonstockexchange.com/indices/ftse-aim-uk-50-index/constituents/table).
 # Hand-maintained snapshot, not point-in-time: refresh after each quarterly FTSE review
-# (Mar / Jun / Sep / Dec). Yahoo ticker = TIDM + ".L".
+# (Mar / Jun / Sep / Dec). Yahoo ticker = TIDM + ".L". `snapshot` is the copy date: scan.py
+# warns once a review month has passed since it (solaraalpha.pipeline.stale_watchlist).
+snapshot = 2026-10-16
 tickers = [
     "ABDP.L",    # AB Dynamics
     "AET.L",     # Afentra
