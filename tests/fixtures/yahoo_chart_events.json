@@ -1,0 +1,5 @@
+{"chart":{"result":[{"meta":{"currency":"GBp","symbol":"JET2.L","exchangeName":"LSE","exchangeTimezoneName":"Europe/London"},
+"timestamp":[1726729200,1735804800,1758178800],
+"events":{"dividends":{"1726729200":{"amount":10.7,"date":1726729200},"1735804800":{"amount":4.4,"date":1735804800},"1758178800":{"amount":12.1,"date":1758178800}},
+"splits":{"1748934000":{"date":1748934000,"numerator":2,"denominator":1,"splitRatio":"2:1"},"1751871600":{"date":1751871600,"numerator":1,"denominator":10,"splitRatio":"1:10"}}},
+"indicators":{"quote":[{"open":[1500.0,1510.0,1520.0],"high":[1510.0,1520.0,1530.0],"low":[1490.0,1500.0,1510.0],"close":[1505.0,1515.0,1525.0],"volume":[100000,110000,120000]}],"adjclose":[{"adjclose":[1505.0,1515.0,1525.0]}]}}],"error":null}}

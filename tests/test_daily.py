@@ -210,8 +210,17 @@ def _fetchers(frames: dict[str, pd.DataFrame], fail: str | None = None) -> Fetch
             "url": ["u2"],
         }
     )
+    actions = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2026-10-20", "2026-10-21"]).tz_localize("UTC"),
+            "kind": ["dividend", "split"],
+            "value": [10.7, 2.0],
+            "ratio": ["", "2:1"],
+        }
+    )
     return Fetchers(
         daily=daily,
+        actions=lambda t: actions if t == "JET2.L" else actions.iloc[0:0],
         announcements=lambda lei, start=None, end=None: _ann(),
         issuer=lambda t: Issuer(t, "GB00", "LEI-1", "Jet2 plc", "AIM"),
         news=lambda query, days=7: news,
@@ -235,6 +244,14 @@ def test_run_daily_saves_triggers_and_reports(
     assert "### Owner actions" in out and "traded through the stop 1,400.0" in out
     assert "reached the target 1,800.0" in out and "book.py exit 1 --reason target" in out
     assert "closed 301.0 above the trigger 300.0: place entry order" in out
+    assert (
+        "ex-dividend 2026-10-20: 10.70p x 100 shares = £10.70 (position 1): confirm against the broker and record — `book.py cash dividend JET2.L 10.70 --at 2026-10-20`"
+        in out
+    )
+    assert (
+        "split 2:1 on 2026-10-21 (position 1): record it — `book.py split 1 --ratio 2:1 --at 2026-10-21`"
+        in out
+    )
     assert "### Agent review needed" in out and "gapped +2.2 ATR" in out
     assert "new filing 2026-10-20T06:00 `RDN` Director buys (position 1)" in out
     assert "/monitor --run 3" in out
@@ -244,7 +261,17 @@ def test_run_daily_saves_triggers_and_reports(
 
     trig = store.load_triggers(run_id=3, path=db)
     assert sorted(trig["kind"]) == sorted(
-        ["stop_touched", "target_hit", "gap", "filing", "news", "watch_break", "entry_break"]
+        [
+            "stop_touched",
+            "target_hit",
+            "gap",
+            "filing",
+            "news",
+            "watch_break",
+            "entry_break",
+            "dividend",
+            "split",
+        ]
     )
     assert set(trig.loc[trig["kind"] == "filing", "position_id"]) == {1}
     assert (
@@ -257,11 +284,15 @@ def test_run_daily_saves_triggers_and_reports(
     )
     prices = store.load_prices("W.L", path=db)
     assert len(prices) == 60  # snapshot saved per ticker
-    # the next run only looks since this one
+    # the next run only looks since this one; a recorded dividend and split are not proposed again
     conn = book.connect(db)
+    with conn:
+        book.record_dividend(conn, "JET2.L", 10.70, at="2026-10-20T00:00:00+00:00")
+        book.split(conn, 1, "2:1", at="2026-10-21T07:00:00+00:00")
     r = run_daily(conn, _fetchers(frames))
     conn.close()
     assert r.since.startswith("2026-10-16") or r.since > "2026-10-18"
+    assert not r.of(("dividend", "split"))
 
 
 def test_one_failure_does_not_stop_the_rest(

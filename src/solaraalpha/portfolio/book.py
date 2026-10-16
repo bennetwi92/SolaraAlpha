@@ -136,6 +136,7 @@ POSITION_TRANSITIONS: dict[str, frozenset[str | None]] = {
     "revision_proposed": frozenset({"open"}),
     "revision_accepted": frozenset({"open"}),
     "revision_declined": frozenset({"open"}),
+    "split": frozenset({"open"}),
     "closed": frozenset({"open"}),
 }
 ORDER_TRANSITIONS: dict[str, frozenset[str | None]] = {
@@ -588,10 +589,23 @@ def position_state(conn: Conn, position_id: int) -> PositionState:
     pos = _position(conn, position_id)
     side, ccy = int(pos["side"]), str(pos["currency"])
     fl = fills(conn, position_id=position_id)
+    splits = _splits(conn, position_id)
 
+    # fills and splits in time order: a split scales the shares held (cost conserved)
+    steps: list[tuple[str, int, Any]] = [(at, 0, k) for at, k in splits]
+    steps += [(str(f["at"]), 1, f) for f in fl.to_dict("records")]
+    steps.sort(key=lambda x: (x[0], x[1]))
     shares, avg, realised, costs = 0, 0.0, 0.0, 0.0
     entry_qty, entry_cost = 0, 0.0
-    for f in fl.to_dict("records"):
+    for _, is_fill, item in steps:
+        if not is_fill:
+            k = float(item)
+            new_shares = int(shares * k)  # fractional entitlements are paid in cash, not booked
+            avg = avg * shares / new_shares if new_shares else avg
+            shares = new_shares
+            entry_qty = int(entry_qty * k)
+            continue
+        f = item
         q, px = int(f["qty"]), float(f["price"])
         costs += float(f["commission"]) + float(f["fees"])
         if int(f["side"]) == side:  # adding to the position
@@ -605,6 +619,9 @@ def position_state(conn: Conn, position_id: int) -> PositionState:
             shares -= q
     realised -= costs
     entry_avg = entry_cost / entry_qty if entry_qty else float("nan")
+    total_factor = 1.0
+    for _, k in splits:
+        total_factor *= k
 
     od = orders(conn, position_id)
     stops = od[(od["purpose"] == "stop") & od["status"].isin(LIVE_ORDER)]
@@ -613,6 +630,10 @@ def position_state(conn: Conn, position_id: int) -> PositionState:
     if initial is None:
         first = od[od["purpose"] == "stop"]
         initial = float(first["price"].iloc[0]) if not first.empty else None
+    if initial is not None and total_factor != 1.0:
+        initial = (
+            initial / total_factor
+        )  # planned before every split (splits need an open position)
 
     risk = to_account(max(0.0, side * (avg - stop) * shares), ccy) if stop and shares else 0.0
     r_unit = (
@@ -640,6 +661,13 @@ def position_state(conn: Conn, position_id: int) -> PositionState:
         entry_avg=entry_avg,
         opened_at=str(opened.iloc[0]) if not opened.empty else None,
     )
+
+
+def _splits(conn: Conn, position_id: int) -> list[tuple[str, float]]:
+    """``(at, factor)`` of every ``split`` event (factor = new shares per old share)."""
+    ev = position_events(conn, position_id)
+    sp = ev[ev["kind"] == "split"]
+    return [(str(a), float(p["factor"])) for a, p in zip(sp["at"], sp["payload"], strict=True)]
 
 
 def _planned_stop(conn: Conn, position_id: int) -> float | None:
@@ -996,9 +1024,10 @@ class CloseSummary:
     position_id: int
     ticker: str
     exit_reason: str
-    gross_pnl: float
+    gross_pnl: float  # trading P&L before costs
     costs: float
-    net_pnl: float
+    dividends: float  # dividends received while held (cash rows tagged with the position)
+    net_pnl: float  # gross - costs + dividends
     r_multiple: float  # net P&L / initial risk (NaN if the initial stop is unknown)
     holding_weeks: float  # first fill to last fill
     entry_avg: float  # quote currency
@@ -1046,9 +1075,8 @@ def exit_reason_for(conn: Conn, order_id: int) -> str:
     if purpose == "exit":
         ev = order_events(conn, order_id)
         tag = ev.loc[ev["status"] == "approved", "reason"]
-        return (
-            str(tag.iloc[-1]) if not tag.empty and tag.iloc[-1] in EXIT_REASONS else "discretionary"
-        )
+        head = str(tag.iloc[-1]).partition(": ")[0] if not tag.empty else ""
+        return head if head in EXIT_REASONS else "discretionary"
     if purpose == "target":
         return "target"
     if purpose == "stop":
@@ -1100,7 +1128,9 @@ def close_summary(
         reason = str(closed["reason"].iloc[-1]) if not closed.empty else "unknown"
         closed_at = str(closed["at"].iloc[-1]) if not closed.empty else None
     gross = st.realised_pnl + st.costs
-    r_mult = st.realised_pnl / st.r_unit if st.r_unit else float("nan")
+    divs = dividends_for(conn, position_id)
+    net = st.realised_pnl + divs
+    r_mult = net / st.r_unit if st.r_unit else float("nan")
     mfe = mae = mfe_r = mae_r = float("nan")
     if daily is not None and not daily.empty and st.entry_shares:
         span = daily[(daily.index >= first.normalize()) & (daily.index <= last.normalize())]
@@ -1118,7 +1148,8 @@ def close_summary(
         exit_reason=reason,
         gross_pnl=gross,
         costs=st.costs,
-        net_pnl=st.realised_pnl,
+        dividends=divs,
+        net_pnl=net,
         r_multiple=r_mult,
         holding_weeks=(last - first).total_seconds() / (7 * 86400),
         entry_avg=st.entry_avg,
@@ -1131,6 +1162,154 @@ def close_summary(
         mfe_r=mfe_r,
         mae_r=mae_r,
     )
+
+
+# ---------------------------------------------------------------------------- corporate actions
+
+CORPORATE_CLOSES = ("takeover", "delisting")
+
+
+def dividends_for(conn: Conn, position_id: int) -> float:
+    """Dividends (account currency) recorded against ``position_id``."""
+    df = query(
+        "SELECT amount, currency FROM cash WHERE kind = 'dividend' AND position_id = ?",
+        conn,
+        [position_id],
+    )
+    return float(
+        sum(to_account(float(a), str(c)) for a, c in zip(df["amount"], df["currency"], strict=True))
+    )
+
+
+def position_for(conn: Conn, ticker: str, at: str | None = None) -> int | None:
+    """The position in ``ticker`` that was open at ``at`` (default now): opened on or before it
+    and not closed before it. The latest one when several match; None when none."""
+    t = iso(at)
+    found = None
+    for pid in positions(conn)[lambda d: d["ticker"] == ticker]["position_id"]:
+        ev = position_events(conn, int(pid))
+        opened = ev.loc[ev["kind"] == "opened", "at"]
+        closed = ev.loc[ev["kind"] == "closed", "at"]
+        if opened.empty or str(opened.iloc[0]) > t:
+            continue
+        if not closed.empty and str(closed.iloc[-1])[:10] < t[:10]:
+            continue
+        found = int(pid)
+    return found
+
+
+def record_dividend(
+    conn: Conn,
+    ticker: str,
+    amount: float,
+    at: str | None = None,
+    position_id: int | None = None,
+    note: str = "",
+) -> int | None:
+    """Book a dividend received (``amount`` in the account currency, GBP) against the position
+    in ``ticker`` open at ``at`` (or ``position_id``); returns that position id (None: unmatched,
+    the cash still counts in equity)."""
+    pid = position_id if position_id is not None else position_for(conn, ticker, at)
+    cash_event(conn, "dividend", amount, "GBP", pid, note or f"{ticker} dividend", at)
+    return pid
+
+
+def split(
+    conn: Conn,
+    position_id: int,
+    ratio: str,
+    at: str | None = None,
+    actor: str = OWNER,
+    reason: str = "",
+) -> dict[str, Any]:
+    """Record a share split or consolidation ``ratio`` (``NEW:OLD``, e.g. ``2:1`` doubles the
+    shares, ``1:10`` consolidates ten into one) on an open position.
+
+    Appends a ``split`` event (``factor`` = new / old); :func:`position_state` scales the shares
+    and average cost from that time (cost conserved, fractions dropped), and every open order
+    of the position is replaced at the scaled quantity and price. Returns ``{"event_id",
+    "factor", "shares", "avg_cost", "orders": {old_id: new_id}}``.
+    """
+    try:
+        new, old = (int(x) for x in ratio.split(":"))
+    except ValueError:
+        raise ValueError(f"ratio must be NEW:OLD integers, got {ratio!r}") from None
+    if new <= 0 or old <= 0:
+        raise ValueError(f"ratio parts must be positive, got {ratio!r}")
+    st = position_state(conn, position_id)
+    if st.status != "open" or st.shares <= 0:
+        raise ValueError(f"position {position_id} is {st.status} with {st.shares} shares; no split")
+    t = iso(at)
+    factor = new / old
+    eid = position_event(
+        conn,
+        position_id,
+        "split",
+        {
+            "ratio": f"{new}:{old}",
+            "new": new,
+            "old": old,
+            "factor": factor,
+            "shares_before": st.shares,
+        },
+        actor=actor,
+        reason=reason or f"split {new}:{old}",
+        at=t,
+    )
+    replaced: dict[int, int] = {}
+    od = orders(conn, position_id)
+    for o in od[od["status"].isin(OPEN_ORDER)].to_dict("records"):
+        qty = max(1, int(int(o["qty"]) * factor))
+        price = float(o["price"]) / factor if pd.notna(o["price"]) else None
+        replaced[int(o["order_id"])] = replace_order(
+            conn, int(o["order_id"]), qty, price, f"split {new}:{old}", actor, t
+        )
+    after = position_state(conn, position_id)
+    return {
+        "event_id": eid,
+        "factor": factor,
+        "shares": after.shares,
+        "avg_cost": after.avg_cost,
+        "orders": replaced,
+    }
+
+
+def corporate_close(
+    conn: Conn,
+    position_id: int,
+    price: float,
+    kind: str,
+    at: str | None = None,
+    actor: str = OWNER,
+) -> CloseSummary:
+    """Close an open position taken over or delisted: a synthetic exit fill of every share at
+    ``price`` (quote currency; 0 for a worthless delisting, no commission), exit reason
+    ``corporate_action`` (the order's approval reason keeps the ``kind``)."""
+    if kind not in CORPORATE_CLOSES:
+        raise ValueError(f"kind must be one of {CORPORATE_CLOSES}, got {kind!r}")
+    if price < 0:
+        raise ValueError(f"price must be >= 0, got {price}")
+    st = position_state(conn, position_id)
+    if st.status != "open" or st.shares <= 0:
+        raise ValueError(f"position {position_id} is {st.status} with {st.shares} shares; no close")
+    t = iso(at)
+    oid = add_order(
+        conn,
+        position_id,
+        -st.side,
+        "market",
+        st.shares,
+        None,
+        "exit",
+        None,
+        "approved",
+        actor,
+        f"corporate_action: {kind}",
+        at=t,
+    )
+    out = fill(conn, oid, st.shares, price, t, 0.0, 0.0, actor)
+    assert out["closed"] is not None
+    return out["closed"]
 
 
 # ---------------------------------------------------------------------------- revisions

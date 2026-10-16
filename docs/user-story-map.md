@@ -308,7 +308,7 @@ and WATCH stock**, and **the agent only when a check fires**.
 |---|---|---|---|
 | S9.1 | As the owner I want exit reasons tagged (stop, trailing stop, target, thesis broken, time, discretionary, corporate action) when I close. | R1 | ✅ `book.py exit --reason ...`; stop fills tag `stop` / `trailing_stop` · #109 |
 | S9.2 | As the owner I want exit fills to close the position and compute realised P&L (gross, costs, net), R-multiple, holding weeks, max favourable and adverse excursion. | R1 | ✅ auto-close on the emptying fill; `CloseSummary` (gross / costs / net, R, weeks, MFE / MAE) · #109 |
-| S9.3 | As the owner I want corporate actions handled (dividends received, splits, consolidations, takeovers, delisting) so P&L is right. | R2 | ⬜ · #133 |
+| S9.3 | As the owner I want corporate actions handled (dividends received, splits, consolidations, takeovers, delisting) so P&L is right. | R2 | ✅ dividends (daily job proposes, `book.py cash dividend`), `book.py split`, `book.py corporate-close` · #133 |
 | S9.4 | As the owner I want a short post-mortem per closed trade (agent draft from the record: entry conditions vs what happened) kept in the DB. | R2 | ⬜ · #134 |
 
 ### A10 — Portfolio view and risk
