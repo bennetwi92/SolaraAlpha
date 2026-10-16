@@ -32,6 +32,9 @@ Current state:
 - Fundamentals are fetched fresh each run too (`fetch_fundamentals`). Statement dates are
   **period ends, not publication dates**: anything as-of a past date goes through `known()`
   (statutory reporting lags), never the raw frame.
+- Events & catalysts are split: `scripts/events.py` gathers facts programmatically (filings,
+  market reactions, expected events, headlines) into an event pack; interpretation is done by
+  an agent via the `/events` skill (`.claude/skills/events/SKILL.md`). See docs/decisions/0006.
 - Model outputs for the scorecard are scores in **[-1, +1]** (+ = bullish / favourable).
 - All price data must pass through `check_prices` (review the issues), `clean_prices` and
   `trim_to_consistent` before use.
@@ -64,6 +67,9 @@ Current state:
 | Technical scorecard | `uv run python scripts/technical.py JET2.L [--entry-date D]` |
 | Levels + trade plan | `uv run python scripts/levels.py JET2.L [--short]` |
 | Fundamentals scorecard | `uv run python scripts/fundamentals.py JET2.L [--as-of D]` |
+| Event pack (filings, reactions, expected events, news) | `uv run python scripts/events.py JET2.L [--days 7] [--horizon 16]` |
+| Read one announcement | `uv run python scripts/announcement.py <NSM url>` |
+| Events analyst (agent) | `/events JET2.L` in Claude Code |
 | Notebooks | `make notebook` |
 
 Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `uv.lock` by hand.
@@ -80,6 +86,9 @@ src/solaraalpha/        importable package — all reusable code lives here
     prices.py           daily OHLCV for one stock (Yahoo chart API)
     fundamentals.py     statements, TTM EPS, P/E / forward P/E / market cap for one stock
                         (Yahoo fundamentals-timeseries API), tidy long frame
+    announcements.py    regulatory filings for one issuer (FCA NSM, by LEI), ticker → LEI
+                        (LSE + GLEIF), announcement full text
+    news.py             press headlines (Google News RSS), discovery only
     clean.py            check_prices / clean_prices / trim_to_consistent / to_weekly
   analysis/             research & analytics code
     technical.py        weekly technical model (any stock): trend/momentum/entry scores,
@@ -88,8 +97,11 @@ src/solaraalpha/        importable package — all reusable code lives here
                         highs/lows, blue sky; stop/targets/reward:risk — see docs/decisions/0004
     fundamentals.py     fundamentals model (one stock): growth/value/quality scores,
                         point-in-time via publication lags — see docs/decisions/0005
+    events.py           events model (any stock): market reaction per filing, expected
+                        scheduled events from the issuer's own history — see docs/decisions/0006
   portfolio/            portfolio construction / risk (later phase)
 scripts/                thin CLI entry points (argparse) that call into the package
+.claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure
 data/                   gitignored; raw/ processed/ cache/ created on demand
