@@ -17,6 +17,7 @@ from solaraalpha.data.clean import (
     trim_to_consistent,
 )
 from solaraalpha.data.prices import fetch_daily
+from solaraalpha.store import save_run
 
 
 def main() -> None:
@@ -24,9 +25,12 @@ def main() -> None:
     p.add_argument("ticker", help="Yahoo ticker, e.g. JET2.L")
     p.add_argument("--start", default=None, help="default: 5 years ago")
     p.add_argument("--end", default=None)
+    p.add_argument("--save", action="store_true", help="snapshot the prices in the results DB")
     args = p.parse_args()
 
     daily = fetch_daily(args.ticker, args.start, args.end)
+    if args.save:
+        print(f"Saved run {save_run('stock_prices', vars(args), args.ticker, daily=daily)}.")
     print(
         f"{args.ticker}: {len(daily)} daily bars {daily.index[0]:%Y-%m-%d} → "
         f"{daily.index[-1]:%Y-%m-%d}, currency {daily.attrs.get('currency')}"

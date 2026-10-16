@@ -14,12 +14,14 @@ from solaraalpha.analysis.fundamentals import fundamentals_card, known
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.fundamentals import fetch_fundamentals
 from solaraalpha.data.prices import fetch_daily
+from solaraalpha.store import save_run
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("ticker", help="Yahoo ticker, e.g. JET2.L")
     p.add_argument("--as-of", default=None, help="past date: only data public by then")
+    p.add_argument("--save", action="store_true", help="record this run in the results DB")
     args = p.parse_args()
 
     daily = fetch_daily(args.ticker)
@@ -37,8 +39,14 @@ def main() -> None:
         print(table.T.iloc[:, -10:].to_string(), "\n")
 
     print("Fundamentals card:")
-    for k, v in asdict(fundamentals_card(fund, weekly, args.as_of)).items():
+    card = fundamentals_card(fund, weekly, args.as_of)
+    for k, v in asdict(card).items():
         print(f"  {k:>15}: {v:.3f}" if isinstance(v, float) else f"  {k:>15}: {v}")
+
+    if args.save:
+        cards = {"fundamentals": card}
+        run_id = save_run("fundamentals", vars(args), args.ticker, cards, daily=daily, fund=fund)
+        print(f"\nSaved run {run_id}.")
 
 
 if __name__ == "__main__":

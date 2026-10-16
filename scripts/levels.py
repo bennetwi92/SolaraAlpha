@@ -12,6 +12,7 @@ from dataclasses import asdict
 from solaraalpha.analysis.levels import level_map, levels_card, trendline
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.prices import fetch_daily
+from solaraalpha.store import save_run
 
 
 def main() -> None:
@@ -19,6 +20,7 @@ def main() -> None:
     p.add_argument("ticker", help="Yahoo ticker, e.g. JET2.L")
     p.add_argument("--short", action="store_true", help="plan a short (default long)")
     p.add_argument("--n", type=int, default=6, help="levels to show each side of the close")
+    p.add_argument("--save", action="store_true", help="record this run in the results DB")
     args = p.parse_args()
     side = -1 if args.short else 1
 
@@ -46,8 +48,13 @@ def main() -> None:
         )
 
     print(f"\nLevels card ({'short' if args.short else 'long'}):")
-    for k, v in asdict(levels_card(weekly, side)).items():
+    card = levels_card(weekly, side)
+    for k, v in asdict(card).items():
         print(f"  {k:>14}: {v:.2f}" if isinstance(v, float) else f"  {k:>14}: {v}")
+
+    if args.save:
+        run_id = save_run("levels", vars(args), args.ticker, {"levels": card}, daily=daily)
+        print(f"\nSaved run {run_id}.")
 
 
 if __name__ == "__main__":

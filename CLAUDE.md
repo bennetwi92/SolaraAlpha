@@ -22,7 +22,10 @@ Current state:
 - **Trading frequency is weekly** unless the owner says otherwise. Weekly bars end Friday
   (`to_weekly`), and only completed weeks are used.
 - Working on **single-stock analysis**; first example is Jet2 (`JET2.L`, AIM-listed).
-- Price data is **not persisted** for now — fetch fresh each run (no `@parquet_cache`).
+- Price data is **fetched fresh each run** (no `@parquet_cache`). With `--save` the raw fetch is
+  also snapshotted into the results DB (`solaraalpha.store`) — for the record, never as a cache.
+- **Results DB**: scripts' `--save` records the run, model cards and input snapshots in
+  `data/solara.db` (append-only SQLite) — see docs/decisions/0007. Hosted copy (Turso) not set up yet.
 - Price history: fetch the **last 5 years** (default), then cut per stock to the span after
   the last blocking data issue (`trim_to_consistent`). Don't pull long history yet.
 - The technical models (`analysis/technical.py`, `analysis/levels.py`) must stay **generic across
@@ -70,6 +73,7 @@ Current state:
 | Event pack (filings, reactions, expected events, news) | `uv run python scripts/events.py JET2.L [--days 7] [--horizon 16]` |
 | Read one announcement | `uv run python scripts/announcement.py <NSM url>` |
 | Events analyst (agent) | `/events JET2.L` in Claude Code |
+| Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `fundamentals` |
 | Notebooks | `make notebook` |
 
 Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `uv.lock` by hand.
@@ -80,6 +84,8 @@ Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `u
 src/solaraalpha/        importable package — all reusable code lives here
   config.py             Settings (env vars prefixed SOLARA_, loaded from .env); data paths
   log.py                get_logger(__name__)
+  store.py              results DB (SQLite): runs, model cards, price/fundamental snapshots;
+                        save_run / load_results / latest / load_prices — see docs/decisions/0007
   data/                 fetching, cleaning, storage of external data
     http.py             shared requests session with retry/backoff — use for all HTTP
     cache.py            @parquet_cache decorator for DataFrame-returning fetchers

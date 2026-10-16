@@ -42,6 +42,11 @@ class Settings(BaseSettings):
         """Disposable cache for API responses; safe to delete."""
         return self._ensure(self.data_dir / "cache")
 
+    @cached_property
+    def db_path(self) -> Path:
+        """Results database (SQLite): runs, model outputs, input snapshots."""
+        return self._ensure(self.data_dir) / "solara.db"
+
     @staticmethod
     def _ensure(path: Path) -> Path:
         path.mkdir(parents=True, exist_ok=True)
