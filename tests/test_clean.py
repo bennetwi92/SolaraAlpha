@@ -53,7 +53,7 @@ def test_detects_gap_stale_duplicates() -> None:
     df = df.drop(df.index[5:12])  # ~9-day gap
     assert "gap" in _checks(df)
 
-    stale = _daily(10)
+    stale = _daily(25)
     stale[["open", "high", "low", "close", "adj_close"]] = 100.0
     assert "stale" in _checks(stale)
 
@@ -101,7 +101,8 @@ def test_log_returns() -> None:
 
 def test_trim_to_consistent() -> None:
     df = _daily(20)
-    df.loc[df.index[4], "volume"] = 0  # blocking
+    df.loc[df.index[4], "low"] = -1.0  # non-positive price: blocking
+    df.loc[df.index[8], "volume"] = 0  # no trades: not blocking
     df.loc[df.index[10], "close"] = 1000  # large move: not blocking
     out = trim_to_consistent(df, check_prices(df))
     assert out.index[0] == df.index[5]
@@ -117,3 +118,11 @@ def test_stale_flags_whole_run() -> None:
     df[["open", "high", "low", "close", "adj_close"]] = 100.0
     stale = check_prices(df, max_stale_days=5).query("check == 'stale'")
     assert list(stale["date"]) == list(df.index[5:])
+
+
+def test_trim_ignores_dropped_rows() -> None:
+    df = _daily(20)
+    df.loc[df.index[-1], ["open", "high", "low", "close", "adj_close"]] = np.nan  # no-trade bar
+    out = trim_to_consistent(clean_prices(df), check_prices(df))
+    assert out.index[0] == df.index[0]
+    assert out.index[-1] == df.index[-2]
