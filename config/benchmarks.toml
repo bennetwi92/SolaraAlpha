@@ -5,6 +5,8 @@
 #   market   — broad index of the stock's home market. Defaults by listing suffix (below).
 #   industry — sector index; if Yahoo has no history for it, the closest sector ETF. Optional.
 #   peers    — listed companies in the same business, any exchange. Optional; aim for 4-8.
+#   sector   — the stock's sector for concentration limits (portfolio.risk.sector_of). Optional;
+#              a stock without one is "unknown". Set only from a public source, never guessed.
 #
 # A stock with no entry is compared with its market only.
 
@@ -12,6 +14,7 @@
 ".L" = "^FTAS"    # FTSE All-Share: the UK opportunity set (AIM stocks too — see 0011)
 
 [stocks."JET2.L"]
+sector = "Travel & Leisure"
 # FTSE 350 Travel & Leisure (UB6010.FGI) has no history on Yahoo, so the sector ETF:
 industry = "EXV9.DE"  # iShares STOXX Europe 600 Travel & Leisure (EUR)
 peers = [

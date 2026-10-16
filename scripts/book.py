@@ -14,6 +14,7 @@ uv run python scripts/book.py unfilled ORDER_ID [--reason TEXT]   # entry never 
 uv run python scripts/book.py cancel ORDER_ID [--reason TEXT]
 uv run python scripts/book.py expire [--as-of DATE]               # entry orders past valid_until
 uv run python scripts/book.py show POSITION_ID --price P          # adds R so far at price P
+uv run python scripts/book.py cash deposit|withdraw AMOUNT [--at ISO] [--note TEXT]   # GBP
 uv run python scripts/book.py exit POSITION_ID --reason stop|trailing_stop|target|thesis_broken|time|discretionary|corporate_action
                                  [--type market|limit] [--price P] [--qty N]
 
@@ -260,6 +261,13 @@ def _fill(conn: Conn, a: argparse.Namespace) -> None:
         )
 
 
+@command("cash")
+def _cash(conn: Conn, a: argparse.Namespace) -> None:
+    kind = {"deposit": "deposit", "withdraw": "withdrawal"}[a.kind]
+    book.cash_event(conn, kind, a.amount, "GBP", note=a.note or "", at=a.at)
+    print(f"{kind} £{a.amount:,.2f} recorded; cash balance £{book.cash_balance(conn):,.2f}")
+
+
 @command("exit")
 def _exit(conn: Conn, a: argparse.Namespace) -> None:
     oid = book.exit_position(conn, a.position_id, a.reason, a.type, a.price, a.qty)
@@ -350,6 +358,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     ex = sub.add_parser("expire", help="expire entry orders past their validity")
     ex.add_argument("--as-of", help="date (default today)")
+
+    ca = sub.add_parser("cash", help="record a deposit or withdrawal (GBP)")
+    ca.add_argument("kind", choices=("deposit", "withdraw"))
+    ca.add_argument("amount", type=float)
+    ca.add_argument("--at", help="ISO time (default now)")
+    ca.add_argument("--note", default="")
 
     xo = sub.add_parser("exit", help="draft an exit order with a tagged reason")
     xo.add_argument("position_id", type=int)

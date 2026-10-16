@@ -140,7 +140,7 @@ Story format: *as <actor>, I want <capability> so that <outcome>*, then acceptan
 | S0.2 | As the owner I want per-stock benchmarks and peers so relative strength is meaningful. | R1 | ✅ `config/benchmarks.toml` |
 | S0.3 | As the owner I want **portfolio rules** in one config file (capital, risk per trade, max open positions, max per stock / sector, max portfolio heat, cash buffer, min liquidity) so sizing and checks are consistent and versioned. | R1 | ✅ `config/portfolio.toml`, `portfolio.rules` (placeholders, `confirmed = false`) · #105 |
 | S0.4 | As the owner I want a reminder when the watchlist snapshot is older than the last quarterly FTSE review, so the universe doesn't drift. | R2 | ⬜ · #124 |
-| S0.5 | As the owner I want each stock's sector / industry recorded so concentration can be checked. | R2 | 🟡 implicit in `benchmarks.toml` industry; not a field · #124 |
+| S0.5 | As the owner I want each stock's sector / industry recorded so concentration can be checked. | R2 | 🟡 optional `sector` key in `benchmarks.toml` (JET2.L only, #110); the rest · #124 |
 | S0.6 | As the owner I want each stock's liquidity (median daily £ volume, spread proxy) so size is capped at what AIM names can absorb. | R2 | ⬜ · #124 |
 
 S0.3 acceptance (proposal for the values; owner to set them):
@@ -315,9 +315,9 @@ and WATCH stock**, and **the agent only when a check fires**.
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S10.1 | As the owner I want a **holdings view**: positions, shares, cost, last price, P&L, R, stop, risk at the stop, weeks held, next event. | R1 | ⬜ · #110 |
-| S10.2 | As the owner I want **cash and equity** tracked (capital, deposits / withdrawals, realised and unrealised P&L), so sizing uses current equity. | R1 | ⬜ · #110 |
-| S10.3 | As the owner I want **portfolio heat** (sum of open risk to the stops) and exposure by sector vs the limits in S0.3. | R1 | ⬜ · #110 |
+| S10.1 | As the owner I want a **holdings view**: positions, shares, cost, last price, P&L, R, stop, risk at the stop, weeks held, next event. | R1 | ✅ `scripts/portfolio.py`, `risk.holdings` · #110 |
+| S10.2 | As the owner I want **cash and equity** tracked (capital, deposits / withdrawals, realised and unrealised P&L), so sizing uses current equity. | R1 | ✅ `book.py cash`, `risk.equity` · #110 |
+| S10.3 | As the owner I want **portfolio heat** (sum of open risk to the stops) and exposure by sector vs the limits in S0.3. | R1 | ✅ `risk.heat / exposure / breaches` · #110 |
 | S10.4 | As the owner I want an equity curve, drawdown, and a benchmark comparison (e.g. FTSE AIM All-Share). | R2 | ⬜ · #135 |
 | S10.5 | As the owner I want a correlation / overlap check across holdings (same driver: fuel, consumer, rates). | R2 | ⬜ · #135 |
 | S10.6 | As the owner I want a dashboard over the DB (holdings, weekly pack, history). | R2 | ⬜ · #136 |
