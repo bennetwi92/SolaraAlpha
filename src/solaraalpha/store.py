@@ -8,11 +8,14 @@ deleted, so every number can be traced to the run (time, git commit, arguments) 
   ``value`` (numbers, bools as 1/0) or ``text`` (strings, timestamps). ``date`` is the week the
   card describes, separate from the run time, so past scores can be joined to later returns
   without look-ahead. New card fields need no schema change.
-* ``steps`` — pipeline outcomes: (run, ticker, node = toolkit id) -> toolkit, status
+* ``steps`` — pipeline outcomes: (run, ticker, toolkit) -> stage, status
   (pass / fail / skip / error) and reason — see :mod:`solaraalpha.pipeline`.
 * ``prices`` / ``fundamentals`` — what the source returned, stored only when a row is new or
   differs from the latest stored version, so :func:`load_prices` / :func:`load_fundamentals`
   can rebuild what was known on any past date (``as_seen``) without duplicating history.
+
+A run can cover many tickers (a weekly scan is one run): :func:`start_run`, then
+:func:`save_ticker` per ticker. :func:`save_run` does both for a single-ticker script.
 
 Plain SQLite SQL only, so the file can move to a hosted SQLite (see docs/decisions/0007).
 """
@@ -53,15 +56,6 @@ CREATE TABLE IF NOT EXISTS results (
     text   TEXT,
     PRIMARY KEY (run_id, ticker, model, date, field)
 );
-CREATE TABLE IF NOT EXISTS steps (
-    run_id  INTEGER NOT NULL REFERENCES runs,
-    ticker  TEXT NOT NULL,
-    node    TEXT NOT NULL,
-    toolkit TEXT NOT NULL,
-    status  TEXT NOT NULL,     -- pass / fail / skip / error
-    reason  TEXT NOT NULL,
-    PRIMARY KEY (run_id, ticker, node)
-);
 CREATE TABLE IF NOT EXISTS prices (
     ticker TEXT NOT NULL,
     date   TEXT NOT NULL,
@@ -78,6 +72,17 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     PRIMARY KEY (ticker, field, date, run_id)
 );
 """
+STEPS = """
+CREATE TABLE IF NOT EXISTS steps (
+    run_id  INTEGER NOT NULL REFERENCES runs,
+    ticker  TEXT NOT NULL,
+    stage   TEXT,              -- NULL: saved before stages were recorded
+    toolkit TEXT NOT NULL,
+    status  TEXT NOT NULL,     -- pass / fail / skip / error
+    reason  TEXT NOT NULL,
+    PRIMARY KEY (run_id, ticker, toolkit)
+);
+"""
 # Yahoo jitters the last float32 bit of adj_close between requests; real revisions are far larger.
 RTOL = 1e-6
 _PRICE_COLS = ["open", "high", "low", "close", "adj_close", "volume", "currency"]
@@ -87,6 +92,14 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     """Open (creating if needed) the results database."""
     conn = sqlite3.connect(path or settings.db_path)
     conn.executescript(SCHEMA)
+    if "node" in _columns(conn, "steps"):  # 0008 layout: node (= toolkit id), no stage
+        conn.executescript(
+            "ALTER TABLE steps RENAME TO steps_0008;"
+            + STEPS
+            + "INSERT INTO steps SELECT run_id, ticker, NULL, toolkit, status, reason"
+            " FROM steps_0008 ORDER BY rowid; DROP TABLE steps_0008;"
+        )
+    conn.executescript(STEPS)
     return conn
 
 
@@ -101,19 +114,50 @@ def save_run(
     steps: list[tuple[str, str, str, str]] | None = None,
     others: dict[str, pd.DataFrame] | None = None,
 ) -> int:
-    """Record one run: its model ``cards`` (``{model: dataclass}``) and input snapshots.
+    """Record a one-ticker run (:func:`start_run` + :func:`save_ticker`); returns its ``run_id``."""
+    run_id = start_run(script, args, path)
+    save_ticker(run_id, ticker, cards, daily, fund, path, steps, others)
+    return run_id
 
-    ``steps`` are pipeline outcomes ``(node, toolkit, status, reason)`` for ``ticker``.
+
+def start_run(script: str, args: dict[str, Any], path: Path | None = None) -> int:
+    """Record the start of a run (time, script, args, commit) and return its ``run_id``."""
+    conn = connect(path)
+    try:
+        with conn:
+            cur = conn.execute(
+                "INSERT INTO runs (started_at, script, args, git_sha) VALUES (?, ?, ?, ?)",
+                (datetime.now(UTC).isoformat(), script, json.dumps(args, default=str), git_sha()),
+            )
+    finally:
+        conn.close()
+    assert cur.lastrowid is not None
+    return cur.lastrowid
+
+
+def save_ticker(
+    run_id: int,
+    ticker: str,
+    cards: dict[str, Any] | None = None,
+    daily: pd.DataFrame | None = None,
+    fund: pd.DataFrame | None = None,
+    path: Path | None = None,
+    steps: list[tuple[str, str, str, str]] | None = None,
+    others: dict[str, pd.DataFrame] | None = None,
+) -> None:
+    """Record one ticker's model ``cards`` (``{model: dataclass}``) and input snapshots under
+    ``run_id``.
+
+    ``steps`` are pipeline outcomes ``(stage, toolkit, status, reason)`` for ``ticker``.
 
     ``daily`` is the frame from :func:`solaraalpha.data.prices.fetch_daily` as fetched (before
     cleaning), ``fund`` the one from :func:`solaraalpha.data.fundamentals.fetch_fundamentals`;
     ``others`` the daily prices of instruments it was compared with (indices, peers, FX), by
-    ticker. Returns the new ``run_id``.
+    ticker.
     """
     conn = connect(path)
     try:
         with conn:
-            run_id = _start_run(conn, script, args)
             for model, card in (cards or {}).items():
                 _save_card(conn, run_id, ticker, model, card)
             conn.executemany(
@@ -129,8 +173,7 @@ def save_run(
                 _save_snapshot(conn, run_id, "fundamentals", ["field", "date"], rows)
     finally:
         conn.close()
-    log.info("saved run %d (%s %s)", run_id, script, ticker)
-    return run_id
+    log.info("saved %s in run %d", ticker, run_id)
 
 
 def git_sha() -> str:
@@ -144,15 +187,6 @@ def git_sha() -> str:
     if sha.returncode:
         return "unknown"
     return sha.stdout.strip() + ("-dirty" if dirty.stdout.strip() else "")
-
-
-def _start_run(conn: sqlite3.Connection, script: str, args: dict[str, Any]) -> int:
-    cur = conn.execute(
-        "INSERT INTO runs (started_at, script, args, git_sha) VALUES (?, ?, ?, ?)",
-        (datetime.now(UTC).isoformat(), script, json.dumps(args, default=str), git_sha()),
-    )
-    assert cur.lastrowid is not None
-    return cur.lastrowid
 
 
 def _cell(v: Any) -> tuple[float | None, str | None]:

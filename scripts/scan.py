@@ -6,8 +6,8 @@ uv run python scripts/scan.py JET2.L --toolkit technical [--param entry_date=202
 uv run python scripts/scan.py --list                   # stages and toolkits
 
 Stages run in order over every stock; a stock moves on only if all of a stage's toolkits pass
-(see solaraalpha.pipeline). Add --save to record each stock's cards and outcomes in the
-results DB, and --report FILE to append a markdown summary (GitHub Actions:
+(see solaraalpha.pipeline). Add --save to record the scan as one run in the results DB (every
+stock's cards, stage outcomes and input snapshots), and --report FILE to append a markdown summary (GitHub Actions:
 "$GITHUB_STEP_SUMMARY"). Exits 1 if any toolkit errored (after reporting and saving).
 """
 
@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from solaraalpha.pipeline import WEEKLY, Step, run_pipeline, run_toolkit, watchlist
-from solaraalpha.store import save_run
+from solaraalpha.store import save_ticker, start_run
 from solaraalpha.toolkits import REGISTRY, Inputs
 
 MARK = {"pass": "PASS", "fail": "fail", "skip": "-", "error": "ERROR"}
@@ -34,13 +34,11 @@ def _value(raw: str) -> Any:
     return raw
 
 
-def _save(args: argparse.Namespace, x: Inputs, steps: list[Step]) -> int:
+def _save(run_id: int, x: Inputs, steps: list[Step]) -> None:
     cards = {model: card for s in steps for model, card in s.cards.items()}
-    rows = [(s.toolkit, s.toolkit, s.status, s.reason) for s in steps]
+    rows = [(s.stage, s.toolkit, s.status, s.reason) for s in steps]
     daily, fund = x.fetched("daily"), x.fetched("fund")
-    return save_run(
-        "scan", vars(args), x.ticker, cards, daily=daily, fund=fund, steps=rows, others=x.others
-    )
+    save_ticker(run_id, x.ticker, cards, daily, fund, steps=rows, others=x.others)
 
 
 def _report(results: dict[str, list[Step]]) -> str:
@@ -82,6 +80,7 @@ def main() -> None:
         sys.exit("--param needs --toolkit")
 
     inputs = [Inputs(t) for t in args.tickers or watchlist()]
+    run_id = start_run("scan", vars(args)) if args.save else None
     if args.toolkit:
         params = {k: _value(v) for k, v in (kv.split("=", 1) for kv in args.param)}
         results = {x.ticker: [run_toolkit(args.toolkit, x, params)] for x in inputs}
@@ -91,8 +90,10 @@ def main() -> None:
     for x in inputs:
         steps = results[x.ticker]
         print(f"{x.ticker:<10} " + "  ".join(f"{s.toolkit}:{MARK[s.status]}" for s in steps))
-        if args.save:
-            print(f"{'':<10} saved run {_save(args, x, steps)}")
+        if run_id is not None:
+            _save(run_id, x, steps)
+    if run_id is not None:
+        print(f"saved run {run_id}")
 
     report = _report(results)
     print("\n" + report)

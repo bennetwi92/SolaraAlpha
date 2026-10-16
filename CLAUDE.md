@@ -21,7 +21,9 @@ Current state:
   keeps climbing). Models are judged by usefulness over that horizon.
 - **Trading frequency is weekly** unless the owner says otherwise. Weekly bars end Friday
   (`to_weekly`), and only completed weeks are used.
-- Working on **single-stock analysis**; first example is Jet2 (`JET2.L`, AIM-listed).
+- Working on **single-stock analysis**; first example is Jet2 (`JET2.L`, AIM-listed). The
+  pipeline universe is the **FTSE AIM UK 50** (current constituents, hand-copied snapshot in
+  `config/watchlist.toml` — refresh after each quarterly FTSE review; not point-in-time).
 - Price data is **fetched fresh each run** (no `@parquet_cache`). With `--save` the raw fetch is
   also snapshotted into the results DB (`solaraalpha.store`) — for the record, never as a cache.
 - **Results DB**: scripts' `--save` records the run, model cards and input snapshots in
@@ -105,7 +107,8 @@ src/solaraalpha/        importable package — all reusable code lives here
   config.py             Settings (env vars prefixed SOLARA_, loaded from .env); data paths
   log.py                get_logger(__name__)
   store.py              results DB (SQLite): runs, model cards, pipeline steps, price/fundamental
-                        snapshots; save_run / load_results / load_steps / latest / load_prices
+                        snapshots; start_run + save_ticker (a scan = one run) / save_run /
+                        load_results / load_steps / latest / load_prices
                         — see docs/decisions/0007
   toolkits.py           toolkit register: id -> run fn + pass conditions; Inputs (lazy,
                         shared per-ticker data)
@@ -137,7 +140,7 @@ src/solaraalpha/        importable package — all reusable code lives here
                         fuel curve / FX, horizon valuation, news shocks, Monte Carlo — 0009
   portfolio/            portfolio construction / risk (later phase)
 scripts/                thin CLI entry points (argparse) that call into the package
-config/watchlist.toml   stocks the weekly pipeline runs
+config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM UK 50 snapshot)
 config/benchmarks.toml  per-stock market / industry / peers for relative strength
 .github/workflows/      ci.yml (checks), scan.yml (weekly pipeline, Sunday), stock.yml (one stock)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
