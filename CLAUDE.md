@@ -22,7 +22,10 @@ Current state:
 - **Trading frequency is weekly** unless the owner says otherwise. Weekly bars end Friday
   (`to_weekly`), and only completed weeks are used.
 - Working on **single-stock analysis**; first example is Jet2 (`JET2.L`, AIM-listed).
-- Price data is **not persisted** for now — fetch fresh each run (no `@parquet_cache`).
+- Price data is **fetched fresh each run** (no `@parquet_cache`). With `--save` the raw fetch is
+  also snapshotted into the results DB (`solaraalpha.store`) — for the record, never as a cache.
+- **Results DB**: scripts' `--save` records the run, model cards and input snapshots in
+  `data/solara.db` (append-only SQLite) — see docs/decisions/0006. Hosted copy (Turso) not set up yet.
 - Price history: fetch the **last 5 years** (default), then cut per stock to the span after
   the last blocking data issue (`trim_to_consistent`). Don't pull long history yet.
 - The technical models (`analysis/technical.py`, `analysis/levels.py`) must stay **generic across
@@ -64,6 +67,7 @@ Current state:
 | Technical scorecard | `uv run python scripts/technical.py JET2.L [--entry-date D]` |
 | Levels + trade plan | `uv run python scripts/levels.py JET2.L [--short]` |
 | Fundamentals scorecard | `uv run python scripts/fundamentals.py JET2.L [--as-of D]` |
+| Save a run to the results DB | add `--save` to any of the scripts above |
 | Notebooks | `make notebook` |
 
 Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `uv.lock` by hand.
@@ -74,6 +78,8 @@ Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `u
 src/solaraalpha/        importable package — all reusable code lives here
   config.py             Settings (env vars prefixed SOLARA_, loaded from .env); data paths
   log.py                get_logger(__name__)
+  store.py              results DB (SQLite): runs, model cards, price/fundamental snapshots;
+                        save_run / load_results / latest / load_prices — see docs/decisions/0006
   data/                 fetching, cleaning, storage of external data
     http.py             shared requests session with retry/backoff — use for all HTTP
     cache.py            @parquet_cache decorator for DataFrame-returning fetchers

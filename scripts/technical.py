@@ -12,6 +12,7 @@ from dataclasses import asdict
 from solaraalpha.analysis.technical import assess_position, scorecard, scores
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.prices import fetch_daily
+from solaraalpha.store import save_run
 
 
 def main() -> None:
@@ -20,6 +21,7 @@ def main() -> None:
     p.add_argument("--entry-date", default=None, help="assess a position opened on this date")
     p.add_argument("--entry-price", type=float, default=None)
     p.add_argument("--short", action="store_true", help="short side (default long)")
+    p.add_argument("--save", action="store_true", help="record this run in the results DB")
     args = p.parse_args()
     side = -1 if args.short else 1
 
@@ -35,14 +37,21 @@ def main() -> None:
     print(scores(weekly, side)[cols].tail(8).round(2).to_string(), "\n")
 
     print("Scorecard (new position):")
-    for k, v in asdict(scorecard(weekly, side)).items():
+    card = scorecard(weekly, side)
+    for k, v in asdict(card).items():
         print(f"  {k:>18}: {v:.2f}" if isinstance(v, float) else f"  {k:>18}: {v}")
 
+    pos = None
     if args.entry_date:
         print("\nOpen position:")
         pos = assess_position(weekly, args.entry_date, side, args.entry_price)
         for k, v in asdict(pos).items():
             print(f"  {k:>18}: {v:.2f}" if isinstance(v, float) else f"  {k:>18}: {v}")
+
+    if args.save:
+        cards = {"technical": card} | ({"position": pos} if pos else {})
+        run_id = save_run("technical", vars(args), args.ticker, cards, daily=daily)
+        print(f"\nSaved run {run_id}.")
 
 
 if __name__ == "__main__":
