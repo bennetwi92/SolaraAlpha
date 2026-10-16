@@ -210,3 +210,27 @@ def test_old_steps_layout_is_migrated(tmp_path: Path) -> None:
     ).fetchall()
     conn.close()
     assert rows == [(99, None, "levels", "fail"), (run_id, "screen", "levels", "pass")]
+
+
+def test_labels_round_trip(db: Path | None) -> None:
+    run_id = store.start_run("scan", {}, path=db)
+    store.save_label(run_id, "JET2.L", "screen", "ACT", "technical ACT; levels ACT", path=db)
+    store.save_label(run_id, "EZJ.L", "screen", "WATCH", "levels WATCH: failed ...", path=db)
+    store.save_label(
+        run_id, "JET2.L", "research", "WATCH", "event in 3 days", 0.7, "agent:research", path=db
+    )
+    got = store.load_labels(run_id=run_id, path=db)
+    assert list(zip(got["ticker"], got["stage"], got["label"], strict=True)) == [
+        ("JET2.L", "screen", "ACT"),
+        ("EZJ.L", "screen", "WATCH"),
+        ("JET2.L", "research", "WATCH"),
+    ]
+    assert got["confidence"].tolist()[2] == 0.7 and got["actor"].tolist()[2] == "agent:research"
+    assert "started_at" in got
+    assert store.shortlist(run_id, path=db) == ["JET2.L"]
+    assert store.shortlist(run_id, "research", ("WATCH", "ACT"), path=db) == ["JET2.L"]
+    assert store.load_labels(ticker="EZJ.L", path=db)["label"].tolist() == ["WATCH"]
+    with pytest.raises(ValueError, match="label must be"):
+        store.save_label(run_id, "X.L", "screen", "MAYBE", path=db)
+    with pytest.raises(Exception, match=r"(?i)unique|constraint"):
+        store.save_label(run_id, "JET2.L", "screen", "PASS", path=db)  # one per run/ticker/stage

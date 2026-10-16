@@ -48,13 +48,16 @@ Current state:
   refresh after each results / trading update), updated for the live fuel curve and FX, valued
   at the holding horizon; news goes in as driver shocks. See docs/decisions/0009.
 - Model outputs for the scorecard are scores in **[-1, +1]** (+ = bullish / favourable).
-- Toolkits run as **one serialised weekly pipeline** (docs/decisions/0010): toolkits are
-  registered by id in `solaraalpha/toolkits.py`, each with a fixed pass/fail verdict; the stages
-  are `WEEKLY` in `solaraalpha/pipeline.py` — `screen` (technical + levels + relative strength,
-  independent, all must pass) → `fundamentals` → `events`. Each stage runs on every stock still in before the next
-  starts. Stocks: `config/watchlist.toml`. GitHub Actions run it Sunday (`scan.yml`) or on
-  demand for one stock (`stock.yml`). Thresholds are placeholders. Daily tasks (news,
-  announcements, volatility) and the agent stage are not built yet.
+- Toolkits run as **one serialised weekly pipeline** (docs/decisions/0010, 0014): toolkits are
+  registered by id in `solaraalpha/toolkits.py`, each with `act=` / `watch=` bands that label a
+  stock **ACT / WATCH / PASS** (ERROR if it raised); labels combine ERROR > PASS > WATCH > ACT.
+  The stages are `WEEKLY` in `solaraalpha/pipeline.py` — `screen` (technical + levels + relative
+  strength, on every stock) → `fundamentals` (on ACT and WATCH) → `events` (on ACT; it has no
+  bands and is the input to research, not a gate). The **screen label** combines the four
+  screening toolkits and is saved per stock in the `labels` table (`store.shortlist`). Stocks:
+  `config/watchlist.toml`. GitHub Actions run it Sunday (`scan.yml`) or on demand for one stock
+  (`stock.yml`). Bands are placeholders until backtested. Daily tasks (news, announcements,
+  volatility) and the agent stage are not built yet.
 - **Relative strength** (`analysis/relative_strength.py`) compares each stock with its market
   index, industry index / ETF and peers, listed per stock in `config/benchmarks.toml` (market
   defaults by listing suffix). Method is generic; the comparison lists are per stock. See 0011.
@@ -116,15 +119,15 @@ Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `u
 src/solaraalpha/        importable package — all reusable code lives here
   config.py             Settings (env vars prefixed SOLARA_, loaded from .env); data paths
   log.py                get_logger(__name__)
-  store.py              results DB (SQLite): runs, model cards, pipeline steps, price/fundamental
-                        snapshots; start_run + save_ticker (a scan = one run) / save_run /
-                        load_results / load_steps / latest / load_prices
-                        — see docs/decisions/0007
+  store.py              results DB (SQLite): runs, model cards, pipeline steps, labels,
+                        price/fundamental snapshots; start_run + save_ticker (a scan = one run) /
+                        save_run / save_label / load_results / load_steps / load_labels /
+                        shortlist / latest / load_prices — see docs/decisions/0007
   turso.py              hosted results DB: sqlite3-style connection to Turso over HTTP — 0013
-  toolkits.py           toolkit register: id -> run fn + pass conditions; Inputs (lazy,
+  toolkits.py           toolkit register: id -> run fn + act / watch bands; Inputs (lazy,
                         shared per-ticker data)
-  pipeline.py           WEEKLY stages, conditions, run_pipeline (stage by stage) — see
-                        docs/decisions/0010
+  pipeline.py           WEEKLY stages (runs_on), clauses, band / combine / screen_label,
+                        run_pipeline (stage by stage) — see docs/decisions/0010, 0014
   data/                 fetching, cleaning, storage of external data
     http.py             shared requests session with retry/backoff — use for all HTTP
     cache.py            @parquet_cache decorator for DataFrame-returning fetchers
@@ -233,7 +236,7 @@ GitHub issues are the backlog and the hand-off between threads/agents.
   Ask the owner only when both sides changed the same logic and either choice loses behaviour.
 - When adding a data source: add the fetcher in `src/solaraalpha/data/`, a fixture-based test,
   and an entry in `docs/data-sources.md`.
-- When adding a toolkit: register it in `toolkits.py` with `@toolkit(id, passes=...)` (its
-  verdict card under its own id, with a `date` field), then add it to a stage in `WEEKLY`.
+- When adding a toolkit: register it in `toolkits.py` with `@toolkit(id, act=..., watch=...)`
+  (its verdict card under its own id, with a `date` field), then add it to a stage in `WEEKLY`.
 - When making a non-obvious design choice, add a short ADR in `docs/decisions/`.
 - Update this file when conventions, layout or commands change.

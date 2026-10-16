@@ -270,6 +270,7 @@ class LevelsCard:
     coil_lower_slope: float
     apex_weeks: float  # weeks until the coil's lines meet (NaN unless converging)
     trigger: float  # breakout entry (stop order) beyond the coil; NaN = enter at the close
+    coil_pending: bool  # coiled and the trigger is still above the close: wait for the break
     stop: float  # beyond the nearest level against ``side``
     target: float  # nearest level in favour of ``side`` beyond the entry (NaN: nothing)
     target_2: float  # the one after
@@ -370,6 +371,7 @@ def levels_card(weekly: pd.DataFrame, side: int = 1) -> LevelsCard:
         coil_lower_slope=c.lower_slope,
         apex_weeks=c.apex_weeks,
         trigger=float(trigger),
+        coil_pending=bool(c.coiled and not np.isnan(trigger) and side * (trigger - close) > 0),
         stop=stop,
         target=targets[0],
         target_2=targets[1],

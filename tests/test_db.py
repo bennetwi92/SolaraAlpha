@@ -99,6 +99,7 @@ def test_pull_into_new_file_only(fake_turso: FakeTurso, tmp_path: Path) -> None:
         "results": 2,
         "prices": 0,
         "fundamentals": 0,
+        "labels": 0,
         "steps": 1,
     }
     conn.close()

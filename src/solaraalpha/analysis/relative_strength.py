@@ -23,6 +23,7 @@ Parameters and choices: ``docs/decisions/0011-relative-strength.md``.
 
 from __future__ import annotations
 
+import math
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -186,6 +187,7 @@ class RelativeStrength:
     rs_high: bool  # RS line vs the market at its 52-week high (leadership)
     peer_rank: int | None  # 1 = best 13-week return among the stock and its peers
     peer_count: int  # peers ranked (excluding the stock)
+    peer_top_half: bool  # peer_rank <= ceil((peer_count + 1) / 2); False without a rank
     compared: str  # e.g. "market=^FTAS industry=EXV9.DE peers=EZJ.L,IAG.L"
 
 
@@ -218,5 +220,6 @@ def rs_card(c: Compared) -> RelativeStrength:
         rs_high=bool("market" in last and last["market"]["rs_high"]),
         peer_rank=rank,
         peer_count=len(rets),
+        peer_top_half=rank is not None and rank <= math.ceil((len(rets) + 1) / 2),
         compared=" ".join(f"{k}={v}" for k, v in c.used.items()),
     )

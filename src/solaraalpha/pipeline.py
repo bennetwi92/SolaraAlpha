@@ -1,24 +1,28 @@
-"""The weekly pipeline: every stock through the toolkits, one stage at a time.
+"""The weekly pipeline: every stock through the toolkits, one stage at a time, to a label.
 
-A stage runs each of its toolkits on every ticker still in; a ticker moves on to the next stage
-only if all of them pass. Toolkits within a stage are independent (none sees another's
-result), so technical, levels and relative strength are judged side by side and none gates
-another::
+Each toolkit judges its own verdict card against two **bands** (``solaraalpha.toolkits``):
+``act`` clauses and ``watch`` clauses. Its label is **ACT** if every ``act`` clause holds, else
+**WATCH** if every ``watch`` clause holds, else **PASS**; a toolkit that raises is **ERROR**. A
+toolkit with no clauses (``events``) is ACT whenever it runs. Labels **combine** as "a stock is
+only as good as its weakest toolkit": ERROR if any errored, else PASS if any is PASS, else WATCH
+if any is WATCH, else ACT (:func:`combine`).
+
+A stage runs each of its toolkits on every ticker whose *running* label (the combination of
+everything judged so far) is in the stage's ``runs_on``; the others get ``skip`` steps::
 
     screen        technical + levels + relative_strength    every ticker in the watchlist
-    fundamentals  fundamentals                              tickers that passed the screen
-    events        events                                    tickers that passed fundamentals
+    fundamentals  fundamentals                              running label ACT or WATCH
+    events        events                                    running label ACT (input to research)
 
-Running stage by stage (not stock by stock) puts each stage's results for all stocks side by
-side before the next starts, which the later agent stage needs to work from a shortlist.
+so a WATCH stock still gets a full four-toolkit label. The **screen label** of a ticker is
+:func:`combine` over technical, levels, relative_strength and fundamentals
+(:func:`screen_label`); events is not a gate. Running stage by stage (not stock by stock) puts
+each stage's results for all stocks side by side before the next starts.
 
-Each toolkit ends as ``pass``, ``fail`` (ran, conditions not met), ``skip`` (ticker dropped
-out at an earlier stage) or ``error`` (raised; logged and treated as a fail, so one bad stock
-or source never stops the run).
-
-Pass conditions are the toolkit's own (``solaraalpha.toolkits``), ``"<field> <op> <value>"``
-on its verdict card, op one of ``>= <= > < == !=``; value a number, ``true`` / ``false``, or a
-bare word (strings). A NaN or missing value fails the condition.
+Clause grammar: a clause is one or more conditions joined by `` or ``; a condition is
+``<field> <op> <value>`` (op one of ``>= <= > < == !=``; value a number, ``true`` / ``false``, or
+a bare word) or ``<field> is nan``. A NaN or missing value fails an ordinary condition. The bands
+are placeholders until backtested; see docs/decisions/0014.
 """
 
 from __future__ import annotations
@@ -39,6 +43,10 @@ from solaraalpha.toolkits import Cards, Inputs, get
 log = get_logger(__name__)
 
 WATCHLIST = REPO_ROOT / "config" / "watchlist.toml"
+LABELS = ("ACT", "WATCH", "PASS", "ERROR")
+ALL_LABELS = frozenset(LABELS)
+# Toolkits whose labels make the screen label (events is the input to research, not a gate).
+SCREEN_TOOLKITS = ("technical", "levels", "relative_strength", "fundamentals")
 _OPS: dict[str, Callable[[Any, Any], bool]] = {
     ">=": operator.ge,
     "<=": operator.le,
@@ -48,16 +56,23 @@ _OPS: dict[str, Callable[[Any, Any], bool]] = {
     "<": operator.lt,
 }
 _COND = re.compile(r"^\s*(\w+)\s*(>=|<=|==|!=|>|<)\s*(\S+)\s*$")
+_IS_NAN = re.compile(r"^\s*(\w+)\s+is\s+nan\s*$", re.I)
+
+
+def _is_nan(v: Any) -> bool:
+    return v is None or (isinstance(v, float) and math.isnan(v))
 
 
 @dataclass(frozen=True)
 class Condition:
     field: str
-    op: str
-    value: float | bool | str
+    op: str  # one of _OPS, or "is nan"
+    value: float | bool | str | None = None
 
     @classmethod
     def parse(cls, text: str) -> Condition:
+        if m_nan := _IS_NAN.match(text):
+            return cls(m_nan.group(1), "is nan")
         m = _COND.match(text)
         if not m:
             raise ValueError(f"bad condition {text!r}; expected '<field> <op> <value>'")
@@ -76,24 +91,52 @@ class Condition:
         if self.field not in card:
             raise KeyError(f"card has no field {self.field!r}")
         v = card[self.field]
-        if v is None or (isinstance(v, float) and math.isnan(v)):
+        if self.op == "is nan":
+            return _is_nan(v)
+        if _is_nan(v):
             return False
         return bool(_OPS[self.op](v, self.value))
 
     def __str__(self) -> str:
-        return f"{self.field} {self.op} {self.value}"
+        if self.op == "is nan":
+            return f"{self.field} is nan"
+        v = str(self.value).lower() if isinstance(self.value, bool) else self.value
+        return f"{self.field} {self.op} {v}"
+
+
+@dataclass(frozen=True)
+class Clause:
+    """Conditions joined by ``or``: holds when any of them does."""
+
+    conditions: tuple[Condition, ...]
+
+    @classmethod
+    def parse(cls, text: str) -> Clause:
+        parts = re.split(r"\s+or\s+", text.strip())
+        return cls(tuple(Condition.parse(p) for p in parts))
+
+    @property
+    def fields(self) -> list[str]:
+        return list(dict.fromkeys(c.field for c in self.conditions))
+
+    def check(self, card: dict[str, Any]) -> bool:
+        return any(c.check(card) for c in self.conditions)
+
+    def __str__(self) -> str:
+        return " or ".join(map(str, self.conditions))
 
 
 @dataclass(frozen=True)
 class Stage:
     name: str
     toolkits: tuple[str, ...]
+    runs_on: frozenset[str] = ALL_LABELS  # running labels a ticker must hold to run the stage
 
 
 WEEKLY: tuple[Stage, ...] = (
     Stage("screen", ("technical", "levels", "relative_strength")),
-    Stage("fundamentals", ("fundamentals",)),
-    Stage("events", ("events",)),
+    Stage("fundamentals", ("fundamentals",), frozenset({"ACT", "WATCH"})),
+    Stage("events", ("events",), frozenset({"ACT"})),
 )
 
 
@@ -103,9 +146,13 @@ class Step:
 
     stage: str
     toolkit: str
-    status: str  # pass / fail / skip / error
+    status: str  # act / watch / pass / error / skip (the toolkit's label, lowercase)
     reason: str = ""
     cards: Cards = field(default_factory=dict)
+
+    @property
+    def label(self) -> str:
+        return self.status.upper()
 
 
 def watchlist(path: Path = WATCHLIST) -> list[str]:
@@ -113,52 +160,80 @@ def watchlist(path: Path = WATCHLIST) -> list[str]:
         return list(tomllib.load(f)["tickers"])
 
 
-def verdict(cards: Cards, toolkit: str) -> tuple[bool, str]:
-    """(passed, reason) for ``toolkit``'s pass conditions on its verdict card."""
-    conds = [Condition.parse(c) for c in get(toolkit).passes]
-    if not conds:
-        return True, "ran"
+def band(cards: Cards, toolkit: str) -> tuple[str, str]:
+    """``(label, reason)`` for ``toolkit``'s act / watch bands on its verdict card."""
+    tk = get(toolkit)
+    act = [Clause.parse(c) for c in tk.act]
+    watch = [Clause.parse(c) for c in tk.watch]
+    if not act and not watch:
+        return "ACT", "ran"
     card = asdict(cards[toolkit])
-    failed = [c for c in conds if not c.check(card)]
-    shown = ", ".join(f"{c.field}={_fmt(card[c.field])}" for c in conds)
-    if failed:
-        return False, f"failed {'; '.join(map(str, failed))} ({shown})"
-    return True, shown
+    failed_act = [c for c in act if not c.check(card)]
+    if not failed_act:
+        return "ACT", _shown(card, act)
+    failed_watch = [c for c in watch if not c.check(card)]
+    failed = failed_watch or failed_act
+    label = "WATCH" if not failed_watch else "PASS"
+    return label, f"failed {'; '.join(map(str, failed))} ({_shown(card, failed)})"
+
+
+def _shown(card: dict[str, Any], clauses: list[Clause]) -> str:
+    names = list(dict.fromkeys(f for c in clauses for f in c.fields))
+    return ", ".join(f"{n}={_fmt(card[n])}" for n in names)
 
 
 def _fmt(v: Any) -> str:
     return f"{v:.2f}" if isinstance(v, float) else str(v)
 
 
+def combine(labels: list[str]) -> str:
+    """ERROR if any errored; else PASS if any is PASS; else WATCH if any is WATCH; else ACT."""
+    for lab in ("ERROR", "PASS", "WATCH"):
+        if lab in labels:
+            return lab
+    return "ACT"
+
+
+def screen_label(steps: list[Step]) -> tuple[str, str]:
+    """The ticker's screen label and reason: :func:`combine` over the :data:`SCREEN_TOOLKITS`
+    that ran (skipped ones are left out), e.g. ``technical WATCH: failed entry >= 0 (entry=-0.41)``."""
+    judged = [s for s in steps if s.toolkit in SCREEN_TOOLKITS and s.status != "skip"]
+    label = combine([s.label for s in judged]) if judged else "ERROR"
+    reason = "; ".join(
+        f"{s.toolkit} {s.label}" + (f": {s.reason}" if s.label != "ACT" else "") for s in judged
+    )
+    return label, reason or "no toolkit ran"
+
+
 def run_toolkit(
     toolkit: str, x: Inputs, params: dict[str, Any] | None = None, stage: str = ""
 ) -> Step:
-    """Run one toolkit for one ticker and judge it; errors are caught into the Step."""
+    """Run one toolkit for one ticker and label it; errors are caught into the Step."""
     try:
         cards = get(toolkit).run(x, **(params or {}))
-        ok, reason = verdict(cards, toolkit)
+        label, reason = band(cards, toolkit)
     except Exception as e:
         log.exception("%s: %s failed", x.ticker, toolkit)
         return Step(stage or toolkit, toolkit, "error", f"{type(e).__name__}: {e}")
-    step = Step(stage or toolkit, toolkit, "pass" if ok else "fail", reason, cards)
-    log.info("%s: %s %s (%s)", x.ticker, toolkit, step.status, reason)
+    step = Step(stage or toolkit, toolkit, label.lower(), reason, cards)
+    log.info("%s: %s %s (%s)", x.ticker, toolkit, step.label, reason)
     return step
 
 
 def run_pipeline(inputs: list[Inputs], stages: tuple[Stage, ...] = WEEKLY) -> dict[str, list[Step]]:
-    """Run ``stages`` in order over every ticker; a ticker stays in while it passes."""
+    """Run ``stages`` in order over every ticker; a stage runs on a ticker only while its running
+    label (the combination of every toolkit judged so far) is in the stage's ``runs_on``."""
     steps: dict[str, list[Step]] = {x.ticker: [] for x in inputs}
-    out_at: dict[str, str] = {}  # ticker -> stage it dropped out at
+    running: dict[str, str] = {x.ticker: "ACT" for x in inputs}  # nothing judged yet
     for stage in stages:
-        alive = [x for x in inputs if x.ticker not in out_at]
+        alive = [x for x in inputs if running[x.ticker] in stage.runs_on]
         log.info("stage %s: %d of %d tickers", stage.name, len(alive), len(inputs))
         for x in inputs:
-            if x.ticker in out_at:
-                why = f"out at {out_at[x.ticker]}"
+            if running[x.ticker] not in stage.runs_on:
+                why = f"running label {running[x.ticker]}"
                 steps[x.ticker] += [Step(stage.name, k, "skip", why) for k in stage.toolkits]
                 continue
             new = [run_toolkit(k, x, stage=stage.name) for k in stage.toolkits]
             steps[x.ticker] += new
-            if any(s.status != "pass" for s in new):
-                out_at[x.ticker] = stage.name
+            running[x.ticker] = combine([s.label for s in steps[x.ticker] if s.status != "skip"])
     return steps

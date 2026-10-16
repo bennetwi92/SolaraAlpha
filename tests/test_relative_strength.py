@@ -138,11 +138,13 @@ def test_card_skips_unavailable_comparisons_and_ranks_peers() -> None:
     assert card.rs == pytest.approx((card.market + card.peers) / 2)
     assert card.compared == "market=^MKT peers=P1.L,P2.L"
     assert (card.peer_rank, card.peer_count) == (2, 2) and type(card.peer_rank) is int
+    assert card.peer_top_half  # rank 2 of 3 (stock + 2 peers): ceil(3 / 2) = 2
 
 
 def test_card_without_comparisons_is_nan() -> None:
     card = rs_card(compare(_weekly(_daily("S.L", 0.0, 2)), Comparisons(None), _fetcher({})))
     assert np.isnan(card.rs) and card.peer_rank is None and card.compared == ""
+    assert card.peer_top_half is False
 
 
 def test_toolkit_fetches_comparisons_once_and_snapshots_them(
@@ -156,7 +158,8 @@ def test_toolkit_fetches_comparisons_once_and_snapshots_them(
     monkeypatch.setattr(toolkits, "comparisons", lambda t: Comparisons("^MKT"))
     s, t = toolkits.Inputs("S.L"), toolkits.Inputs("T.L")
     up, down = run_toolkit("relative_strength", s), run_toolkit("relative_strength", t)
-    assert (up.status, down.status) == ("pass", "fail")
+    assert (up.status, down.status) == ("act", "pass")
+    assert down.reason.startswith("failed rs >= -0.25; rs_high == true or peer_top_half == true")
     assert calls == ["S.L", "^MKT", "T.L"]  # the market index fetched once for both
     db = tmp_path / "r.db"
     store.save_run("scan", {}, "S.L", up.cards, daily=s.daily, path=db, others=s.others)
