@@ -150,6 +150,8 @@ notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure
 data/                   gitignored; raw/ processed/ cache/ created on demand
 docs/
+  roadmap.md            plan from research toolkits to a managed book (positions, orders,
+                        daily management) — read before starting portfolio-phase work
   data-sources.md       register of every external data source, its terms and limits
   decisions/            short ADRs for non-obvious choices (NNNN-title.md)
 ```
