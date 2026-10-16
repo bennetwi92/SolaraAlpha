@@ -55,7 +55,27 @@ the plan's own `event within N days` flag. **Rank score** (placeholder): mean of
 
 ## Weekly review (#122)
 
-*Added by #122.*
+Every Sunday the scan (`scripts/scan.py`, after the candidate pipeline) reviews **every open
+position**, in the watchlist or not (`solaraalpha.portfolio.review`):
+
+- technical runs with `entry_date` = the first fill date and `entry_price` = the average cost
+  (giving the `position` card: chandelier stop, R so far, hold / review / exit), plus levels,
+  relative strength and fundamentals, on the same `Inputs` as the screen when the ticker is in
+  the watchlist. Steps are saved with stage `review`; no `labels` row comes from this pass.
+- `ReviewCard` (saved under model `review`): `weeks_held`, `r_multiple`, `old_stop`,
+  `new_stop` = max(old stop, chandelier) — **ratchet only, never lower** — `stop_moved`,
+  `deteriorated` (fields among trend, momentum, structure, rs, growth, quality whose score fell
+  by ≥ 0.25 since entry, a placeholder), `past_horizon` (weeks held > `horizon_weeks[1]`),
+  `action` and `reason`.
+- **Action**: `exit` if the position card says exit (a weekly close breached the trailing
+  stop) or past the horizon with trend < 0 or momentum ≤ 0 — the S8.4 rule "beyond 16 weeks,
+  hold only while trend ≥ 0, momentum > 0 and the trailing stop holds"; `review` if anything
+  deteriorated or the position card says review; else `hold`.
+- With `--save`, a moved stop is drafted: the live stop order is replaced at `new_stop`
+  (approved, actor `pipeline`) and a `stop_raised` event recorded, so the owner sees it in
+  `tickets`. An `exit` action is **reported, never drafted** (pipeline and agents propose; the
+  owner decides); the pack row carries the `book.py exit` command. The weekly pack's "Open
+  positions" section shows the review card.
 
 ## Scaling (#128)
 
