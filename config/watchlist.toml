@@ -1,3 +1,58 @@
 # Stocks the weekly pipeline runs (scripts/scan.py, .github/workflows/scan.yml).
-# Add instruments as they are chosen.
-tickers = ["JET2.L"]
+#
+# Universe: FTSE AIM UK 50 constituents as listed on the London Stock Exchange website on
+# 2026-10-16 (londonstockexchange.com/indices/ftse-aim-uk-50-index/constituents/table).
+# Hand-maintained snapshot, not point-in-time: refresh after each quarterly FTSE review
+# (Mar / Jun / Sep / Dec). Yahoo ticker = TIDM + ".L".
+tickers = [
+    "ABDP.L",    # AB Dynamics
+    "AET.L",     # Afentra
+    "AMS.L",     # Advanced Medical Solutions Group
+    "ARBB.L",    # Arbuthnot Banking Group
+    "AXS.L",     # Accsys Technologies
+    "BIG.L",     # Big Technologies
+    "BRCK.L",    # BRCK Group
+    "BTG.L",     # BTG Consulting
+    "CAM.L",     # Camellia
+    "CAML.L",    # Central Asia Metals
+    "CHRT.L",    # Cohort
+    "CRW.L",     # Craneware
+    "DOTD.L",    # Dotdigital Group
+    "EKF.L",     # EKF Diagnostics Holdings
+    "EVPL.L",    # Everplay Group
+    "FDEV.L",    # Frontier Developments
+    "FEVR.L",    # Fever-Tree Drinks
+    "FNTL.L",    # Fintel
+    "FRAN.L",    # Franchise Brands
+    "GHH.L",     # Gooch & Housego
+    "GMET.L",    # Guardian Metal Resources
+    "HPOW.L",    # H-Power
+    "HSP.L",     # Hargreaves Services
+    "IPX.L",     # Impax Asset Management Group
+    "IQE.L",     # IQE
+    "ITM.L",     # ITM Power
+    "JET2.L",    # Jet2
+    "JHD.L",     # James Halstead
+    "KEFI.L",    # KEFI Gold and Copper
+    "KGH.L",     # Knights Group Holdings
+    "MIDW.L",    # Midwich Group
+    "MPE.L",     # M.P. Evans Group
+    "NFG.L",     # Next 15 Group
+    "NICL.L",    # Nichols
+    "NIOX.L",    # NIOX Group
+    "PANR.L",    # Pantheon Resources
+    "POLR.L",    # Polar Capital Holdings
+    "RCN.L",     # Redcentric
+    "RKH.L",     # Rockhopper Exploration
+    "RNWH.L",    # Renew Holdings
+    "RWS.L",     # RWS Holdings
+    "SAA.L",     # M&C Saatchi
+    "SQZ.L",     # Serica Energy
+    "SRC.L",     # SigmaRoc
+    "TAM.L",     # Tatton Asset Management
+    "TFW.L",     # Thorpe (F.W.)
+    "TRB.L",     # Tribal Group
+    "VIC.L",     # Victorian Plumbing Group
+    "VTU.L",     # Vertu Motors
+    "YOU.L",     # YouGov
+]
