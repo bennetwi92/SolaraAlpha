@@ -21,8 +21,10 @@ Current state:
   (`to_weekly`), and only completed weeks are used.
 - Working on **single-stock analysis**; first example is Jet2 (`JET2.L`, AIM-listed).
 - Price data is **not persisted** for now — fetch fresh each run (no `@parquet_cache`).
-- All price data must pass through `check_prices` (review the issues) and `clean_prices`
-  before use.
+- Price history: fetch the **last 5 years** (default), then cut per stock to the span after
+  the last blocking data issue (`trim_to_consistent`). Don't pull long history yet.
+- All price data must pass through `check_prices` (review the issues), `clean_prices` and
+  `trim_to_consistent` before use.
 
 ## Hard rules
 
@@ -48,7 +50,7 @@ Current state:
 | Tests incl. live network | `make test-all` |
 | Single test | `uv run pytest tests/test_x.py::test_name -q` |
 | Run a script | `uv run python scripts/<name>.py` |
-| Stock prices + quality report | `uv run python scripts/stock_prices.py JET2.L --start 2006-01-01` |
+| Stock prices + quality report | `uv run python scripts/stock_prices.py JET2.L` |
 | Notebooks | `make notebook` |
 
 Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `uv.lock` by hand.
@@ -63,7 +65,7 @@ src/solaraalpha/        importable package — all reusable code lives here
     http.py             shared requests session with retry/backoff — use for all HTTP
     cache.py            @parquet_cache decorator for DataFrame-returning fetchers
     prices.py           daily OHLCV for one stock (Yahoo chart API)
-    clean.py            check_prices / clean_prices / to_weekly / log_returns
+    clean.py            check_prices / clean_prices / trim_to_consistent / to_weekly
   analysis/             research & analytics code
   portfolio/            portfolio construction / risk (later phase)
 scripts/                thin CLI entry points (argparse) that call into the package

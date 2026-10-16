@@ -9,8 +9,9 @@ Prices are in the listing currency (LSE stocks: pence, ``GBp``), recorded in ``d
 
 ``adj_close`` is back-adjusted for dividends and splits, so its *level* on a past date uses
 later information; use it for returns only, and raw ``close`` for anything level-based.
-Yahoo's history before ~2006 for LSE stocks is padded filler (holidays, zero volume, stale
-closes) — run :func:`solaraalpha.data.clean.check_prices` before using any range.
+Older history can be padded filler (e.g. LSE before ~2006: holidays, zero volume, stale
+closes) — run :func:`solaraalpha.data.clean.check_prices` and
+:func:`solaraalpha.data.clean.trim_to_consistent` before use.
 """
 
 from __future__ import annotations
@@ -27,16 +28,18 @@ _HEADERS = {"User-Agent": "Mozilla/5.0"}
 COLUMNS = ["open", "high", "low", "close", "adj_close", "volume"]
 
 
-def fetch_daily(ticker: str, start: str = "1990-01-01", end: str | None = None) -> pd.DataFrame:
+LOOKBACK_YEARS = 5
+
+
+def fetch_daily(ticker: str, start: str | None = None, end: str | None = None) -> pd.DataFrame:
     """Daily OHLCV for a Yahoo ticker (e.g. ``"JET2.L"``) between ``start`` and ``end`` (dates).
 
-    ``end`` defaults to now. A bar for the current, possibly unfinished, session may be included;
-    :func:`solaraalpha.data.clean.to_weekly` drops incomplete periods.
+    ``start`` defaults to ``LOOKBACK_YEARS`` before now, ``end`` to now. A bar for the
+    current, possibly unfinished, session may be included; :func:`solaraalpha.data.clean.to_weekly` drops incomplete periods.
     """
-    period1 = int(pd.Timestamp(start, tz=UTC).timestamp())
-    period2 = int(
-        (pd.Timestamp(end, tz=UTC) if end else pd.Timestamp(datetime.now(UTC))).timestamp()
-    )
+    stop = pd.Timestamp(end, tz=UTC) if end else pd.Timestamp(datetime.now(UTC))
+    begin = pd.Timestamp(start, tz=UTC) if start else stop - pd.DateOffset(years=LOOKBACK_YEARS)
+    period1, period2 = int(begin.timestamp()), int(stop.timestamp())
     resp = session().get(
         CHART_URL.format(ticker=ticker),
         params={"period1": str(period1), "period2": str(period2), "interval": "1d"},

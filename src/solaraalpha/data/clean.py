@@ -12,6 +12,11 @@ import pandas as pd
 from solaraalpha.data.prices import COLUMNS
 
 PRICE_COLS = ["open", "high", "low", "close", "adj_close"]
+# Issues that mean the data isn't real trading data. Large moves (often real) and OHLC
+# inconsistencies (close outside high/low; harmless for close-to-close returns) don't count.
+BLOCKING = frozenset(
+    {"missing", "non_positive_price", "zero_volume", "gap", "stale", "duplicate_date"}
+)
 
 
 def check_prices(
@@ -25,7 +30,7 @@ def check_prices(
     Checks: duplicate/unsorted dates, missing values, non-positive prices, inconsistent OHLC,
     zero volume, calendar gaps longer than ``max_gap_days``, daily close-to-close moves larger
     than ``max_abs_return`` (often unit or split errors, sometimes real), and runs of more
-    than ``max_stale_days`` identical closes.
+    than ``max_stale_days`` identical closes (every day of the run beyond that is flagged).
     """
     issues: list[tuple[pd.Timestamp | None, str, str]] = []
 
@@ -64,7 +69,7 @@ def check_prices(
 
     close = df["close"].dropna()
     run = close.groupby((close != close.shift()).cumsum()).cumcount() + 1
-    add(run == max_stale_days + 1, "stale", f"close unchanged > {max_stale_days} days")
+    add(run > max_stale_days, "stale", f"close unchanged > {max_stale_days} days")
 
     return _frame(issues)
 
@@ -79,6 +84,13 @@ def clean_prices(df: pd.DataFrame) -> pd.DataFrame:
     out = df.sort_index()
     out = out[~out.index.duplicated(keep="last")]
     return out.dropna(subset=["close"])
+
+
+def trim_to_consistent(df: pd.DataFrame, issues: pd.DataFrame) -> pd.DataFrame:
+    """Keep only the data after the last :data:`BLOCKING` issue, so the series is consistent
+    from its first date on. The cutoff differs per stock; check how much is left."""
+    dates = issues.loc[issues["check"].isin(BLOCKING), "date"].dropna()
+    return df if dates.empty else df[df.index > dates.max()]
 
 
 def to_weekly(df: pd.DataFrame, as_of: pd.Timestamp | None = None) -> pd.DataFrame:

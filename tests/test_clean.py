@@ -3,7 +3,13 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from solaraalpha.data.clean import check_prices, clean_prices, log_returns, to_weekly
+from solaraalpha.data.clean import (
+    check_prices,
+    clean_prices,
+    log_returns,
+    to_weekly,
+    trim_to_consistent,
+)
 
 
 def _daily(n: int = 10, start: str = "2024-01-01") -> pd.DataFrame:
@@ -91,3 +97,23 @@ def test_log_returns() -> None:
     r = log_returns(pd.Series([100.0, 110.0, 99.0]))
     assert np.isnan(r.iloc[0])
     assert np.isclose(r.iloc[1], np.log(1.1))
+
+
+def test_trim_to_consistent() -> None:
+    df = _daily(20)
+    df.loc[df.index[4], "volume"] = 0  # blocking
+    df.loc[df.index[10], "close"] = 1000  # large move: not blocking
+    out = trim_to_consistent(df, check_prices(df))
+    assert out.index[0] == df.index[5]
+
+
+def test_trim_to_consistent_no_blocking() -> None:
+    df = _daily()
+    assert trim_to_consistent(df, check_prices(df)).equals(df)
+
+
+def test_stale_flags_whole_run() -> None:
+    df = _daily(10)
+    df[["open", "high", "low", "close", "adj_close"]] = 100.0
+    stale = check_prices(df, max_stale_days=5).query("check == 'stale'")
+    assert list(stale["date"]) == list(df.index[5:])
