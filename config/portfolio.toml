@@ -1,0 +1,25 @@
+# Portfolio rules: the one place sizing, portfolio fit and the risk view take their limits from
+# (solaraalpha.portfolio.rules; epic #104, user story map S0.3).
+#
+# Every number marked PLACEHOLDER is a stand-in the owner has not set (story map §6 Q1, Q2,
+# Q8, Q10). Reports print a warning while `confirmed` is false. Change a value here, not in
+# code; `load_rules` validates the file and rejects unknown keys.
+
+confirmed = false          # owner has not set these; reports warn while false
+currency = "GBP"           # account currency (only GBP is supported: no account FX yet)
+capital = 10000.0          # PLACEHOLDER starting capital (account currency)
+risk_per_trade = 0.0075    # PLACEHOLDER fraction of equity lost if the stop is hit
+max_positions = 8          # PLACEHOLDER
+max_position_pct = 0.20    # PLACEHOLDER max position value / equity
+max_sector_pct = 0.35      # PLACEHOLDER max sector value / equity
+max_heat = 0.06            # PLACEHOLDER sum of open risk to the stops / equity
+max_adv_pct = 0.05         # PLACEHOLDER position value <= this x median daily traded value
+cash_buffer = 0.05         # PLACEHOLDER fraction of equity never deployed
+long_only = true           # the book rejects short positions (§6 Q10)
+entry_validity_days = 7    # an unfilled entry order expires after this (§6 Q8: Sunday for Monday)
+entry_limit_buffer = 0.01  # limit entries at close x (1 + this)
+stop_entry_orders = true   # broker accepts buy-stop orders on AIM (owner to confirm, §6 Q2);
+                           # false: limit at the trigger once a daily close is above it
+horizon_weeks = [2, 16]    # holding horizon; held longer while the stock keeps climbing
+trail_atr = 3.0            # chandelier trailing stop distance in ATRs (ADR 0003)
+event_flag_days = 14       # results / trading update within this many days of entry = flag
