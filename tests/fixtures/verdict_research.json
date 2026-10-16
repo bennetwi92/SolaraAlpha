@@ -1,0 +1,58 @@
+{
+  "stage": "research",
+  "ticker": "JET2.L",
+  "run_id": 1,
+  "label": "ACT",
+  "confidence": 0.7,
+  "reasons": ["Winter bookings ahead of last year", "fuel 80% hedged for FY27"],
+  "scores": {
+    "catalyst_score": 0.4,
+    "event_risk": 0.3,
+    "scene": 0.2,
+    "recent_catalysts": 0.5,
+    "upcoming_events": -0.1,
+    "commercial": 0.3,
+    "policy": 0.0,
+    "macro": -0.2,
+    "ownership": 0.1,
+    "thesis": 0.4
+  },
+  "kill_criteria": [
+    {"condition": "trend < 0", "kind": "machine", "evidence_index": null},
+    {"condition": "Winter capacity guidance cut below +5%", "kind": "agent", "evidence_index": 0}
+  ],
+  "evidence": [
+    {
+      "url": "https://data.fca.org.uk/artefacts/NSM/Portal/NI-000012345678/NI-000012345678.html",
+      "title": "Jet2 plc - Trading Update",
+      "publisher": "FCA NSM",
+      "published": "2026-10-08T06:00:00Z",
+      "retrieved": "2026-10-11T19:02:00Z",
+      "kind": "filing",
+      "section": "recent_catalysts",
+      "summary": "Winter 26/27 seat capacity +7%; pricing ahead of last year; on-sale summer 27 up 10%.",
+      "impact_score": 0.5,
+      "impact_confidence": 0.8,
+      "driver": "seats",
+      "horizon_weeks": 8,
+      "nsm_id": "NI-000012345678"
+    },
+    {
+      "url": "https://www.example.com/jet-fuel-prices-fall",
+      "title": "Jet fuel prices fall to 18-month low",
+      "publisher": "Example News",
+      "published": "2026-10-10T09:30:00Z",
+      "retrieved": "2026-10-11T19:05:00Z",
+      "kind": "web",
+      "section": "macro",
+      "summary": "Jet fuel CIF NWE down 12% since August; airlines hedged 80% see limited FY27 benefit.",
+      "impact_score": 0.1,
+      "impact_confidence": 0.5,
+      "driver": "fuel",
+      "horizon_weeks": 16,
+      "nsm_id": null
+    }
+  ],
+  "note_md": "## Bottom line\nWinter bookings are ahead and fuel is hedged...",
+  "checks": {}
+}
