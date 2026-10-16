@@ -36,7 +36,22 @@ account's equity and cash. Choices:
 
 ## Portfolio fit (#113)
 
-*Added by #113.*
+`solaraalpha.portfolio.fit.fit` runs before plans become draft positions. Candidates are
+taken in **rank order** (highest `rank_score` first, ties by ticker, unscored last) and each
+accepted plan is added to the running totals before the next is checked, so when the book is
+full the lowest-ranked candidates are the ones left out. Checks:
+
+- **slots**: open + pending (draft / approved, not yet open) + accepted < `max_positions`;
+- **sector**: sector value after adding ≤ `max_sector_pct` × equity (sector from
+  `risk.sector_of`, "unknown" when not configured — unknown sectors still share one bucket,
+  which is conservative);
+- **heat**: (open risk + pending risk + accepted risk + plan risk) / equity ≤ `max_heat`;
+- a plan sized to **zero shares** is rejected rather than drafted.
+
+A breach marks the plan `rejected_by_fit` with the reason. Two things only **flag**:
+26-week correlation of weekly returns with a holding above 0.7 (`correlated with X (0.82)`) and
+the plan's own `event within N days` flag. **Rank score** (placeholder): mean of technical
+`trend`, levels `setup`, relative_strength `rs` and fundamentals `growth`, ignoring NaN.
 
 ## Weekly review (#122)
 
