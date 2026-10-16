@@ -1,0 +1,266 @@
+# Unattended agent stages (docs/decisions/0019). Runs after the weekly pipeline (validate ->
+# research -> plan.py -> weekly_pack.py) and after the daily check (monitor), or by hand.
+#
+# INERT UNTIL THE OWNER ADDS A CLAUDE SECRET: the gate job skips everything unless
+# CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY is set, and SOLARA_TURSO_URL / SOLARA_TURSO_TOKEN
+# are set (the agents read the run from the hosted DB and write back to it). No spend happens
+# otherwise. Cost guardrails: a ticker cap (config/portfolio.toml max_agent_tickers, taken in
+# rank order), --max-turns per invocation and a job timeout. A failed skill invocation is
+# recorded as an ERROR verdict and the run carries on; the job fails only if every item errored.
+name: Agents
+
+on:
+  workflow_run:
+    workflows: ["Weekly pipeline", "Daily check"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: weekly (validate, research, plan, pack) or daily (monitor)
+        type: choice
+        options: [weekly, daily]
+        default: weekly
+      run_id:
+        description: results-DB run id; blank = the latest scan / daily run
+        default: ""
+
+concurrency:
+  group: book
+  cancel-in-progress: false
+
+env:
+  MAX_TURNS: 60
+  # Tools the skills need: our scripts, files, and the web for research.
+  ALLOWED_TOOLS: Bash(uv run python scripts/*),Bash(uv run --no-sync python scripts/*),Read,Write,Edit,Glob,Grep,WebSearch,WebFetch
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      go: ${{ steps.gate.outputs.go }}
+      mode: ${{ steps.mode.outputs.mode }}
+      run: ${{ steps.run.outputs.run }}
+      validate: ${{ steps.queue.outputs.validate }}
+      monitor: ${{ steps.queue.outputs.monitor }}
+    steps:
+      - id: gate
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+        run: |
+          if { [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -z "$ANTHROPIC_API_KEY" ]; } || [ -z "$SOLARA_TURSO_URL" ] || [ -z "$SOLARA_TURSO_TOKEN" ]; then
+            echo "agents skipped: secrets not configured (need CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY, and SOLARA_TURSO_URL / SOLARA_TURSO_TOKEN)" >> "$GITHUB_STEP_SUMMARY"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+      - id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ inputs.mode }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.workflow_run.name }}" = "Daily check" ]; then
+            echo "mode=daily" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=weekly" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.go == 'true'
+      - uses: astral-sh/setup-uv@v3
+        if: steps.gate.outputs.go == 'true'
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+        if: steps.gate.outputs.go == 'true'
+      - id: run
+        if: steps.gate.outputs.go == 'true'
+        env:
+          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+        run: |
+          if [ -n "${{ inputs.run_id }}" ]; then
+            run="${{ inputs.run_id }}"
+          elif [ "${{ steps.mode.outputs.mode }}" = "daily" ]; then
+            run=$(uv run --no-sync python scripts/record.py latest-run --script daily)
+          else
+            run=$(uv run --no-sync python scripts/record.py latest-run --script scan)
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "agents: mode ${{ steps.mode.outputs.mode }}, run $run" >> "$GITHUB_STEP_SUMMARY"
+      - id: queue
+        if: steps.gate.outputs.go == 'true'
+        env:
+          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+        run: |
+          run="${{ steps.run.outputs.run }}"
+          if [ "${{ steps.mode.outputs.mode }}" = "daily" ]; then
+            echo "monitor=$(uv run --no-sync python scripts/record.py queue --run "$run" --stage monitor | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+            echo "validate=[]" >> "$GITHUB_OUTPUT"
+          else
+            echo "validate=$(uv run --no-sync python scripts/record.py queue --run "$run" --stage validate | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+            echo "monitor=[]" >> "$GITHUB_OUTPUT"
+          fi
+
+  validate:
+    needs: gate
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'weekly' && needs.gate.outputs.validate != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        ticker: ${{ fromJson(needs.gate.outputs.validate) }}
+    env:
+      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - id: agent
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "/validate ${{ matrix.ticker }} --run ${{ needs.gate.outputs.run }}"
+          claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
+      - if: steps.agent.outcome == 'failure'
+        run: >
+          uv run --no-sync python scripts/record.py error "${{ matrix.ticker }}"
+          --run "${{ needs.gate.outputs.run }}" --stage validate
+          --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }})" || true
+
+  research:
+    needs: [gate, validate]
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'weekly' && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      tickers: ${{ steps.queue.outputs.tickers }}
+    env:
+      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage validate >> "$GITHUB_STEP_SUMMARY" || true
+      - id: queue
+        run: echo "tickers=$(uv run --no-sync python scripts/record.py queue --run "${{ needs.gate.outputs.run }}" --stage research | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+
+  research-agents:
+    needs: [gate, research]
+    if: needs.gate.outputs.go == 'true' && needs.research.outputs.tickers != '[]' && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        ticker: ${{ fromJson(needs.research.outputs.tickers) }}
+    env:
+      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - id: agent
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "/research ${{ matrix.ticker }} --run ${{ needs.gate.outputs.run }}"
+          claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
+      - if: steps.agent.outcome == 'failure'
+        run: >
+          uv run --no-sync python scripts/record.py error "${{ matrix.ticker }}"
+          --run "${{ needs.gate.outputs.run }}" --stage research
+          --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }})" || true
+
+  plan:
+    needs: [gate, research, research-agents]
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'weekly' && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage research >> "$GITHUB_STEP_SUMMARY" || true
+      - run: uv run --no-sync python scripts/plan.py --run "${{ needs.gate.outputs.run }}"
+      - run: uv run --no-sync python scripts/weekly_pack.py --run "${{ needs.gate.outputs.run }}" --report "$GITHUB_STEP_SUMMARY"
+      - name: Fail only if every agent errored
+        run: |
+          uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage validate
+          uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage research
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agents-${{ github.run_id }}
+          path: data/
+          if-no-files-found: ignore
+          retention-days: 90
+
+  monitor:
+    needs: gate
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'daily' && needs.gate.outputs.monitor != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        position: ${{ fromJson(needs.gate.outputs.monitor) }}
+    env:
+      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - id: agent
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "/monitor --run ${{ needs.gate.outputs.run }} --position ${{ matrix.position }}"
+          claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
+      - if: steps.agent.outcome == 'failure'
+        run: |
+          ticker=$(uv run --no-sync python -c "from solaraalpha.portfolio import book; c = book.connect(); print(book.position_state(c, ${{ matrix.position }}).ticker)")
+          uv run --no-sync python scripts/record.py error "$ticker" --run "${{ needs.gate.outputs.run }}" --stage monitor \
+            --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }}, position ${{ matrix.position }})" || true
+
+  monitor-outcome:
+    needs: [gate, monitor]
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'daily' && needs.gate.outputs.monitor != '[]' && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage monitor | tee -a "$GITHUB_STEP_SUMMARY"

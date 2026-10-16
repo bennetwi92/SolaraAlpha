@@ -340,9 +340,9 @@ and WATCH stock**, and **the agent only when a check fires**.
 | S12.1 | As the pipeline I want the Sunday scan scheduled. | R1 | ✅ `scan.yml` |
 | S12.2 | As the owner I want one stock run on demand. | R1 | ✅ `stock.yml` |
 | S12.3 | As the owner I want a **durable DB** that Actions, cloud sessions and my machine all reach (today the DB is an Actions artifact for 90 days). | R1 | ✅ Turso client (#103, ADR 0013); `scripts/db.py` push/pull and the dual-backend `db_backend` fixture (#116) |
-| S12.4 | As the owner I want the agent stages (A2, A3, A7) runnable unattended (Actions or a scheduled Claude session) after the scan, reading the run from the DB. | R1 | ⬜ needs a key / subscription token (ADR 0010) · #123 |
+| S12.4 | As the owner I want the agent stages (A2, A3, A7) runnable unattended (Actions or a scheduled Claude session) after the scan, reading the run from the DB. | R1 | ✅ `agents.yml` + `claude-code-action` (ADR 0019); inert until the owner adds a Claude secret · #123 |
 | S12.5 | As the owner I want a daily workflow (A7) alongside the weekly one. | R1 | ✅ `daily.yml`, 17:47 UTC weekdays, `concurrency: book` shared with the scan · #120 |
-| S12.6 | As the owner I want failures reported (ERROR labels, source outages, agent errors) without stopping the rest of the run. | R1 | ✅ for toolkits; ⬜ for agents · #123 |
+| S12.6 | As the owner I want failures reported (ERROR labels, source outages, agent errors) without stopping the rest of the run. | R1 | ✅ toolkits (ERROR steps) and agents (`record.py error`, `outcome`) · #123 |
 | S12.7 | As the owner I want notifications (email / push) for the weekly pack and the daily actions. | R2 | ⬜ · #132 |
 | S12.8 | As the owner I want agent cost and runtime per run logged, so the free / subscription limits aren't hit by surprise. | R2 | ⬜ · #139 |
 

@@ -313,3 +313,85 @@ def test_skills_reference_the_schema_and_record() -> None:
     ):
         assert section in research, section
     assert "30 days" in research and "catalyst_score" in research and "kill_criteria" in research
+
+
+def test_error_queue_latest_run_and_outcome(
+    db_backend: Path | None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    @dataclass(frozen=True)
+    class Scored:
+        date: pd.Timestamp
+        trend: float
+
+    run_id = store.start_run("scan", {}, path=db_backend)
+    for ticker, trend, label in (
+        ("A.L", 0.1, "ACT"),
+        ("B.L", 0.9, "ACT"),
+        ("C.L", 0.5, "ACT"),
+        ("W.L", 0.7, "WATCH"),
+    ):
+        store.save_ticker(run_id, ticker, {"technical": Scored(DATE, trend)}, path=db_backend)
+        store.save_label(run_id, ticker, "screen", label, "", path=db_backend)
+    args = _args(db_backend)
+    record.main(["latest-run", *args])
+    assert capsys.readouterr().out.strip() == str(run_id)
+    with pytest.raises(SystemExit, match="no daily run"):
+        record.main(["latest-run", "--script", "daily", *args])
+
+    # validate queue: screen ACT by rank, capped
+    record.main(["queue", "--run", str(run_id), "--stage", "validate", *args])
+    assert capsys.readouterr().out.split() == ["B.L", "C.L", "A.L"]
+    record.main(["queue", "--run", str(run_id), "--stage", "validate", "--cap", "2", *args])
+    assert capsys.readouterr().out.split() == ["B.L", "C.L"]
+
+    # the runner records an ERROR for a failed skill; it drops out of the queue
+    record.main(
+        [
+            "error",
+            "B.L",
+            "--run",
+            str(run_id),
+            "--stage",
+            "validate",
+            "--reason",
+            "turn limit",
+            *args,
+        ]
+    )
+    assert "recorded validate ERROR for B.L" in capsys.readouterr().out
+    labels = store.load_labels(run_id, "B.L", "validate", path=db_backend)
+    assert labels.iloc[0]["label"] == "ERROR" and labels.iloc[0]["actor"] == "agent:validate"
+    assert store.load_cards(run_id, "B.L", path=db_backend)["validate"]["reasons"] == "turn limit"
+    record.main(["queue", "--run", str(run_id), "--stage", "validate", *args])
+    assert capsys.readouterr().out.split() == ["C.L", "A.L"]
+
+    # research queue: final label ACT (B.L is ERROR after validate, so out), ranked
+    record.main(["queue", "--run", str(run_id), "--stage", "research", *args])
+    assert capsys.readouterr().out.split() == ["C.L", "A.L"]
+
+    # outcome: exit 1 only when every item errored
+    with pytest.raises(SystemExit) as e:
+        record.main(["outcome", "--run", str(run_id), "--stage", "validate", *args])
+    assert e.value.code == 1 and "1 recorded, 1 ERROR" in capsys.readouterr().out
+    record.main(
+        ["error", "C.L", "--run", str(run_id), "--stage", "validate", "--reason", "x", *args]
+    )
+    v = _verdict(
+        run_id=run_id, ticker="A.L", stage="validate", label="ACT", evidence=[], kill_criteria=[]
+    )
+    record.main(["verdict", _write(tmp_path, v), *args])
+    capsys.readouterr()
+    record.main(
+        ["outcome", "--run", str(run_id), "--stage", "validate", *args]
+    )  # 3 recorded, 2 errors: ok
+    assert "3 recorded, 2 ERROR" in capsys.readouterr().out
+    record.main(
+        ["outcome", "--run", str(run_id), "--stage", "research", *args]
+    )  # nothing recorded: ok
+    assert "0 recorded" in capsys.readouterr().out
+
+
+def test_max_agent_tickers_rule() -> None:
+    from solaraalpha.portfolio.rules import load_rules
+
+    assert load_rules().max_agent_tickers == 10

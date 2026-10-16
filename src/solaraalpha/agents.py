@@ -300,3 +300,70 @@ def record_revision(conn: Conn, verdict: Verdict, position_id: int, actor: str) 
             verdict.checks.get("trigger", ""),
         )
     return out
+
+
+def error_verdict(ticker: str, run_id: int, stage: str, reason: str) -> Verdict:
+    """The ERROR verdict the unattended runner records when a skill invocation failed."""
+    return Verdict(
+        stage=stage,
+        ticker=ticker,
+        run_id=run_id,
+        label="ERROR",
+        confidence=0.0,
+        reasons=[reason],
+        note_md=f"Agent run failed: {reason}",
+    )
+
+
+def queue(conn: Conn, run_id: int, stage: str, cap: int) -> list[str]:
+    """What the unattended agents should work in ``run_id`` for ``stage``, best first, at most
+    ``cap`` items: ``validate`` → the screen-ACT tickers; ``research`` → tickers whose final
+    label is ACT; ``monitor`` → position ids with an agent trigger in that daily run. Tickers
+    are ordered by ``rank_score`` over the run's cards (ties by ticker); those already recorded
+    for the stage are left out."""
+    from solaraalpha.monitoring import positions_to_review
+    from solaraalpha.portfolio.fit import rank_score
+    from solaraalpha.portfolio.planner import final_labels
+
+    if stage == "monitor":
+        return [str(p) for p in positions_to_review(conn, run_id)[:cap]]
+    if stage == "validate":
+        df = query(
+            "SELECT ticker FROM labels WHERE run_id = ? AND stage = 'screen' AND label = 'ACT'",
+            conn,
+            [run_id],
+        )
+        tickers = [str(t) for t in df["ticker"]]
+    elif stage == "research":
+        tickers = [c.ticker for c in final_labels(conn, run_id) if c.label == "ACT"]
+    else:
+        raise ValueError(f"no queue for stage {stage!r}")
+    done = set(
+        query("SELECT ticker FROM labels WHERE run_id = ? AND stage = ?", conn, [run_id, stage])[
+            "ticker"
+        ]
+    )
+    scored = []
+    for t in tickers:
+        if t in done:
+            continue
+        score = rank_score(store.load_cards(run_id, t, conn=conn))
+        scored.append((-(score if score == score else -float("inf")), t))
+    return [t for _, t in sorted(scored)][:cap]
+
+
+def outcome(conn: Conn, run_id: int, stage: str) -> dict[str, int]:
+    """Counts of labels for ``stage`` in ``run_id`` (``total`` and ``errors``); for ``monitor``
+    the cards instead of labels."""
+    if stage == "monitor":
+        df = query(
+            "SELECT ticker, text FROM results WHERE run_id = ? AND model = 'monitor' AND field = 'label'",
+            conn,
+            [run_id],
+        )
+        return {
+            "total": len(df),
+            "errors": int((df["text"] == "ERROR").sum()) if len(df) else 0,
+        }
+    df = query("SELECT label FROM labels WHERE run_id = ? AND stage = ?", conn, [run_id, stage])
+    return {"total": len(df), "errors": int((df["label"] == "ERROR").sum()) if len(df) else 0}
