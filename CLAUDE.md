@@ -26,8 +26,10 @@ Current state:
   `config/watchlist.toml` — refresh after each quarterly FTSE review; not point-in-time).
 - Price data is **fetched fresh each run** (no `@parquet_cache`). With `--save` the raw fetch is
   also snapshotted into the results DB (`solaraalpha.store`) — for the record, never as a cache.
-- **Results DB**: scripts' `--save` records the run, model cards and input snapshots in
-  `data/solara.db` (append-only SQLite) — see docs/decisions/0007. Hosted copy (Turso) not set up yet.
+- **Results DB**: scripts' `--save` records the run, model cards and input snapshots in an
+  append-only SQLite DB — hosted on **Turso** when `SOLARA_TURSO_URL` / `SOLARA_TURSO_TOKEN` are
+  set (GitHub secrets, cloud env vars, `.env`), else the local `data/solara.db`. See
+  docs/decisions/0007, 0013.
 - Price history: fetch the **last 5 years** (default), then cut per stock to the span after
   the last blocking data issue (`trim_to_consistent`). Don't pull long history yet.
 - The technical models (`analysis/technical.py`, `analysis/levels.py`) must stay **generic across
@@ -110,6 +112,7 @@ src/solaraalpha/        importable package — all reusable code lives here
                         snapshots; start_run + save_ticker (a scan = one run) / save_run /
                         load_results / load_steps / latest / load_prices
                         — see docs/decisions/0007
+  turso.py              hosted results DB: sqlite3-style connection to Turso over HTTP — 0013
   toolkits.py           toolkit register: id -> run fn + pass conditions; Inputs (lazy,
                         shared per-ticker data)
   pipeline.py           WEEKLY stages, conditions, run_pipeline (stage by stage) — see

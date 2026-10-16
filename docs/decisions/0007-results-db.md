@@ -17,7 +17,7 @@ Point-in-time: `results.date` is the week the card describes, separate from `run
 `load_prices/load_fundamentals(as_seen=...)` rebuild what we had seen by a date. `as_seen` is
 when *we* saw it, not when it was published — fundamentals still go through `known()`.
 
-Hosting (not built yet): a hosted SQLite reachable over HTTPS. Turso (free: 5 GB, 10M rows
+Hosting (built in 0013): a hosted SQLite reachable over HTTPS. Turso (free: 5 GB, 10M rows
 written/month, no overage billing; HTTP `/v2/pipeline` API callable with our `requests`
 session) is first choice; Cloudflare D1 (SQLite, but 100k rows written/day) is the fallback.
 Checked Oct 2026: Supabase announced it is acquiring Turso, and libSQL is in maintenance mode,

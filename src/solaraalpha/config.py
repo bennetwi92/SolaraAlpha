@@ -11,6 +11,7 @@ from __future__ import annotations
 from functools import cached_property
 from pathlib import Path
 
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +27,15 @@ class Settings(BaseSettings):
 
     data_dir: Path = REPO_ROOT / "data"
     log_level: str = "INFO"
+    # Hosted results DB (Turso). Unset: the local SQLite file at db_path is used.
+    turso_url: str = ""
+    turso_token: SecretStr = SecretStr("")
+
+    @field_validator("turso_url", "turso_token", mode="before")
+    @classmethod
+    def _unquote(cls, v: object) -> object:
+        """Tolerate values pasted with surrounding quotes into an environment's settings."""
+        return v.strip().strip("\"'") if isinstance(v, str) else v
 
     @cached_property
     def raw_dir(self) -> Path:
