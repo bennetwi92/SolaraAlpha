@@ -7,7 +7,9 @@ pass / fail that lets a stock move on (see :mod:`solaraalpha.pipeline`). With no
 toolkit passes whenever it runs. Other cards (e.g. ``position``) are saved but not gated.
 
 :class:`Inputs` fetches each ticker's data once, on first use, and shares it across every
-toolkit run for that ticker, so a pipeline run costs one price fetch per stock.
+toolkit run for that ticker, so a pipeline run costs one price fetch per stock. Other
+instruments a toolkit compares against (indices, ETFs, peers, FX) are fetched once per process
+and shared across stocks (:meth:`Inputs.other`).
 """
 
 from __future__ import annotations
@@ -23,12 +25,14 @@ import pandas as pd
 from solaraalpha.analysis.events import build_pack
 from solaraalpha.analysis.fundamentals import fundamentals_card
 from solaraalpha.analysis.levels import levels_card
+from solaraalpha.analysis.relative_strength import compare, comparisons, rs_card
 from solaraalpha.analysis.technical import assess_position, scorecard
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.fundamentals import fetch_fundamentals
 from solaraalpha.data.prices import fetch_daily
 
 Cards = dict[str, Any]
+_OTHERS: dict[str, pd.DataFrame] = {}  # other instruments' daily prices, fetched this process
 
 
 class Inputs:
@@ -36,6 +40,7 @@ class Inputs:
 
     def __init__(self, ticker: str) -> None:
         self.ticker = ticker
+        self.others: dict[str, pd.DataFrame] = {}  # other instruments this ticker's runs used
 
     @cached_property
     def daily(self) -> pd.DataFrame:
@@ -54,6 +59,13 @@ class Inputs:
     @cached_property
     def fund(self) -> pd.DataFrame:
         return fetch_fundamentals(self.ticker)
+
+    def other(self, ticker: str) -> pd.DataFrame:
+        """Daily prices (as fetched) of another instrument this ticker is compared with."""
+        if ticker not in _OTHERS:
+            _OTHERS[ticker] = fetch_daily(ticker)
+        self.others[ticker] = _OTHERS[ticker]
+        return self.others[ticker]
 
     def fetched(self, name: str) -> pd.DataFrame | None:
         """``name`` if it has been fetched in this run, else None (never triggers a fetch)."""
@@ -109,6 +121,12 @@ def _technical(
 def _levels(x: Inputs, side: int = 1) -> Cards:
     """Support / resistance, trendlines, 52w and 5y highs; stop, target, reward:risk."""
     return {"levels": levels_card(x.weekly, side)}
+
+
+@toolkit("relative_strength", passes=("rs > 0",))
+def _relative_strength(x: Inputs) -> Cards:
+    """Excess return vs market, industry and peers (config/benchmarks.toml), vol-scaled."""
+    return {"relative_strength": rs_card(compare(x.weekly, comparisons(x.ticker), x.other))}
 
 
 @toolkit("fundamentals", passes=("quality > -0.5",))

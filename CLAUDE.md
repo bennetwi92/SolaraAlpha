@@ -47,11 +47,14 @@ Current state:
 - Model outputs for the scorecard are scores in **[-1, +1]** (+ = bullish / favourable).
 - Toolkits run as **one serialised weekly pipeline** (docs/decisions/0010): toolkits are
   registered by id in `solaraalpha/toolkits.py`, each with a fixed pass/fail verdict; the stages
-  are `WEEKLY` in `solaraalpha/pipeline.py` — `screen` (technical + levels, independent, both must
-  pass) → `fundamentals` → `events`. Each stage runs on every stock still in before the next
+  are `WEEKLY` in `solaraalpha/pipeline.py` — `screen` (technical + levels + relative strength,
+  independent, all must pass) → `fundamentals` → `events`. Each stage runs on every stock still in before the next
   starts. Stocks: `config/watchlist.toml`. GitHub Actions run it Sunday (`scan.yml`) or on
   demand for one stock (`stock.yml`). Thresholds are placeholders. Daily tasks (news,
   announcements, volatility) and the agent stage are not built yet.
+- **Relative strength** (`analysis/relative_strength.py`) compares each stock with its market
+  index, industry index / ETF and peers, listed per stock in `config/benchmarks.toml` (market
+  defaults by listing suffix). Method is generic; the comparison lists are per stock. See 0011.
 - All price data must pass through `check_prices` (review the issues), `clean_prices` and
   `trim_to_consistent` before use.
 
@@ -83,6 +86,7 @@ Current state:
 | Technical scorecard | `uv run python scripts/technical.py JET2.L [--entry-date D]` |
 | Levels + trade plan | `uv run python scripts/levels.py JET2.L [--short]` |
 | Fundamentals scorecard | `uv run python scripts/fundamentals.py JET2.L [--as-of D]` |
+| Relative strength vs market / industry / peers | `uv run python scripts/relative_strength.py JET2.L [--peers EZJ.L IAG.L]` |
 | Event pack (filings, reactions, expected events, news) | `uv run python scripts/events.py JET2.L [--days 7] [--horizon 16]` |
 | Jet2 fair value + news/scenario shocks | `uv run python scripts/jet2_value.py [--weeks 12] [--scenario fuel_spike] [--shock seats=+2%] [--list]` |
 | Jet2 news analyst (agent) | `/jet2-value <news or question>` in Claude Code |
@@ -91,7 +95,7 @@ Current state:
 | Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
-| Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `fundamentals` / `jet2_value` / `scan` |
+| Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `relative_strength` / `fundamentals` / `jet2_value` / `scan` |
 | Notebooks | `make notebook` |
 
 Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `uv.lock` by hand.
@@ -128,6 +132,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         highs/lows, blue sky; stop/targets/reward:risk — see docs/decisions/0004
     fundamentals.py     fundamentals model (one stock): growth/value/quality scores,
                         point-in-time via publication lags — see docs/decisions/0005
+    relative_strength.py  relative strength (any stock) vs market, industry, peer basket:
+                        vol-scaled excess returns, peer rank — see docs/decisions/0011
     events.py           events model (any stock): market reaction per filing, expected
                         scheduled events from the issuer's own history — see docs/decisions/0006
     jet2_value.py       Jet2-only fair value: consensus-calibrated FY27/FY28 driver P&L, live
@@ -135,6 +141,7 @@ src/solaraalpha/        importable package — all reusable code lives here
   portfolio/            portfolio construction / risk (later phase)
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM UK 50 snapshot)
+config/benchmarks.toml  per-stock market / industry / peers for relative strength
 .github/workflows/      ci.yml (checks), scan.yml (weekly pipeline, Sunday), stock.yml (one stock)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact

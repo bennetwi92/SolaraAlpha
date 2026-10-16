@@ -17,6 +17,9 @@ PRICE_COLS = ["open", "high", "low", "close", "adj_close"]
 BLOCKING = frozenset(
     {"missing", "non_positive_price", "zero_volume", "gap", "stale", "duplicate_date"}
 )
+# For series used only for close-to-close returns (indices, ETFs, FX as comparisons): volume
+# doesn't matter, and a missing or duplicated day is dropped / de-duplicated by clean_prices.
+CLOSE_ONLY_BLOCKING = frozenset({"non_positive_price", "gap", "stale"})
 
 
 def check_prices(
@@ -86,10 +89,12 @@ def clean_prices(df: pd.DataFrame) -> pd.DataFrame:
     return out.dropna(subset=["close"])
 
 
-def trim_to_consistent(df: pd.DataFrame, issues: pd.DataFrame) -> pd.DataFrame:
-    """Keep only the data after the last :data:`BLOCKING` issue, so the series is consistent
+def trim_to_consistent(
+    df: pd.DataFrame, issues: pd.DataFrame, blocking: frozenset[str] = BLOCKING
+) -> pd.DataFrame:
+    """Keep only the data after the last ``blocking`` issue, so the series is consistent
     from its first date on. The cutoff differs per stock; check how much is left."""
-    dates = issues.loc[issues["check"].isin(BLOCKING), "date"].dropna()
+    dates = issues.loc[issues["check"].isin(blocking), "date"].dropna()
     return df if dates.empty else df[df.index > dates.max()]
 
 
