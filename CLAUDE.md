@@ -141,6 +141,15 @@ docs/
   reusable logic in notebooks.
 - Clear outputs before committing large notebooks.
 
+## Issues
+
+GitHub issues are the backlog and the hand-off between threads/agents.
+- One issue = one deliverable. Title is imperative ("Persist events notes to the DB").
+- Body: **Context** (why, links to ADRs/PRs), **Scope** (what's in / out), **Acceptance**
+  (checkable list), **Open questions** (anything needing the owner's choice — don't assume).
+- State dependencies explicitly ("Blocked by #N"). Keep it short; detail goes in the PR/ADR.
+- PRs reference their issue (`Closes #N`). Note decisions taken during the work on the issue.
+
 ## Workflow for Claude
 
 - Work on the branch you're given; small, focused commits with descriptive messages.
