@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+from fakes import FakeTurso
+from solaraalpha import store
+from solaraalpha.toolkits import REGISTRY, Inputs, Toolkit
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import scan
+
+DATE = pd.Timestamp("2026-10-09", tz="UTC")
+
+
+@dataclass(frozen=True)
+class Card:
+    date: pd.Timestamp
+    score: float
+
+
+@pytest.fixture
+def stubs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every real toolkit replaced by a stub judged on `score`: ACT > 0, WATCH > -0.5, else PASS.
+    events raises for ERR.L."""
+    scores = {"UP.L": 0.5, "MID.L": -0.3, "DOWN.L": -0.9, "ERR.L": 0.9}
+
+    def stub(real: str) -> Toolkit:
+        def run(x: Inputs, **params: object) -> dict:
+            if real == "events" and x.ticker == "ERR.L":
+                raise RuntimeError("NSM down")
+            return {real: Card(DATE, scores[x.ticker])}
+
+        bands = ((), ()) if real == "events" else (("score > 0",), ("score > -0.5",))
+        return Toolkit(real, run, bands[0], bands[1], real)
+
+    for real in ("technical", "levels", "relative_strength", "fundamentals", "events"):
+        monkeypatch.setitem(REGISTRY, real, stub(real))
+
+
+def test_scan_labels_report_and_save(
+    stubs: None, fake_turso: FakeTurso, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report, run_file = tmp_path / "report.md", tmp_path / "run_id"
+    with pytest.raises(SystemExit) as e:
+        scan.main(
+            [
+                "UP.L",
+                "MID.L",
+                "DOWN.L",
+                "ERR.L",
+                "--save",
+                "--report",
+                str(report),
+                "--run-id-file",
+                str(run_file),
+            ]
+        )
+    assert e.value.code == 1  # events errored for ERR.L
+    out = capsys.readouterr().out
+    assert "UP.L       ACT " in out and "MID.L      WATCH" in out and "DOWN.L     PASS" in out
+    assert "saved run 1" in out and run_file.read_text() == "1\n"
+
+    md = report.read_text()
+    assert "| UP.L | ACT | ACT | ACT | ACT | ACT | **ACT** |" in md
+    assert "| MID.L | WATCH | WATCH | WATCH | WATCH | - | **WATCH** |" in md
+    assert "| DOWN.L | pass | pass | pass | - | - | **PASS** |" in md
+    assert "| ERR.L | ACT | ACT | ACT | ACT | ERROR | **ACT** |" in md
+    assert "**ACT:** UP.L, ERR.L" in md
+    assert "- MID.L: technical WATCH: failed score > 0.0 (score=-0.30); levels WATCH" in md
+    assert "- ERR.L `events`: RuntimeError: NSM down" in md
+
+    labels = store.load_labels(run_id=1)
+    assert list(labels["ticker"]) == ["UP.L", "MID.L", "DOWN.L", "ERR.L"]
+    assert list(labels["label"]) == ["ACT", "WATCH", "PASS", "ACT"]
+    assert set(labels["stage"]) == {"screen"} and set(labels["actor"]) == {"pipeline"}
+    assert labels["confidence"].isna().all()
+    assert store.shortlist(1) == ["UP.L", "ERR.L"]
+    assert store.shortlist(1, labels=("WATCH",)) == ["MID.L"]
+    steps = store.load_steps("MID.L")
+    assert list(steps["status"]) == ["watch", "watch", "watch", "watch", "skip"]
+    assert steps["reason"].iloc[-1] == "running label WATCH"
+
+
+def test_scan_one_toolkit_prints_label(stubs: None, capsys: pytest.CaptureFixture[str]) -> None:
+    scan.main(["MID.L", "--toolkit", "technical"])
+    out = capsys.readouterr().out
+    assert "MID.L      WATCH  technical:WATCH" in out
+
+
+def test_scan_list_shows_bands(capsys: pytest.CaptureFixture[str]) -> None:
+    scan.main(["--list"])
+    out = capsys.readouterr().out
+    assert "1. screen" in out and "runs on all" in out and "runs on WATCH/ACT" in out
+    assert "act:   trend >= 0.25 | momentum > 0 | entry >= 0 | risk_pct <= 0.15" in out
+    assert "watch: reward_risk >= 1.5 or coil_pending == true" in out
+    assert "(always, once run)" in out

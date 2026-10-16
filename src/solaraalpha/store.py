@@ -8,8 +8,13 @@ deleted, so every number can be traced to the run (time, git commit, arguments) 
   ``value`` (numbers, bools as 1/0) or ``text`` (strings, timestamps). ``date`` is the week the
   card describes, separate from the run time, so past scores can be joined to later returns
   without look-ahead. New card fields need no schema change.
-* ``steps`` — pipeline outcomes: (run, ticker, toolkit) -> stage, status
-  (pass / fail / skip / error) and reason — see :mod:`solaraalpha.pipeline`.
+* ``steps`` — pipeline outcomes: (run, ticker, toolkit) -> stage, status and reason — see
+  :mod:`solaraalpha.pipeline`. ``status`` is the toolkit's label in lowercase (``act`` / ``watch``
+  / ``pass`` / ``error`` / ``skip``). Rows from runs before labels existed (#111) hold ``pass`` /
+  ``fail``, where ``pass`` meant "moved on to the next stage".
+* ``labels`` — one label per (run, ticker, stage): ``screen`` from the pipeline (the combination
+  of the four screening toolkits, with each toolkit's label and failing clauses in ``reason``),
+  ``validate`` / ``research`` from the agents (``actor`` ``agent:<name>``, with a confidence).
 * ``prices`` / ``fundamentals`` — what the source returned, stored only when a row is new or
   differs from the latest stored version, so :func:`load_prices` / :func:`load_fundamentals`
   can rebuild what was known on any past date (``as_seen``) without duplicating history.
@@ -76,6 +81,16 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     value REAL, currency TEXT,
     PRIMARY KEY (ticker, field, date, run_id)
 );
+CREATE TABLE IF NOT EXISTS labels (
+    run_id     INTEGER NOT NULL REFERENCES runs,
+    ticker     TEXT NOT NULL,
+    stage      TEXT NOT NULL,      -- screen / validate / research
+    label      TEXT NOT NULL,      -- ACT / WATCH / PASS / ERROR
+    confidence REAL,               -- agents only, [0, 1]
+    reason     TEXT NOT NULL,
+    actor      TEXT NOT NULL,      -- pipeline / agent:<name>
+    PRIMARY KEY (run_id, ticker, stage)
+);
 """
 STEPS = """
 CREATE TABLE IF NOT EXISTS steps (
@@ -83,7 +98,7 @@ CREATE TABLE IF NOT EXISTS steps (
     ticker  TEXT NOT NULL,
     stage   TEXT,              -- NULL: saved before stages were recorded
     toolkit TEXT NOT NULL,
-    status  TEXT NOT NULL,     -- pass / fail / skip / error
+    status  TEXT NOT NULL,     -- act / watch / pass / error / skip (pass / fail before #111)
     reason  TEXT NOT NULL,
     PRIMARY KEY (run_id, ticker, toolkit)
 );
@@ -187,6 +202,66 @@ def save_ticker(
     finally:
         conn.close()
     log.info("saved %s in run %d", ticker, run_id)
+
+
+def save_label(
+    run_id: int,
+    ticker: str,
+    stage: str,
+    label: str,
+    reason: str = "",
+    confidence: float | None = None,
+    actor: str = "pipeline",
+    path: Path | None = None,
+    conn: Conn | None = None,
+) -> None:
+    """Record ``ticker``'s label for ``stage`` in ``run_id`` (one per run, ticker and stage)."""
+    if label not in ("ACT", "WATCH", "PASS", "ERROR"):
+        raise ValueError(f"label must be ACT / WATCH / PASS / ERROR, got {label!r}")
+    own = conn is None
+    conn = conn or connect(path)
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO labels VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (run_id, ticker, stage, label, confidence, reason, actor),
+            )
+    finally:
+        if own:
+            conn.close()
+
+
+def load_labels(
+    run_id: int | None = None,
+    ticker: str | None = None,
+    stage: str | None = None,
+    path: Path | None = None,
+) -> pd.DataFrame:
+    """Saved labels, with each run's time, script and commit."""
+    sql = "SELECT r.started_at, r.script, r.git_sha, l.* FROM labels l JOIN runs r USING (run_id)"
+    where, params = [], []
+    for col, val in (("run_id", run_id), ("ticker", ticker), ("stage", stage)):
+        if val is not None:
+            where.append(f"l.{col} = ?")
+            params.append(val)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    conn = connect(path)
+    try:
+        return query(sql + " ORDER BY l.run_id, l.rowid", conn, params=params)
+    finally:
+        conn.close()
+
+
+def shortlist(
+    run_id: int,
+    stage: str = "screen",
+    labels: tuple[str, ...] = ("ACT",),
+    path: Path | None = None,
+) -> list[str]:
+    """Tickers whose ``stage`` label in ``run_id`` is one of ``labels``, in saved order."""
+    df = load_labels(run_id, stage=stage, path=path)
+    return [str(t) for t in df.loc[df["label"].isin(labels), "ticker"]]
 
 
 def git_sha() -> str:

@@ -172,11 +172,11 @@ at least 2:1 to the next resistance (or nothing overhead).**
 |---|---|---|---|
 | S1.1 | As the pipeline I want technical, levels and relative strength run on every watchlist stock, side by side. | R1 | ✅ stage `screen` |
 | S1.2 | As the pipeline I want fundamentals run on the survivors. | R1 | ✅ stage `fundamentals` |
-| S1.3 | As the owner I want each toolkit to give **ACT / WATCH / PASS / ERROR** from its own bands (`act=` and `watch=` conditions) rather than pass/fail, so near-misses become a watch list. | R1 | ⬜ conditions are pass/fail only · #111 |
-| S1.4 | As the owner I want one **screen label per stock** from all four toolkits (the combining rule in §2), saved as a `steps` row, so the shortlist is one query. | R1 | 🟡 stages gate; no combined label · #111 |
-| S1.5 | As the owner I want the **"what we're looking for"** definition above recorded in an ADR and coded as the bands, so the screen is explicit and testable. | R1 | ⬜ thresholds are placeholders (ADR 0010) · #111 |
+| S1.3 | As the owner I want each toolkit to give **ACT / WATCH / PASS / ERROR** from its own bands (`act=` and `watch=` conditions) rather than pass/fail, so near-misses become a watch list. | R1 | ✅ `act=` / `watch=` bands per toolkit (ADR 0014) · #111 |
+| S1.4 | As the owner I want one **screen label per stock** from all four toolkits (the combining rule in §2), saved as a `steps` row, so the shortlist is one query. | R1 | ✅ `labels` table, one `screen` row per stock; `store.shortlist` · #111 |
+| S1.5 | As the owner I want the **"what we're looking for"** definition above recorded in an ADR and coded as the bands, so the screen is explicit and testable. | R1 | ✅ ADR 0014; bands coded in `toolkits.py` (placeholders until backtested) · #111 |
 | S1.6 | As the owner I want WATCH stocks to keep their reason (e.g. "extended: entry −0.4", "coiled: trigger 1,520p") so the daily monitor knows what would turn them into ACT. | R2 | ⬜ · #125 |
-| S1.7 | As the owner I want the event pack (`events` toolkit) to stop being a pass/fail screen and become the **input to A3** (it has no pass conditions today). | R1 | 🟡 runs as stage 3 with no gate · #111 |
+| S1.7 | As the owner I want the event pack (`events` toolkit) to stop being a pass/fail screen and become the **input to A3** (it has no pass conditions today). | R1 | ✅ no bands, always ACT; runs on ACT only · #111 |
 | S1.8 | As the owner I want the screen to rank ACT stocks (e.g. by setup × RS) so the agents work the best first if the list is long. | R2 | ⬜ · #125 |
 
 ### A2 — Validate (agent, Sunday)

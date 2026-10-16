@@ -56,6 +56,7 @@ def test_range_gives_support_and_resistance_zones() -> None:
     assert card.resistance == pytest.approx(110 * 1.02)
     assert card.stop < card.support < card.close < card.target
     assert not card.blue_sky and not card.new_low
+    assert not card.coil_pending and np.isnan(card.trigger)
 
 
 def test_trendlines_follow_a_rising_channel() -> None:
@@ -129,6 +130,7 @@ def test_coiled_long_plans_a_breakout_from_the_trigger() -> None:
     df = _triangle()
     card = levels_card(df)
     assert card.coiled and card.trigger > max(card.close, card.coil_upper)
+    assert card.coil_pending  # coiled and the trigger is above the close
     assert card.trigger < card.resistance == card.target  # box top (~112) is above the coil
     assert card.box_atr > 0
     assert card.stop < card.support < card.close < card.trigger

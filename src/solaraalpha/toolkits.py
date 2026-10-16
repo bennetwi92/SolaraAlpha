@@ -2,9 +2,10 @@
 
 A toolkit is a function ``(Inputs, **params) -> {model: card}`` registered with
 :func:`toolkit`. The card stored under the toolkit's own id is its *verdict card*: the toolkit's
-``passes`` conditions (e.g. ``"trend >= 0.25"``) are checked against it to give the overall
-pass / fail that lets a stock move on (see :mod:`solaraalpha.pipeline`). With no conditions, a
-toolkit passes whenever it runs. Other cards (e.g. ``position``) are saved but not gated.
+``act`` and ``watch`` bands (clauses such as ``"trend >= 0.25"``, see
+:mod:`solaraalpha.pipeline`) are checked against it to label the stock ACT / WATCH / PASS. With
+no clauses, a toolkit is ACT whenever it runs. Other cards (e.g. ``position``) are saved but not
+judged. The bands below are placeholders until backtested (docs/decisions/0014).
 
 :class:`Inputs` fetches each ticker's data once, on first use, and shares it across every
 toolkit run for that ticker, so a pipeline run costs one price fetch per stock. Other
@@ -76,21 +77,24 @@ class Inputs:
 class Toolkit:
     id: str
     run: Callable[..., Cards]
-    passes: tuple[str, ...]  # default pass conditions on the verdict card
+    act: tuple[str, ...]  # clauses that must all hold for ACT
+    watch: tuple[str, ...]  # clauses that must all hold for WATCH (when not ACT)
     doc: str
 
 
 REGISTRY: dict[str, Toolkit] = {}
 
 
-def toolkit(id: str, passes: tuple[str, ...] = ()) -> Callable[[Callable[..., Cards]], Any]:
-    """Register ``fn`` as toolkit ``id`` with default ``passes`` conditions."""
+def toolkit(
+    id: str, act: tuple[str, ...] = (), watch: tuple[str, ...] = ()
+) -> Callable[[Callable[..., Cards]], Any]:
+    """Register ``fn`` as toolkit ``id`` with its ``act`` and ``watch`` bands."""
 
     def register(fn: Callable[..., Cards]) -> Callable[..., Cards]:
         if id in REGISTRY:
             raise ValueError(f"toolkit {id!r} registered twice")
         doc = (fn.__doc__ or "").strip().splitlines()[0] if fn.__doc__ else ""
-        REGISTRY[id] = Toolkit(id, fn, passes, doc)
+        REGISTRY[id] = Toolkit(id, fn, act, watch, doc)
         return fn
 
     return register
@@ -103,10 +107,17 @@ def get(id: str) -> Toolkit:
         raise KeyError(f"unknown toolkit {id!r}; registered: {', '.join(REGISTRY)}") from None
 
 
-# Pass conditions are fixed long-side screens (placeholders until checked against returns).
+# Bands are fixed long-side screens from the story map §4 A1 (docs/decisions/0014): "a stage-2
+# uptrend with positive momentum, priced near support rather than stretched above it,
+# outperforming its peers, with earnings growing or being revised up, and at least 2:1 to the
+# next resistance (or nothing overhead)". Placeholders until backtested.
 
 
-@toolkit("technical", passes=("trend >= 0.25", "momentum > 0"))
+@toolkit(
+    "technical",
+    act=("trend >= 0.25", "momentum > 0", "entry >= 0", "risk_pct <= 0.15"),
+    watch=("trend >= 0", "momentum >= -0.25"),
+)
 def _technical(
     x: Inputs, side: int = 1, entry_date: str | None = None, entry_price: float | None = None
 ) -> Cards:
@@ -117,20 +128,32 @@ def _technical(
     return cards
 
 
-@toolkit("levels", passes=("reward_risk >= 2",))
+@toolkit(
+    "levels",
+    act=("structure > 0", "reward_risk >= 2"),  # inf (blue sky) counts
+    watch=("reward_risk >= 1.5 or coil_pending == true",),
+)
 def _levels(x: Inputs, side: int = 1) -> Cards:
     """Support / resistance, trendlines, 52w and 5y highs, coil; stop, target, reward:risk
     (from the breakout trigger when coiled)."""
     return {"levels": levels_card(x.weekly, side)}
 
 
-@toolkit("relative_strength", passes=("rs > 0",))
+@toolkit(
+    "relative_strength",
+    act=("rs > 0",),
+    watch=("rs >= -0.25", "rs_high == true or peer_top_half == true"),
+)
 def _relative_strength(x: Inputs) -> Cards:
     """Excess return vs market, industry and peers (config/benchmarks.toml), vol-scaled."""
     return {"relative_strength": rs_card(compare(x.weekly, comparisons(x.ticker), x.other))}
 
 
-@toolkit("fundamentals", passes=("quality > -0.5",))
+@toolkit(
+    "fundamentals",
+    act=("growth > 0", "quality > -0.5", "eps_revision >= 0 or eps_revision is nan"),
+    watch=("quality > -0.5", "eps_revision > 0"),
+)
 def _fundamentals(x: Inputs, as_of: str | None = None) -> Cards:
     """Growth / value / quality scores, point-in-time via publication lags."""
     return {"fundamentals": fundamentals_card(x.fund, x.weekly, as_of)}
@@ -149,7 +172,7 @@ class EventsCard:
     pack: str  # directory holding pack.json, for the agent
 
 
-@toolkit("events")
+@toolkit("events")  # no bands: always ACT once run; it is the input to research, not a gate
 def _events(x: Inputs, days: int = 7, horizon: int = 16, out: str | None = None) -> Cards:
     """Event pack: recent filings with market reactions, expected events, headlines."""
     pack, path = build_pack(

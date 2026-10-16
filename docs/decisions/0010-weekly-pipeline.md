@@ -32,3 +32,8 @@ condition-driven DAG are more machinery than that needs.
   saved run. A GitHub-hosted job is capped at 6 hours; if the agent needs longer, it moves to a
   second job in the same workflow. Running it in Actions needs a paid key or subscription token.
 - A stage could later rank (e.g. top N) instead of a fixed pass; nothing does yet.
+
+**Amendment (0014).** Toolkits now label a stock ACT / WATCH / PASS (ERROR when they raise)
+from `act` and `watch` bands instead of pass / fail, labels combine as ERROR > PASS > WATCH >
+ACT, stages carry `runs_on` (fundamentals runs on WATCH too; events on ACT only, no longer a
+gate), and the scan saves one `labels` row per stock. See docs/decisions/0014.
