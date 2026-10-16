@@ -1,16 +1,17 @@
-# Weekly scan: every universe in config/universes runs its dependency graph (scripts/scan.py).
-# Results go to the job summary; the results DB and event packs are kept as an artifact
-# until the hosted DB exists (docs/decisions/0007, 0008).
-name: Weekly scan
+# Weekly pipeline: every stock in config/watchlist.toml through the stages in
+# solaraalpha.pipeline (scripts/scan.py), one stage at a time. Results go to the job summary;
+# the results DB and event packs are kept as an artifact until the hosted DB exists
+# (docs/decisions/0007, 0009).
+name: Weekly pipeline
 
 on:
   schedule:
-    - cron: "17 6 * * 6"  # Saturday 06:17 UTC: Friday's weekly bar is complete
+    - cron: "17 18 * * 0"  # Sunday 18:17 UTC: after Friday's close, before Monday's open
   workflow_dispatch:
     inputs:
-      universe:
-        description: Universe id (config/universes/<id>.toml), or "all"
-        default: all
+      tickers:
+        description: Space-separated Yahoo tickers; blank = the watchlist
+        default: ""
 
 concurrency:
   group: scan
@@ -19,18 +20,18 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Scan
+      - name: Pipeline
         env:
-          UNIVERSE: ${{ inputs.universe || 'all' }}
+          TICKERS: ${{ inputs.tickers }}
         run: >
-          uv run --no-sync python scripts/scan.py --universe "$UNIVERSE"
+          uv run --no-sync python scripts/scan.py $TICKERS
           --save --report "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()

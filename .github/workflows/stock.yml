@@ -1,4 +1,4 @@
-# One stock, on demand: a single toolkit with its default verdict, or a whole graph.
+# One stock, on demand: a single toolkit with its default verdict, or the whole pipeline.
 name: Run one stock
 
 on:
@@ -8,11 +8,8 @@ on:
         description: Yahoo ticker, e.g. JET2.L
         required: true
       toolkit:
-        description: Toolkit id (scripts/scan.py --list); leave blank to run the graph
+        description: Toolkit id (scripts/scan.py --list); leave blank to run the pipeline
         default: technical
-      graph:
-        description: Graph id, used when toolkit is blank
-        default: long_swing
       params:
         description: Toolkit params, space-separated key=value (e.g. entry_date=2026-06-05)
         default: ""
@@ -31,15 +28,12 @@ jobs:
         env:
           TICKER: ${{ inputs.ticker }}
           TOOLKIT: ${{ inputs.toolkit }}
-          GRAPH: ${{ inputs.graph }}
           PARAMS: ${{ inputs.params }}
         run: |
           args=("$TICKER" --save --report "$GITHUB_STEP_SUMMARY")
           if [ -n "$TOOLKIT" ]; then
             args+=(--toolkit "$TOOLKIT")
             for p in $PARAMS; do args+=(--param "$p"); done
-          else
-            args+=(--graph "$GRAPH")
           fi
           uv run --no-sync python scripts/scan.py "${args[@]}"
       - uses: actions/upload-artifact@v4
