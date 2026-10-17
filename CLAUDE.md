@@ -97,7 +97,7 @@ Current state:
 - All price data must pass through `check_prices` (review the issues), `clean_prices` and
   `trim_to_consistent` before use.
 - **Portfolio rules** (capital, risk per trade, position / sector / heat limits, entry validity,
-  long-only) live in `config/portfolio.toml`, read through `portfolio.rules.load_rules`. All
+  long-only, scaling, the pre-results event policy, the drawdown circuit breaker) live in `config/portfolio.toml`, read through `portfolio.rules.load_rules`. All
   values are **placeholders** until the owner sets them and flips `confirmed = true`; reports
   print a warning while it is false. See epic #104.
 

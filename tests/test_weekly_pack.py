@@ -9,6 +9,7 @@ import pytest
 from scanfix import build_scan_db
 from solaraalpha import store
 from solaraalpha.portfolio import book
+from solaraalpha.portfolio.rules import Rules
 from solaraalpha.portfolio.weekly_pack import build_pack, latest_review_cards, render_pack
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -168,4 +169,31 @@ def test_market_regime_in_the_pack_and_plan_flags(scan_db: Path) -> None:
     )
     plans = plan_run(conn, 1, dry_run=True).plans
     assert plans and all("market risk_off" in p.flags for p in plans)
+    conn.close()
+
+
+def test_circuit_breaker_line_and_rejections(
+    scan_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from solaraalpha.portfolio import planner as planner_mod
+    from solaraalpha.portfolio import weekly_pack as pack_mod
+    from solaraalpha.portfolio.rules import load_rules
+
+    base = load_rules()
+    on = Rules(**{**base.__dict__, "circuit_breaker": True, "max_drawdown_new_entries": 0.10})
+    conn = book.connect(scan_db)
+    text = render_pack(build_pack(conn, 1))
+    assert "- drawdown n/a vs circuit-breaker limit 10%; breaker off (owner to confirm)" in text
+    # a book 15% below its high with the breaker on: every plan rejected, pack says ACTIVE
+    monkeypatch.setattr(pack_mod, "drawdown_from_store", lambda conn, as_seen, rules: -0.15)
+    monkeypatch.setattr(planner_mod, "load_rules", lambda: on)
+    pack = build_pack(conn, 1, on)
+    assert pack.plan.report.breaker and pack.plan.report.accepted == []
+    assert all("circuit breaker: drawdown 15% > 10%" in why for _, why in pack.plan.report.rejected)
+    text = render_pack(pack)
+    assert (
+        "- drawdown 15.0% vs circuit-breaker limit 10%; breaker **ACTIVE: new entries stopped**"
+        in text
+    )
+    assert "circuit breaker: drawdown 15% > 10%" in text  # under "Rejected by fit"
     conn.close()

@@ -180,3 +180,40 @@ def test_ordering_is_deterministic_with_nan_scores() -> None:
     plans = [plan("C.L"), plan("A.L"), plan("B.L")]
     rep = fit(plans, EMPTY, EMPTY, EQ, rules(), {"B.L": math.nan, "C.L": 0.1}, sectors=SECTORS)
     assert rep.ranked == ["C.L", "A.L", "B.L"]  # scored first, then unscored by ticker
+
+
+def test_circuit_breaker_off_below_and_above_the_limit() -> None:
+    plans = [plan("A.L"), plan("B.L")]
+    scores = {"A.L": 0.5, "B.L": 0.4}
+    # off: a deep drawdown changes nothing
+    rep = fit(
+        plans,
+        EMPTY,
+        EMPTY,
+        EQ,
+        rules(circuit_breaker=False),
+        scores,
+        sectors=SECTORS,
+        drawdown=-0.3,
+    )
+    assert (
+        len(rep.accepted) == 2
+        and rep.rejected == []
+        and rep.breaker is False
+        and rep.drawdown == -0.3
+    )
+    # on, inside the limit: nothing
+    r = rules(circuit_breaker=True, max_drawdown_new_entries=0.10)
+    rep = fit(plans, EMPTY, EMPTY, EQ, r, scores, sectors=SECTORS, drawdown=-0.099)
+    assert len(rep.accepted) == 2 and rep.breaker is False
+    rep = fit(
+        plans, EMPTY, EMPTY, EQ, r, scores, sectors=SECTORS, drawdown=None
+    )  # unknown: no trip
+    assert len(rep.accepted) == 2
+    # on, beyond the limit: every plan rejected with the reason, open positions untouched
+    rep = fit(plans, EMPTY, EMPTY, EQ, r, scores, sectors=SECTORS, drawdown=-0.12)
+    assert rep.accepted == [] and rep.breaker is True
+    assert [(p.ticker, why) for p, why in rep.rejected] == [
+        ("A.L", "rejected_by_fit: circuit breaker: drawdown 12% > 10%"),
+        ("B.L", "rejected_by_fit: circuit breaker: drawdown 12% > 10%"),
+    ]

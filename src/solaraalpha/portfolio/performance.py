@@ -114,6 +114,14 @@ def drawdown(equity: pd.Series) -> pd.DataFrame:
     return pd.DataFrame({"equity": equity, "peak": peak, "drawdown": dd})
 
 
+def current_drawdown(equity: pd.Series) -> float:
+    """Equity now vs its running high, as a fraction (<= 0); 0 for an empty series."""
+    if equity.empty:
+        return 0.0
+    peak = float(equity.cummax().iloc[-1])
+    return float(equity.iloc[-1]) / peak - 1 if peak > 0 else 0.0
+
+
 def max_drawdown(equity: pd.Series) -> Drawdown:
     if equity.empty:
         return Drawdown(0.0, None, None)
