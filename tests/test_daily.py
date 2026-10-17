@@ -14,6 +14,7 @@ from solaraalpha.portfolio import book
 from solaraalpha.portfolio.daily import Fetchers, render_daily, run_daily
 from solaraalpha.portfolio.triggers import (
     entry_break,
+    event_due,
     filing_triggers,
     news_triggers,
     price_triggers,
@@ -124,6 +125,28 @@ def _ann() -> pd.DataFrame:
     )
 
 
+def test_event_due_boundaries() -> None:
+    today = pd.Timestamp("2026-10-14", tz="UTC")  # a Wednesday
+    assert event_due("J", 1, "2026-10-16", today, "flag") is not None  # Friday: 2 sessions
+    assert event_due("J", 1, "2026-10-19", today, "flag") is None  # Monday: 3 sessions
+    t = event_due("J", 1, "2026-10-15T07:00:00+00:00", today, "trim")
+    assert t is not None and t.detail == {"event": "2026-10-15", "sessions": 1, "policy": "trim"}
+    assert t.kind == "event_due" and t.position_id == 1 and t.at == "2026-10-14"
+    assert event_due("J", 1, "2026-10-14", today, "exit") is not None  # today: 0 sessions
+    assert event_due("J", 1, "2026-10-13", today, "exit") is None  # past
+    assert event_due("J", 1, "2026-10-16", today, "hold") is None  # hold: nothing to do
+    assert (
+        event_due("J", 1, None, today, "flag") is None
+        and event_due("J", 1, "", today, "flag") is None
+    )
+    # a weekend counts no sessions: seen on Saturday, Monday's event is the next session (0 away)
+    sat = pd.Timestamp("2026-10-17", tz="UTC")
+    mon = event_due("J", 1, "2026-10-19", sat, "flag")
+    tue = event_due("J", 1, "2026-10-20", sat, "flag")
+    assert mon is not None and mon.detail["sessions"] == 0
+    assert tue is not None and tue.detail["sessions"] == 1
+
+
 def test_watch_pullback_boundaries() -> None:
     # ATR(14) of the fixture is 20; the 10w MA level is 1480, the 40w MA 1400
     assert watch_pullback("W", _daily(last={"close": 1500.0}), 1480.0, 1400.0) is not None  # 1 ATR
@@ -201,7 +224,15 @@ def world(db_backend: Path | None) -> tuple[Path | None, dict[str, pd.DataFrame]
         ma10: float
         ma40: float
 
+    @dataclass(frozen=True)
+    class Ev:
+        date: pd.Timestamp
+        next_event: pd.Timestamp
+
     scan = store.start_run("scan", {}, path=db_backend)
+    store.save_ticker(
+        scan, "JET2.L", {"events": Ev(DATE, pd.Timestamp("2030-01-15", tz="UTC"))}, path=db_backend
+    )
     store.save_ticker(scan, "W.L", {"levels": Levels(DATE, 780.0, 800.0, True)}, path=db_backend)
     store.save_label(scan, "W.L", "screen", "WATCH", "levels WATCH: coil", path=db_backend)
     # an extended WATCH stock with a structured pullback reason; its close is back at the 10w MA

@@ -39,6 +39,8 @@ class Rules:
     add_fraction: float  # an add's size as a fraction of the initial shares (#128)
     max_adds: int  # adds per position
     add_min_r: float  # only add once the position is at least this many R in profit
+    event_policy: str  # results inside event_flag_days: flag / hold / trim / exit (#129)
+    event_trim_fraction: float  # the share of the position a trim proposes to sell
     benchmark: str  # Yahoo ticker the equity curve is compared with
 
     @property
@@ -70,8 +72,11 @@ _TYPES = {
     "add_fraction": float,
     "max_adds": int,
     "add_min_r": float,
+    "event_policy": str,
+    "event_trim_fraction": float,
     "benchmark": str,
 }
+EVENT_POLICIES = ("flag", "hold", "trim", "exit")
 _FRACTIONS = ("max_position_pct", "max_sector_pct", "max_heat", "max_adv_pct", "cash_buffer")
 
 
@@ -117,6 +122,10 @@ def _validate(r: Rules) -> None:
         raise ValueError(f"max_adds: must be >= 0, got {r.max_adds}")
     if r.add_min_r < 0:
         raise ValueError(f"add_min_r: must be >= 0, got {r.add_min_r}")
+    if r.event_policy not in EVENT_POLICIES:
+        raise ValueError(f"event_policy: must be one of {EVENT_POLICIES}, got {r.event_policy!r}")
+    if not 0 < r.event_trim_fraction <= 1:
+        raise ValueError(f"event_trim_fraction: must be in (0, 1], got {r.event_trim_fraction}")
     for name in _FRACTIONS:
         v = getattr(r, name)
         if not 0 < v <= 1:

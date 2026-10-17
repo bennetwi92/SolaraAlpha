@@ -141,6 +141,103 @@ def test_horizon_rule_and_position_actions() -> None:
     )
 
 
+def test_event_policy_decided_in_advance(db_backend: Path | None) -> None:
+    from solaraalpha.portfolio.review import propose_event_action, upcoming_event
+
+    soon = {
+        "date": DATE,
+        "next_event": DATE + pd.Timedelta(days=10),
+        "next_event_status": "confirmed",
+    }
+    far = {
+        "date": DATE,
+        "next_event": DATE + pd.Timedelta(days=15),
+        "next_event_status": "estimated",
+    }
+    none = {"date": DATE, "next_event": None, "next_event_status": ""}
+    assert upcoming_event(soon, DATE, rules()) == ("2026-10-19", "confirmed", "flag")
+    assert upcoming_event(far, DATE, rules()) == ("", "", "")  # beyond event_flag_days = 14
+    assert upcoming_event(far, DATE, rules(event_flag_days=20)) == (
+        "2026-10-24",
+        "estimated",
+        "flag",
+    )
+    assert upcoming_event(none, DATE, rules()) == ("", "", "")
+    assert upcoming_event(None, DATE, rules()) == ("", "", "")
+    assert upcoming_event(
+        {"date": DATE, "next_event": DATE - pd.Timedelta(days=1)}, DATE, rules()
+    ) == ("", "", "")
+    assert (
+        upcoming_event({"date": DATE, "next_event": DATE + pd.Timedelta(days=3)}, DATE, rules())[1]
+        == "estimated"
+    )
+    for policy in ("flag", "hold", "trim", "exit"):
+        c = review(
+            state(),
+            THEN,
+            {**NOW, "position": position(), "events": soon},
+            rules(event_policy=policy),
+        )
+        assert (c.event_due, c.event_status, c.event_action) == ("2026-10-19", "confirmed", policy)
+        assert f"event due 2026-10-19 (confirmed): policy {policy}" in c.reason
+        assert c.action == "hold"  # the policy never changes the review's own action
+    c = review(
+        state(), THEN, {**NOW, "position": position(), "events": far}, rules(event_policy="exit")
+    )
+    assert (c.event_due, c.event_action) == ("", "")
+
+    # trim / exit are proposed as revisions the owner decides on; flag / hold propose nothing
+    conn = book.connect(db_backend)
+    with conn:
+        pid, oid = book.draft_position(
+            conn, "JET2.L", 1500.0, 1400.0, 100, at="2026-09-13T18:00:00+00:00"
+        )
+        book.approve_position(conn, pid)
+        book.fill(conn, oid, 100, 1500.0, at="2026-09-14T09:00:00+00:00")
+        st = book.position_state(conn, pid)
+        for policy in ("flag", "hold"):
+            c = review(
+                st,
+                THEN,
+                {**NOW, "position": position(), "events": soon},
+                rules(event_policy=policy),
+            )
+            assert propose_event_action(conn, st, c, rules(event_policy=policy), 3) is None
+        c = review(
+            st, THEN, {**NOW, "position": position(), "events": soon}, rules(event_policy="trim")
+        )
+        rid = propose_event_action(
+            conn, st, c, rules(event_policy="trim", event_trim_fraction=0.3), 3
+        )
+        assert rid is not None
+        assert (
+            propose_event_action(conn, st, c, rules(event_policy="trim"), 3) is None
+        )  # pending: once
+    rv = book.revisions(conn, pid)
+    assert rv["action"].tolist() == ["take_partial"] and rv["new"].iloc[0] == {
+        "qty": 30,
+        "type": "market",
+    }
+    assert rv["trigger"].iloc[0] == "event_due 2026-10-19 (review run 3)"
+    assert rv["reason"].iloc[0] == "event due 2026-10-19 (confirmed): policy trim"
+    with conn:
+        book.decline_revision(conn, int(rid), "holding through")
+        c = review(
+            st, THEN, {**NOW, "position": position(), "events": soon}, rules(event_policy="exit")
+        )
+        rid2 = propose_event_action(conn, st, c, rules(event_policy="exit"), None)
+        assert rid2 is not None
+    rv = book.revisions(conn, pid)
+    assert (
+        rv["action"].tolist() == ["take_partial", "exit"]
+        and rv["trigger"].iloc[1] == "event_due 2026-10-19"
+    )
+    with conn:
+        done = book.accept_revision(conn, int(rid2))
+    assert book.order_status(conn, int(done["exit_order_id"])) == "approved"
+    conn.close()
+
+
 @dataclass(frozen=True)
 class Card:
     date: pd.Timestamp
@@ -217,6 +314,7 @@ def test_scan_reviews_open_positions_and_replaces_the_stop(
         "levels",
         "relative_strength",
         "fundamentals",
+        "events",
     ]
     assert store.load_labels(
         ticker="HELD.L"

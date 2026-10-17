@@ -27,4 +27,6 @@ max_agent_tickers = 10     # PLACEHOLDER cap on tickers the unattended agents wo
 add_fraction = 0.5         # PLACEHOLDER add size as a fraction of the initial shares (#128)
 max_adds = 2               # PLACEHOLDER adds per position
 add_min_r = 1.0            # PLACEHOLDER only add once the position is this many R in profit
+event_policy = "flag"      # PLACEHOLDER results inside event_flag_days of an open position: flag / hold / trim / exit (§6 Q9, #129)
+event_trim_fraction = 0.5  # PLACEHOLDER fraction of the shares a `trim` policy proposes to sell
 benchmark = "^FTAS"        # equity-curve comparison (Yahoo ticker). ^FTAI = FTSE AIM All-Share is also served

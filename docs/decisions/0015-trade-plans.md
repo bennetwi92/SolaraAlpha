@@ -105,3 +105,19 @@ protective stop (`book.fill` → `protect`, as for entry fills).
 
 `add_fraction = 0.5`, `max_adds = 2`, `add_min_r = 1.0` are placeholders in
 `config/portfolio.toml`.
+
+## Events before results (#129)
+
+Results inside the next two weeks are the biggest scheduled risk to an open position, so what
+to do is **decided in advance** in `config/portfolio.toml`: `event_policy` = `flag` (default,
+placeholder: report only), `hold` (record the decision), `trim` (sell `event_trim_fraction` of
+the shares) or `exit`. The weekly review runs the `events` toolkit for open positions too; when
+its `next_event` falls within `event_flag_days` of the review date the `review` card carries
+`event_due`, `event_status` (`confirmed` when every past year's filing landed within two days
+of the same date, else `estimated`: the pack projects from the issuer's own history, ADR 0006)
+and `event_action` (the policy). `trim` and `exit` are proposed as `revision_proposed` events
+(`take_partial` / `exit`, actor `pipeline`, trigger `event_due <date>`) the owner accepts or
+declines; nothing is ever drafted without the owner. The daily job fires `event_due` once the
+event is two sessions away and the policy is not `hold` (owner action). The weekly pack shows
+the event and the policy under each open position. §6 Q9 stays open: `flag` takes no action
+until the owner sets a policy.
