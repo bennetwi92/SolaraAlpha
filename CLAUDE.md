@@ -133,6 +133,7 @@ Current state:
 | Validator (agent) | `/validate JET2.L --run N` or `/validate --run N` in Claude Code |
 | Monitor pack for a daily run's triggered positions (then vs now, thesis, filing text) | `uv run python scripts/monitor_pack.py --run N [--position ID]` |
 | Monitor (agent): structural change? propose hold / tighten / partial / exit / revise target | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions` / `accept REV_ID` / `decline REV_ID --reason` |
+| Validator disagreement log (toolkits not warranted, concerns, rate per run) | `uv run python scripts/validator_stats.py [--since D]` |
 | Post-mortem pack for a closed position (record + weekly bars, hindsight labelled) | `uv run python scripts/postmortem_pack.py POSITION_ID` / `--since ISO` |
 | Post-mortem (agent): set-up, what worked / failed, signal right or wrong, rule proposals | `/postmortem POSITION_ID` in Claude Code → `record.py verdict ... --position ID` |
 | Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `revision FILE --position ID` / `prior JET2.L [--stage research]` / `schema`; runner: `error TICKER --run N --stage S --reason ...` / `queue --run N --stage S` / `latest-run` / `outcome --run N --stage S` |
@@ -200,6 +201,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         vol-scaled excess returns, peer rank — see docs/decisions/0011
     liquidity.py        liquidity (any stock): median daily traded value (20 / 60 sessions),
                         zero-volume share, Corwin-Schultz spread proxy, max position at max_adv_pct
+    charts.py           weekly_chart: candles + 10/40w MAs + levels, coil, trigger, stop/target
+                        + volume as a PNG (Agg) for the validator's pack
     scorecard.py        label scorecard: 2/4/8/16-week forward returns (and excess vs market) per
                         saved label, by stage x label and toolkit x band, no look-ahead
     events.py           events model (any stock): market reaction per filing, expected

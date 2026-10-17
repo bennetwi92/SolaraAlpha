@@ -14,6 +14,7 @@ from solaraalpha.data.announcements import Issuer
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import validate_pack
+import validator_stats
 
 DATE = pd.Timestamp("2026-10-09", tz="UTC")
 
@@ -141,6 +142,9 @@ def test_pack_keys_independence_and_as_seen(
     validate_pack.main(args)
     out = capsys.readouterr().out
     assert "JET2.L: screen ACT; 1 cards" in out and "filings: 1" in out
+    assert "chart: chart.png" in out
+    chart = tmp_path / "pack" / "chart.png"
+    assert chart.exists() and chart.stat().st_size > 20_000  # the picture next to the pack
     pack = json.loads((tmp_path / "pack" / "pack.json").read_text())
     assert set(pack) >= {
         "ticker",
@@ -212,3 +216,112 @@ def test_all_and_unavailable_filings(
     assert pack["filings"] == "unavailable"
     with pytest.raises(SystemExit, match="give one TICKER, or --all"):
         validate_pack.main(["--run", "1"])
+
+
+def test_disagreements_and_stats(db: Path | None, capsys: pytest.CaptureFixture[str]) -> None:
+    from solaraalpha.validation import disagreement_stats, disagreements
+
+    # run 1: JET2.L screen ACT (from the fixture) -> validate WATCH, levels not warranted
+    # run 2: A.L ACT -> ACT (agree), B.L WATCH -> PASS (technical not warranted, two concerns),
+    #        C.L PASS -> ERROR (ignored), D.L ACT with no validate label (ignored)
+    conn = store.connect(db)
+    with conn:
+        store.save_label(
+            1, "JET2.L", "validate", "WATCH", "levels stale", 0.7, "agent:validate", conn=conn
+        )
+        store._save_card(
+            conn,
+            1,
+            "JET2.L",
+            "validate",
+            {
+                "date": DATE,
+                "label": "WATCH",
+                "checks": json.dumps(
+                    {
+                        "data_issues": "ok: clean",
+                        "levels_stale_or_broken": "concern: target last touched 2023",
+                        "picture_agrees": "concern: support sliced through",
+                        "technical": "warranted: stage 2",
+                        "levels": "not warranted: target stale",
+                    }
+                ),
+            },
+        )
+        run2 = store.start_run("scan", {}, conn=conn)
+        for t, lab in (("A.L", "ACT"), ("B.L", "WATCH"), ("C.L", "PASS"), ("D.L", "ACT")):
+            store.save_label(run2, t, "screen", lab, "", conn=conn)
+        store.save_label(run2, "A.L", "validate", "ACT", "", 0.9, "agent:validate", conn=conn)
+        store.save_label(run2, "B.L", "validate", "PASS", "", 0.8, "agent:validate", conn=conn)
+        store.save_label(
+            run2, "C.L", "validate", "ERROR", "pack failed", 0.0, "agent:validate", conn=conn
+        )
+        store._save_card(
+            conn,
+            run2,
+            "B.L",
+            "validate",
+            {
+                "date": DATE,
+                "label": "PASS",
+                "checks": json.dumps(
+                    {
+                        "one_off_spikes": "concern: results gap carries momentum",
+                        "overextension": "Concern: 3 ATR above the 10w MA",
+                        "technical": "not warranted: one bar",
+                        "relative_strength": "warranted",
+                    }
+                ),
+            },
+        )
+    conn.close()
+    labels = store.load_labels(path=db)
+    cards = validator_stats.validate_cards(store.connect(db))
+    dis = disagreements(labels, cards)
+    assert dis.to_dict("records") == [
+        {
+            "run_id": 1,
+            "ticker": "JET2.L",
+            "screen": "ACT",
+            "validate": "WATCH",
+            "not_warranted": "levels",
+            "concerns": "levels_stale_or_broken,picture_agrees",
+        },
+        {
+            "run_id": run2,
+            "ticker": "B.L",
+            "screen": "WATCH",
+            "validate": "PASS",
+            "not_warranted": "technical",
+            "concerns": "one_off_spikes,overextension",
+        },
+    ]
+    stats = disagreement_stats(dis, labels)
+    assert stats["total"] == 2
+    assert stats["by_toolkit"] == {
+        "technical": 1,
+        "levels": 1,
+        "relative_strength": 0,
+        "fundamentals": 0,
+    }
+    assert stats["by_check"]["picture_agrees"] == 1 and stats["by_check"]["data_issues"] == 0
+    assert stats["per_run"] == [
+        {"run_id": 1, "validated": 1, "disagreements": 1, "rate": 1.0},
+        {"run_id": run2, "validated": 3, "disagreements": 1, "rate": pytest.approx(1 / 3)},
+    ]
+    assert disagreements(labels.iloc[0:0], {}).empty
+    # a card without checks still counts as a disagreement, with nothing blamed
+    bare = disagreements(labels, {})
+    assert list(bare["not_warranted"]) == ["", ""] and list(bare["concerns"]) == ["", ""]
+
+    validator_stats.main(["--db", str(db)] if db else [])
+    out = capsys.readouterr().out
+    assert "4 validate labels, 2 disagreements" in out
+    assert (
+        "run 1 JET2.L: screen ACT -> validate WATCH; not warranted: levels; concerns: levels_stale_or_broken,picture_agrees"
+        in out
+    )
+    assert "  technical            1" in out and "  picture_agrees           1" in out
+    assert f"run {run2}: 1 of 3 (33%)" in out
+    validator_stats.main(["--since", "2030-01-01", *(["--db", str(db)] if db else [])])
+    assert "nothing validated yet" in capsys.readouterr().out

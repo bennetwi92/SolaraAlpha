@@ -38,6 +38,11 @@ Read `pack.json` in the printed directory. It holds, built only from the DB:
 - `filings`: headlines, types and ids of the material filings in the last 13 weeks before the
   run, or `"unavailable"`.
 
+Next to it is **`chart.png`**: the last 104 weekly candles with the 10w / 40w MAs, the levels
+model's support, resistance and trendlines, the coil lines and trigger, and the plan's stop
+and target, over volume. **Read it** (the Read tool renders images) and judge the picture, not
+only the numbers.
+
 If the pack cannot be built (the command fails), write an **ERROR** verdict with the failure
 as the reason (Step 4) and stop.
 
@@ -64,6 +69,9 @@ settle it.
    listing currency in `prices.currency`)?
 7. `toolkit_agreement`: do the toolkits agree with each other? Strong RS with a falling trend,
    a tight coil with a huge target, growth with collapsing quality, each needs a sentence.
+8. `picture_agrees`: does `chart.png` agree with the numbers? A "stage 2 uptrend" that looks
+   like a range, a "support" the price has sliced through, a "coil" that is a gap, a trendline
+   drawn through two points, a target with no visible level at it: each is a `concern`.
 
 Then, per toolkit, `checks["technical"]`, `checks["levels"]`, `checks["relative_strength"]`,
 `checks["fundamentals"]`: **`warranted`** or **`not warranted`**, with the reason.
@@ -91,7 +99,7 @@ Write `verdict.json` next to the pack per `uv run python scripts/record.py schem
   "kill_criteria": [],
   "evidence": [],
   "note_md": "the short note: verdict, what you checked, what you found",
-  "checks": {"data_issues": "ok|concern|unknown: ...", "...": "...", "technical": "warranted: ...", "...": "..."}
+  "checks": {"data_issues": "ok|concern|unknown: ...", "...": "...", "picture_agrees": "ok|concern: ...", "technical": "warranted: ...", "...": "..."}
 }
 ```
 
@@ -104,6 +112,8 @@ uv run python scripts/record.py verdict <dir>/verdict.json --actor agent:validat
 
 Exit 2 means the file was invalid or tried to upgrade: fix it and re-run. Do not record the
 same stage twice for a run and ticker (append-only); if it is already recorded, report that.
+Your `checks` feed `scripts/validator_stats.py` (which toolkits you mark `not warranted`, which
+items `concern`), so use those exact words.
 
 ## Standards
 
