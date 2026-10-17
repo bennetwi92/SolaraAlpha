@@ -265,10 +265,35 @@ def world(db_backend: Path | None) -> tuple[Path | None, dict[str, pd.DataFrame]
     return db_backend, frames
 
 
-def _fetchers(frames: dict[str, pd.DataFrame], fail: str | None = None) -> Fetchers:
+def _index(n: int = 300, shock: float = 0.0) -> pd.DataFrame:
+    """A calm benchmark index; ``shock`` is the last day's log return (a -0.05 is risk_off)."""
+    rets = 0.004 * np.random.default_rng(9).standard_normal(n)
+    rets[-1] = shock if shock else rets[-1]
+    idx = pd.bdate_range(end="2026-10-20", periods=n, tz="UTC", name="date")
+    close = 4000 * np.exp(np.cumsum(rets))
+    df = pd.DataFrame(
+        {
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "adj_close": close,
+            "volume": 1e6,
+        },
+        index=idx,
+    )
+    df.attrs = {"ticker": "^FTAS", "currency": "GBP"}
+    return df
+
+
+def _fetchers(
+    frames: dict[str, pd.DataFrame], fail: str | None = None, index: pd.DataFrame | None = None
+) -> Fetchers:
     def daily(ticker: str) -> pd.DataFrame:
         if ticker == fail:
             raise ConnectionError("Yahoo down")
+        if ticker == "^FTAS" and ticker not in frames:
+            return index if index is not None else _index()
         return frames[ticker]
 
     news = pd.DataFrame(
@@ -310,6 +335,7 @@ def test_run_daily_saves_triggers_and_reports(
     daily_cli.main(["--save", *(["--db", str(db)] if db else [])])
     out = capsys.readouterr().out
     assert "Checked: JET2.L (open), W.L (watch), X.L (watch), E.L (pending)" in out
+    assert "Market (^FTAS): **calm**" in out
     assert "### Owner actions" in out and "traded through the stop 1,400.0" in out
     assert "reached the target 1,800.0" in out and "book.py exit 1 --reason target" in out
     assert "closed 301.0 above the trigger 300.0: place entry order" in out
@@ -389,6 +415,28 @@ def test_one_failure_does_not_stop_the_rest(
     assert "- JET2.L: prices: ConnectionError: Yahoo down" in out
     assert "W.L** closed 805.0" in out and "place entry order" in out  # the others still ran
     assert "saved run" not in out
+
+
+def test_market_regime_heads_the_report(
+    world: tuple[Path | None, dict[str, pd.DataFrame]], capsys: pytest.CaptureFixture[str]
+) -> None:
+    db, frames = world
+    conn = book.connect(db)
+    r = run_daily(conn, _fetchers(frames, index=_index(shock=-0.06)), save=True)
+    conn.close()
+    assert r.regime is not None and r.regime.regime == "risk_off" and r.regime.index == "^FTAS"
+    mt = r.of(("market",))
+    assert len(mt) == 1 and mt[0].detail["regime"] == "risk_off" and mt[0].ticker == "^FTAS"
+    text = render_daily(r)
+    assert text.index("### Market: **RISK_OFF**") < text.index("### Owner actions")
+    assert "Consider tightening stops and pausing new entries" in text
+    cards = store.load_cards(int(r.run_id or 0), "^FTAS", path=db)
+    assert cards["regime"]["regime"] == "risk_off" and cards["regime"]["drawdown_20d"] < 0
+    # the index failing is an error line, not a stop
+    conn = book.connect(db)
+    r2 = run_daily(conn, _fetchers(frames, fail="^FTAS"))
+    conn.close()
+    assert r2.regime is None and any(e.startswith("regime:") for _, e in r2.errors) and r2.triggers
 
 
 def test_render_empty() -> None:

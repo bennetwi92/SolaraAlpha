@@ -129,3 +129,43 @@ def test_open_position_with_review_card(scan_db: Path) -> None:
     )
     assert "book.py exit 1 --reason time" in text
     assert "- equity £10,0" in text and "1 of 8 positions" in text
+
+
+def test_market_regime_in_the_pack_and_plan_flags(scan_db: Path) -> None:
+    from solaraalpha.analysis.regime import RegimeCard
+    from solaraalpha.portfolio.planner import plan_run
+
+    conn = book.connect(scan_db)
+    assert build_pack(conn, 1).regime is None  # no daily run yet
+    plans = plan_run(conn, 1, dry_run=True).plans
+    assert plans and all("market risk_off" not in p.flags for p in plans)
+    conn.close()
+    daily = store.start_run("daily", {}, path=scan_db)
+    card = RegimeCard(
+        pd.Timestamp("2026-10-09", tz="UTC"),
+        "^FTAS",
+        3900.0,
+        -0.09,
+        -0.02,
+        -1.2,
+        0.22,
+        0.95,
+        "risk_off",
+        "index -9.0% below its 20-day high",
+    )
+    store.save_ticker(daily, "^FTAS", {"regime": card}, path=scan_db)
+    conn = book.connect(scan_db)
+    pack = build_pack(conn, 1)
+    assert (
+        pack.regime is not None
+        and pack.regime["regime"] == "risk_off"
+        and pack.regime["index"] == "^FTAS"
+    )
+    text = render_pack(pack)
+    assert (
+        "Market regime (^FTAS, 2026-10-09): **risk_off** — index -9.0% below its 20-day high"
+        in text
+    )
+    plans = plan_run(conn, 1, dry_run=True).plans
+    assert plans and all("market risk_off" in p.flags for p in plans)
+    conn.close()
