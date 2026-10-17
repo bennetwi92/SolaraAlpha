@@ -300,7 +300,7 @@ and WATCH stock**, and **the agent only when a check fires**.
 | S8.2 | As the pipeline I want **every** toolkit re-run for open positions (not only screen survivors) and compared with the entry conditions: what has deteriorated since entry. | R1 | ✅ review pass in `scan.py`, `portfolio/review.py` · #122 |
 | S8.3 | As the owner I want the new stop each week (ratchet only), with a drafted amend order when it moves. | R1 | ✅ `new_stop` ratchets; the stop order is replaced (approved) with `--save` · #122 |
 | S8.4 | As the owner I want the "hold while it keeps climbing" rule explicit: beyond 16 weeks, hold only while trend ≥ 0 and the trailing stop holds; flag positions past the horizon with stalled momentum. | R1 | ✅ `ReviewCard.action` exit past the horizon with trend < 0 or momentum ≤ 0 (ADR 0015) · #122 |
-| S8.5 | As the owner I want an upcoming-event check per position (results inside the next 2 weeks: hold through, trim or exit, decided in advance). | R2 | 🟡 expected events exist in the pack; no rule · #129 |
+| S8.5 | As the owner I want an upcoming-event check per position (results inside the next 2 weeks: hold through, trim or exit, decided in advance). | R2 | ✅ `event_policy` flag / hold / trim / exit; review card `event_due`, trim / exit proposed as revisions; daily `event_due` trigger 2 sessions out · #129 |
 
 ### A9 — Exit and close
 

@@ -249,6 +249,11 @@ def render_pack(pack: Pack) -> str:
                     lines.append(
                         f"  - `uv run python scripts/book.py exit {st.position_id} --reason time`"
                     )
+                if rv.get("event_due"):
+                    lines.append(
+                        f"  - **event due {str(rv.get('event_due'))[:10]}** ({rv.get('event_status') or 'estimated'}):"
+                        f" policy **{rv.get('event_action') or 'flag'}** (decided in advance; `book.py revisions` for a proposed trim / exit)"
+                    )
     else:
         lines.append("none")
     lines.append("")

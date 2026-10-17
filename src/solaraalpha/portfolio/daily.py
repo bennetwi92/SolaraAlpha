@@ -26,13 +26,15 @@ from solaraalpha.data import news as news_mod
 from solaraalpha.data import prices as prices_mod
 from solaraalpha.data.clean import check_prices, clean_prices, trim_to_consistent
 from solaraalpha.log import get_logger
-from solaraalpha.portfolio import book
+from solaraalpha.portfolio import book, risk
+from solaraalpha.portfolio.rules import load_rules
 from solaraalpha.portfolio.triggers import (
     AGENT_KINDS,
     OWNER_KINDS,
     Trigger,
     action_triggers,
     entry_break,
+    event_due,
     filing_triggers,
     news_triggers,
     price_triggers,
@@ -220,6 +222,15 @@ def run_daily(
                 if eb:
                     result.triggers.append(eb)
 
+    # scheduled events two sessions away on open positions (policy decided in advance, #129)
+    rules = load_rules()
+    for ticker, nxt in risk.next_events(conn).items():
+        for pid, st in states.items():
+            if st.ticker == ticker:
+                trig = event_due(ticker, pid, nxt, pd.Timestamp(now), rules.event_policy)
+                if trig:
+                    result.triggers.append(trig)
+
     # dividends and splits on open positions that the book does not have yet
     cash = book.cash(conn)
     for ticker in {st.ticker for st in states.values()}:
@@ -308,6 +319,15 @@ def render_daily(r: DailyResult) -> str:
         elif t.kind == "entry_break":
             lines.append(
                 f"- **{t.ticker}** closed {_px(d['close'])} above the trigger {_px(d['trigger'])}: place entry order {t.order_id} (position {t.position_id}) now — `book.py placed {t.order_id} --ref ...`"
+            )
+        elif t.kind == "event_due":
+            lines.append(
+                f"- **{t.ticker}** scheduled event {d['event']} in {d['sessions']} session(s) (position {t.position_id}): policy **{d['policy']}** — "
+                + (
+                    f"`book.py revisions` for the proposed {'trim' if d['policy'] == 'trim' else 'exit'}, else `book.py exit {t.position_id} --reason discretionary`"
+                    if d["policy"] in ("trim", "exit")
+                    else "decide: hold through, trim or exit (set `event_policy` in config/portfolio.toml)"
+                )
             )
         elif t.kind == "dividend":
             lines.append(

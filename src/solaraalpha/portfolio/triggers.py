@@ -20,7 +20,16 @@ from solaraalpha.portfolio.book import to_account
 
 GAP_ATR = 2.0  # |open - previous close| beyond this many daily ATRs is a gap (placeholder)
 ATR_SESSIONS = 14
-OWNER_KINDS = ("stop_close", "stop_touched", "target_hit", "entry_break", "dividend", "split")
+OWNER_KINDS = (
+    "stop_close",
+    "stop_touched",
+    "target_hit",
+    "entry_break",
+    "dividend",
+    "split",
+    "event_due",
+)
+EVENT_DUE_SESSIONS = 2  # warn when a scheduled event is this many sessions away (#129)
 AGENT_KINDS = ("gap", "filing")
 REPORT_KINDS = ("watch_break", "watch_pullback", "news")
 PULLBACK_ATR = (
@@ -264,3 +273,33 @@ def action_triggers(
                 )
             )
     return out
+
+
+def event_due(
+    ticker: str,
+    position_id: int,
+    next_event: str | pd.Timestamp | None,
+    today: pd.Timestamp,
+    policy: str,
+) -> Trigger | None:
+    """An open position's next scheduled event is :data:`EVENT_DUE_SESSIONS` or fewer trading
+    sessions away (and not past), and the policy is not ``hold``: the owner acts on the
+    decision made in advance (ADR 0015)."""
+    if next_event is None or policy == "hold" or str(next_event) in ("", "None", "nan"):
+        return None
+    ev = pd.Timestamp(next_event)
+    ev = ev.tz_localize("UTC") if ev.tz is None else ev.tz_convert("UTC")
+    t = today.tz_localize("UTC") if today.tz is None else today.tz_convert("UTC")
+    if ev.normalize() < t.normalize():
+        return None
+    sessions = len(pd.bdate_range(t.normalize(), ev.normalize())) - 1
+    if sessions > EVENT_DUE_SESSIONS:
+        return None
+    return Trigger(
+        ticker,
+        "event_due",
+        position_id,
+        None,
+        {"event": ev.strftime("%Y-%m-%d"), "sessions": int(sessions), "policy": policy},
+        t.strftime("%Y-%m-%d"),
+    )

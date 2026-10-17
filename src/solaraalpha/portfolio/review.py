@@ -28,7 +28,7 @@ from solaraalpha.toolkits import Inputs
 
 log = get_logger(__name__)
 
-REVIEW_TOOLKITS = ("technical", "levels", "relative_strength", "fundamentals")
+REVIEW_TOOLKITS = ("technical", "levels", "relative_strength", "fundamentals", "events")
 DETERIORATION = 0.25  # a score falling by at least this much since entry counts (placeholder)
 WATCHED = (
     ("technical", "trend"),
@@ -53,6 +53,9 @@ class ReviewCard:
     past_horizon: bool  # weeks held > the horizon's upper bound
     action: str  # hold / review / exit (exit is reported, never drafted)
     reason: str
+    event_due: str = ""  # next scheduled event within rules.event_flag_days (YYYY-MM-DD), else ""
+    event_status: str = ""  # confirmed / estimated (from the events card)
+    event_action: str = ""  # the policy applied: flag / hold / trim / exit, else ""
 
 
 def _get(card: Any, field: str) -> Any:
@@ -131,6 +134,9 @@ def review(
             if not math.isnan(old)
             else f"stop set {new:,.1f}"
         )
+    event_due, event_status, event_action = upcoming_event(cards.get("events"), date, rules)
+    if event_due:
+        reasons.append(f"event due {event_due} ({event_status}): policy {event_action}")
     return ReviewCard(
         date=date,
         position_id=state.position_id,
@@ -143,6 +149,59 @@ def review(
         past_horizon=past,
         action=action,
         reason="; ".join(reasons),
+        event_due=event_due,
+        event_status=event_status,
+        event_action=event_action,
+    )
+
+
+def upcoming_event(events: Any, date: pd.Timestamp, rules: Rules) -> tuple[str, str, str]:
+    """``(event_due, event_status, event_action)`` when the events card's ``next_event`` falls
+    within ``rules.event_flag_days`` of ``date`` (decided in advance, #129): the date, the
+    card's ``next_event_status`` (``estimated`` when absent) and ``rules.event_policy``; three
+    empty strings otherwise."""
+    nxt = _get(events, "next_event") if events is not None else None
+    if nxt is None or (isinstance(nxt, float) and math.isnan(nxt)) or str(nxt) in ("", "None"):
+        return "", "", ""
+    ts = pd.Timestamp(nxt)
+    ts = ts.tz_localize("UTC") if ts.tz is None else ts.tz_convert("UTC")
+    d = date.tz_localize("UTC") if date.tz is None else date
+    days = (ts.normalize() - d.normalize()).days
+    if not 0 <= days <= rules.event_flag_days:
+        return "", "", ""
+    status = str(_get(events, "next_event_status") or "estimated")
+    return ts.strftime("%Y-%m-%d"), status, rules.event_policy
+
+
+def propose_event_action(
+    conn: Conn, state: PositionState, card: ReviewCard, rules: Rules, run_id: int | None
+) -> int | None:
+    """Record the pre-results decision a ``trim`` or ``exit`` policy implies as a
+    ``revision_proposed`` event (``take_partial`` for ``event_trim_fraction`` of the shares, or
+    ``exit``) the owner accepts or declines; ``flag`` and ``hold`` propose nothing. None when
+    nothing was proposed or one is already pending."""
+    if card.event_action not in ("trim", "exit") or state.shares <= 0:
+        return None
+    rv = book.revisions(conn, state.position_id, status="proposed")
+    if not rv.empty and (rv["trigger"].astype(str).str.startswith("event_due")).any():
+        return None
+    reason = f"event due {card.event_due} ({card.event_status}): policy {card.event_action}"
+    trigger = f"event_due {card.event_due}" + (
+        f" (review run {run_id})" if run_id is not None else ""
+    )
+    if card.event_action == "trim":
+        qty = max(1, math.ceil(state.shares * rules.event_trim_fraction))
+        return book.propose_revision(
+            conn,
+            state.position_id,
+            "take_partial",
+            {"qty": qty, "type": "market"},
+            reason,
+            PIPELINE,
+            trigger=trigger,
+        )
+    return book.propose_revision(
+        conn, state.position_id, "exit", {"type": "market"}, reason, PIPELINE, trigger=trigger
     )
 
 
@@ -155,6 +214,7 @@ class Reviewed:
     stop_order_id: int | None = None
     add: TradePlan | None = None  # a proposed add (#128), None when the rules say no
     add_revision_id: int | None = None
+    event_revision_id: int | None = None  # the pre-results trim / exit proposed (#129)
 
 
 def adds_so_far(conn: Conn, position_id: int) -> int:
@@ -239,6 +299,7 @@ def review_positions(
                     item.stop_order_id = raise_stop(conn, state, card.new_stop, run_id)
                 if item.add is not None and not _add_pending(conn, pid):
                     item.add_revision_id = propose_add(conn, state, item.add, run_id)
+                item.event_revision_id = propose_event_action(conn, state, card, rules, run_id)
                 rows = [(s.stage, s.toolkit, s.status, s.reason) for s in steps]
                 store.save_ticker(
                     run_id,
@@ -308,6 +369,10 @@ def review_report(items: list[Reviewed]) -> str:
             line += f"; new stop order {it.stop_order_id} approved (see `book.py tickets`)"
         if c.action == "exit":
             line += f"; `book.py exit {c.position_id} --reason time`"
+        if c.event_due:
+            line += f"; **event due {c.event_due}** ({c.event_status}): policy {c.event_action}"
+            if it.event_revision_id:
+                line += f" — `book.py accept {it.event_revision_id}` / `decline`"
         if it.add is not None:
             line += (
                 f"; **add proposed** ({it.add.flags[0]}): {it.add.shares} shares limit {it.add.entry:,.1f},"

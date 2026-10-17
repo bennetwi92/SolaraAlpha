@@ -181,6 +181,10 @@ class EventsCard:
     next_event: pd.Timestamp | None  # likeliest date of the next expected scheduled event
     weeks_to_next: float
     pack: str  # directory holding pack.json, for the agent
+    next_event_status: str = ""  # confirmed (a fixed calendar slot) / estimated (projection), #129
+
+
+CONFIRMED_WINDOW_DAYS = 2  # past filings all within this many days of each other = a fixed slot
 
 
 @toolkit("events")  # no bands: always ACT once run; it is the input to research, not a gate
@@ -192,6 +196,11 @@ def _events(x: Inputs, days: int = 7, horizon: int = 16, out: str | None = None)
     now = pd.Timestamp(pack["generated"])
     zs = [abs(a["z"]) for a in pack["announcements"] if a.get("z") is not None]
     nxt = min((pd.Timestamp(e["likely"]) for e in pack["expected_events"]), default=None)
+    status = ""
+    if nxt is not None:
+        ev = min(pack["expected_events"], key=lambda e: pd.Timestamp(e["likely"]))
+        width = (pd.Timestamp(ev["window_end"]) - pd.Timestamp(ev["window_start"])).days
+        status = "confirmed" if width <= CONFIRMED_WINDOW_DAYS else "estimated"
     return {
         "events": EventsCard(
             date=x.weekly.index[-1],
@@ -201,5 +210,6 @@ def _events(x: Inputs, days: int = 7, horizon: int = 16, out: str | None = None)
             next_event=nxt,
             weeks_to_next=(nxt - now).days / 7 if nxt is not None else float("nan"),
             pack=str(path),
+            next_event_status=status,
         )
     }
