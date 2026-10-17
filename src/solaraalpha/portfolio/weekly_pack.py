@@ -184,7 +184,7 @@ def render_pack(pack: Pack) -> str:
                 f"- entry {entry}; stop {_px(pl.get('stop'), ccy)}; target {targets}; R:R {rr_s}",
                 f"- {pl.get('shares', pl.get('qty', '?'))} shares, value {_money(float(pl.get('position_value') or 0.0))},"
                 f" risk {_money(risk_amt)}{pct}; valid until {pl.get('valid_until', '?')}",
-                f"- flags: {', '.join([*pl.get('flags', []), *pl.get('fit_flags', [])]) or 'none'}",
+                f"- flags: {', '.join(dict.fromkeys([*pl.get('flags', []), *pl.get('fit_flags', [])])) or 'none'}",
             ]
             if cand:
                 lines.append(
@@ -210,6 +210,18 @@ def render_pack(pack: Pack) -> str:
     lines += ["## Watch list", ""]
     lines += [f"- {c.ticker}: {c.reasons.get(c.stage, '')}" for c in pack.watch] or ["none"]
     lines.append("")
+
+    ranked = [c for c in pack.plan.candidates if c.label == "ACT"]
+    if ranked:
+        lines += [
+            "## ACT by rank",
+            "",
+            *(
+                f"{i}. {c.ticker}" + (f" (screen rank {c.rank})" if c.rank else "")
+                for i, c in enumerate(ranked, 1)
+            ),
+            "",
+        ]
 
     lines += ["## Open positions", ""]
     if pack.open_positions:

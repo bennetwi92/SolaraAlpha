@@ -31,10 +31,12 @@ from solaraalpha.pipeline import (
     SCREEN_TOOLKITS,
     WEEKLY,
     Step,
+    rank_act,
     run_pipeline,
     run_toolkit,
     screen_label,
     stale_watchlist,
+    watch_on,
     watchlist,
     watchlist_snapshot,
 )
@@ -56,13 +58,31 @@ def _value(raw: str) -> Any:
     return raw
 
 
-def _save(run_id: int, x: Inputs, steps: list[Step], label: tuple[str, str] | None) -> None:
-    cards = {model: card for s in steps for model, card in s.cards.items()}
+def _cards(steps: list[Step]) -> dict[str, Any]:
+    return {model: card for s in steps for model, card in s.cards.items()}
+
+
+def _save(
+    run_id: int,
+    x: Inputs,
+    steps: list[Step],
+    label: tuple[str, str] | None,
+    rank: int | None = None,
+) -> None:
+    cards = _cards(steps)
     rows = [(s.stage, s.toolkit, s.status, s.reason) for s in steps]
     daily, fund = x.fetched("daily"), x.fetched("fund")
     save_ticker(run_id, x.ticker, cards, daily, fund, steps=rows, others=x.others)
     if label is not None:
-        save_label(run_id, x.ticker, "screen", label[0], label[1])
+        save_label(
+            run_id,
+            x.ticker,
+            "screen",
+            label[0],
+            label[1],
+            watch_on=watch_on(steps) if label[0] == "WATCH" else None,
+            rank=rank if label[0] == "ACT" else None,
+        )
 
 
 def _report(
@@ -83,7 +103,9 @@ def _report(
         lab: [t for t, (got, _) in labels.items() if got == lab]
         for lab in ("ACT", "WATCH", "ERROR")
     }
-    lines += ["", f"**ACT:** {', '.join(by['ACT']) or 'none'}", ""]
+    ranks = rank_act({t: _cards(results[t]) for t in by["ACT"]})
+    act = [t for t, _ in sorted(ranks.items(), key=lambda kv: kv[1])]
+    lines += ["", f"**ACT (ranked):** {', '.join(act) or 'none'}", ""]
     lines += ["**WATCH (why):**"]
     lines += [f"- {t}: {labels[t][1]}" for t in by["WATCH"]] or ["- none"]
     lines += ["", "**ERROR:**"]
@@ -143,12 +165,14 @@ def main(argv: list[str] | None = None) -> None:
         results = run_pipeline(inputs)
         labels = {t: screen_label(steps) for t, steps in results.items()}
 
+    ranks = rank_act({t: _cards(results[t]) for t, lab in labels.items() if lab[0] == "ACT"})
     for x in inputs:
         steps = results[x.ticker]
         marks = "  ".join(f"{s.toolkit}:{MARK[s.status]}" for s in steps)
-        print(f"{x.ticker:<10} {labels[x.ticker][0]:<6} {marks}")
+        rk = f" #{ranks[x.ticker]}" if x.ticker in ranks else ""
+        print(f"{x.ticker:<10} {labels[x.ticker][0] + rk:<6} {marks}")
         if run_id is not None:
-            _save(run_id, x, steps, None if args.toolkit else labels[x.ticker])
+            _save(run_id, x, steps, None if args.toolkit else labels[x.ticker], ranks.get(x.ticker))
     reviewed: list[Reviewed] | None = None
     if not args.toolkit:
         conn = book.connect()

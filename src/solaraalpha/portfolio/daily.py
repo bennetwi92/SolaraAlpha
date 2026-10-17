@@ -37,6 +37,7 @@ from solaraalpha.portfolio.triggers import (
     news_triggers,
     price_triggers,
     watch_break,
+    watch_pullback,
 )
 from solaraalpha.store import Conn
 
@@ -76,20 +77,57 @@ def last_daily_run(conn: Conn) -> str | None:
 
 
 def latest_watch(conn: Conn) -> dict[str, dict[str, Any]]:
-    """WATCH tickers of the latest scan run with a screen label, with their levels card."""
+    """WATCH tickers of the latest scan run with a screen label: their ``watch_on`` list (what
+    each WATCH toolkit waits for, #125), levels and technical cards."""
     row = conn.execute("SELECT MAX(run_id) FROM labels WHERE stage = 'screen'").fetchone()
     if not row or row[0] is None:
         return {}
     run_id = int(row[0])
     df = store.query(
-        "SELECT ticker FROM labels WHERE run_id = ? AND stage = 'screen' AND label = 'WATCH'",
+        "SELECT ticker, watch_on FROM labels WHERE run_id = ? AND stage = 'screen'"
+        " AND label = 'WATCH'",
         conn,
         [run_id],
     )
     out = {}
-    for t in df["ticker"]:
+    for t, w in zip(df["ticker"], df["watch_on"], strict=True):
         cards = store.load_cards(run_id, str(t), conn=conn)
-        out[str(t)] = {"run_id": run_id, "levels": cards.get("levels", {})}
+        out[str(t)] = {
+            "run_id": run_id,
+            "levels": cards.get("levels", {}),
+            "technical": cards.get("technical", {}),
+            "watch_on": json.loads(w) if isinstance(w, str) else [],
+        }
+    return out
+
+
+def watch_checks(ticker: str, daily: pd.DataFrame, w: dict[str, Any]) -> list[Trigger]:
+    """The watch triggers for one WATCH ticker: a ``break`` above the coil trigger (from
+    ``watch_on``, else the levels card's pending coil) and a ``pullback`` to the 10w MA level
+    while the close holds above the 40w MA (from the technical card)."""
+    items = list(w.get("watch_on") or [])
+    lv, tech = w.get("levels") or {}, w.get("technical") or {}
+    if not any(i.get("kind") == "break" for i in items) and lv.get("coil_pending"):
+        items.append({"kind": "break", "trigger": lv.get("trigger")})
+    out: list[Trigger] = []
+    for item in items:
+        trig: Trigger | None = None
+        if item.get("kind") == "break":
+            v = item.get("trigger")
+            trig = watch_break(ticker, daily, float(v) if v is not None else None)
+        elif item.get("kind") == "pullback":
+            v = item.get("level")
+            ma40 = tech.get("ma40")
+            trig = watch_pullback(
+                ticker,
+                daily,
+                float(v) if v is not None else None,
+                float(ma40) if ma40 is not None else None,
+            )
+        if trig:
+            out.append(
+                Trigger(**{**trig.__dict__, "detail": {**trig.detail, "run_id": w["run_id"]}})
+            )
     return out
 
 
@@ -175,19 +213,7 @@ def run_daily(
             tgt = float(raw_target) if raw_target is not None else None
             result.triggers += price_triggers(ticker, daily, pid, st.stop, tgt, st.side)
         if ticker in watch:
-            lv = watch[ticker]["levels"]
-            pending_coil = bool(lv.get("coil_pending")) if lv else False
-            trig = lv.get("trigger") if pending_coil else None
-            tb = watch_break(ticker, daily, float(trig) if trig is not None else None)
-            if tb:
-                result.triggers.append(
-                    Trigger(
-                        **{
-                            **tb.__dict__,
-                            "detail": {**tb.detail, "run_id": watch[ticker]["run_id"]},
-                        }
-                    )
-                )
+            result.triggers += watch_checks(ticker, daily, watch[ticker])
         for pb in pending:
             if pb["ticker"] == ticker:
                 eb = entry_break(ticker, daily, pb["position_id"], pb["order_id"], pb["trigger"])
@@ -311,10 +337,14 @@ def render_daily(r: DailyResult) -> str:
         )
     lines += ([] if agent else ["none"]) + [""]
 
-    lines += ["### Watch breaks", ""]
-    wb = r.of(("watch_break",))
+    lines += ["### Watch breaks and pullbacks", ""]
+    wb = r.of(("watch_break", "watch_pullback"))
     lines += [
-        f"- **{t.ticker}** closed {_px(t.detail['close'])} above its coil trigger {_px(t.detail['trigger'])}: promote candidate — `uv run python scripts/scan.py {t.ticker} --save`"
+        (
+            f"- **{t.ticker}** closed {_px(t.detail['close'])} above its coil trigger {_px(t.detail['trigger'])}: promote candidate — `uv run python scripts/scan.py {t.ticker} --save`"
+            if t.kind == "watch_break"
+            else f"- **{t.ticker}** closed {_px(t.detail['close'])}, {t.detail['distance_atr']:+.1f} ATR from its 10w MA {_px(t.detail['level'])} with the trend intact: pullback entry candidate — `uv run python scripts/scan.py {t.ticker} --save`"
+        )
         for t in wb
     ] or ["none"]
     lines.append("")

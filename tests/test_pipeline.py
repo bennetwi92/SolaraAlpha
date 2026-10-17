@@ -13,11 +13,14 @@ from solaraalpha.pipeline import (
     Clause,
     Condition,
     Stage,
+    Step,
     band,
     combine,
+    rank_act,
     run_pipeline,
     run_toolkit,
     screen_label,
+    watch_on,
     watchlist,
 )
 from solaraalpha.toolkits import REGISTRY, Inputs, Toolkit
@@ -321,3 +324,61 @@ def test_real_toolkits_share_one_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
     assert x.fetched("daily") is not None and x.fetched("fund") is None
     assert tech.status in ("act", "watch", "pass") and set(tech.cards) == {"technical", "position"}
     assert lev.status in ("act", "watch", "pass") and "reward_risk" in lev.reason
+
+
+def _step(toolkit: str, label: str, reason: str = "", **fields: object) -> Step:
+    @dataclass(frozen=True)
+    class C:
+        date: pd.Timestamp
+        __annotations__.update({k: object for k in fields})
+
+    card = C(**{"date": DATE, **fields})  # type: ignore[arg-type]
+    return Step("screen", toolkit, label.lower(), reason, {toolkit: card})
+
+
+def test_watch_on_per_failing_toolkit() -> None:
+    steps = [
+        _step("technical", "WATCH", "failed entry >= 0", entry=-0.41, ma10=1480.5, ma40=1300.0),
+        _step("levels", "WATCH", "coil", coil_pending=True, trigger=1520.0, reward_risk=1.6),
+        _step("relative_strength", "ACT", rs=0.3),
+        _step("fundamentals", "WATCH", "failed growth > 0", eps_revision=0.12, growth=-0.1),
+    ]
+    assert watch_on(steps) == [
+        {"toolkit": "technical", "kind": "pullback", "level": 1480.5, "entry": -0.41},
+        {"toolkit": "levels", "kind": "break", "trigger": 1520.0},
+        {"toolkit": "fundamentals", "kind": "revisions", "eps_revision": 0.12},
+    ]
+    assert watch_on(
+        [
+            _step("levels", "WATCH", "thin", coil_pending=False, trigger=None, reward_risk=1.7),
+            _step("relative_strength", "WATCH", "rs", rs=-0.1),
+            _step("technical", "WATCH", "failed trend >= 0.25", entry=0.3, trend=0.1, ma10=1.0),
+        ]
+    ) == [
+        {"toolkit": "levels", "kind": "reward_risk", "reward_risk": 1.7},
+        {"toolkit": "relative_strength", "kind": "rs", "rs": -0.1},
+        {"toolkit": "technical", "kind": "technical", "reason": "failed trend >= 0.25"},
+    ]
+    assert watch_on([_step("technical", "ACT", entry=0.5), _step("events", "WATCH", "x")]) is None
+    assert watch_on([]) is None
+    # NaN fields become None (JSON null)
+    got = watch_on([_step("fundamentals", "WATCH", "", eps_revision=float("nan"))])
+    assert got == [{"toolkit": "fundamentals", "kind": "revisions", "eps_revision": None}]
+
+
+def test_rank_act_is_deterministic() -> None:
+    @dataclass(frozen=True)
+    class T:
+        date: pd.Timestamp
+        trend: float
+
+    cards = {
+        "B.L": {"technical": T(DATE, 0.5)},
+        "A.L": {"technical": T(DATE, 0.5)},  # tie with B.L: ticker order
+        "Z.L": {"technical": T(DATE, float("nan"))},  # no score: last
+        "C.L": {"technical": T(DATE, 0.9)},
+        "D.L": {},  # no cards: last, after Z.L by ticker? no: both NaN, ticker order
+    }
+    assert rank_act(cards) == {"C.L": 1, "A.L": 2, "B.L": 3, "D.L": 4, "Z.L": 5}
+    assert rank_act(dict(reversed(list(cards.items())))) == rank_act(cards)
+    assert rank_act({}) == {}

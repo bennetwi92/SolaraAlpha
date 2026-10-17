@@ -18,6 +18,7 @@ from solaraalpha.portfolio.triggers import (
     news_triggers,
     price_triggers,
     watch_break,
+    watch_pullback,
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -123,6 +124,24 @@ def _ann() -> pd.DataFrame:
     )
 
 
+def test_watch_pullback_boundaries() -> None:
+    # ATR(14) of the fixture is 20; the 10w MA level is 1480, the 40w MA 1400
+    assert watch_pullback("W", _daily(last={"close": 1500.0}), 1480.0, 1400.0) is not None  # 1 ATR
+    assert watch_pullback("W", _daily(last={"close": 1500.1}), 1480.0, 1400.0) is None  # beyond
+    assert watch_pullback("W", _daily(last={"close": 1460.0}), 1480.0, 1400.0) is not None  # below
+    assert watch_pullback("W", _daily(last={"close": 1399.0}), 1410.0, 1400.0) is None  # trend gone
+    assert watch_pullback("W", _daily(last={"close": 1400.0}), 1410.0, 1400.0) is None  # at the MA
+    assert watch_pullback("W", _daily(last={"close": 1405.0}), 1410.0, None) is not None  # no MA
+    t = watch_pullback("W", _daily(last={"close": 1490.0}), 1480.0, 1400.0)
+    assert t is not None and t.kind == "watch_pullback" and t.position_id is None
+    assert t.detail["distance_atr"] == pytest.approx(0.5) and t.detail["level"] == 1480.0
+    assert watch_pullback("W", _daily(), None, 1400.0) is None
+    assert watch_pullback("W", _daily(), float("nan"), 1400.0) is None
+    assert (
+        watch_pullback("W", _daily(n=5, last={"close": 1480.0}), 1480.0, 1400.0) is None
+    )  # no ATR
+
+
 def test_filing_and_news_triggers() -> None:
     since = "2026-10-18T17:47:00+00:00"
     got = filing_triggers("JET2.L", 1, _ann(), since)
@@ -175,9 +194,27 @@ def world(db_backend: Path | None) -> tuple[Path | None, dict[str, pd.DataFrame]
         trigger: float
         coil_pending: bool
 
+    @dataclass(frozen=True)
+    class Tech:
+        date: pd.Timestamp
+        entry: float
+        ma10: float
+        ma40: float
+
     scan = store.start_run("scan", {}, path=db_backend)
     store.save_ticker(scan, "W.L", {"levels": Levels(DATE, 780.0, 800.0, True)}, path=db_backend)
     store.save_label(scan, "W.L", "screen", "WATCH", "levels WATCH: coil", path=db_backend)
+    # an extended WATCH stock with a structured pullback reason; its close is back at the 10w MA
+    store.save_ticker(scan, "X.L", {"technical": Tech(DATE, -0.4, 1510.0, 1400.0)}, path=db_backend)
+    store.save_label(
+        scan,
+        "X.L",
+        "screen",
+        "WATCH",
+        "technical WATCH: failed entry >= 0 (entry=-0.4)",
+        path=db_backend,
+        watch_on=[{"toolkit": "technical", "kind": "pullback", "level": 1510.0, "entry": -0.4}],
+    )
     store.save_label(scan, "JET2.L", "screen", "ACT", "all ACT", path=db_backend)
     prev = store.start_run("daily", {}, path=db_backend)
     conn = book.connect(db_backend)
@@ -191,6 +228,7 @@ def world(db_backend: Path | None) -> tuple[Path | None, dict[str, pd.DataFrame]
             last={"open": 1545.0, "high": 1810.0, "low": 1399.0, "close": 1402.0}
         ),  # gap, target, touched
         "W.L": _daily(close=780.0, last={"close": 805.0}),  # break
+        "X.L": _daily(close=1500.0),  # 0.5 ATR below its 10w MA, above the 40w: pullback
         "E.L": _daily(close=290.0, last={"close": 301.0}),  # entry break
     }
     return db_backend, frames
@@ -240,7 +278,7 @@ def test_run_daily_saves_triggers_and_reports(
     )
     daily_cli.main(["--save", *(["--db", str(db)] if db else [])])
     out = capsys.readouterr().out
-    assert "Checked: JET2.L (open), W.L (watch), E.L (pending)" in out
+    assert "Checked: JET2.L (open), W.L (watch), X.L (watch), E.L (pending)" in out
     assert "### Owner actions" in out and "traded through the stop 1,400.0" in out
     assert "reached the target 1,800.0" in out and "book.py exit 1 --reason target" in out
     assert "closed 301.0 above the trigger 300.0: place entry order" in out
@@ -255,7 +293,12 @@ def test_run_daily_saves_triggers_and_reports(
     assert "### Agent review needed" in out and "gapped +2.2 ATR" in out
     assert "new filing 2026-10-20T06:00 `RDN` Director buys (position 1)" in out
     assert "/monitor --run 3" in out
-    assert "### Watch breaks" in out and "W.L** closed 805.0 above its coil trigger 800.0" in out
+    assert "### Watch breaks and pullbacks" in out
+    assert "W.L** closed 805.0 above its coil trigger 800.0" in out
+    assert (
+        "X.L** closed 1,500.0, -0.5 ATR from its 10w MA 1,510.0 with the trend intact: pullback entry candidate — `uv run python scripts/scan.py X.L --save`"
+        in out
+    )
     assert "### Headlines" in out and "Jet2 adds Bristol routes" in out
     assert "### Errors\n\nnone" in out and "saved run 3" in out
 
@@ -271,8 +314,10 @@ def test_run_daily_saves_triggers_and_reports(
             "entry_break",
             "dividend",
             "split",
+            "watch_pullback",
         ]
     )
+    assert trig.loc[trig["kind"] == "watch_pullback", "detail"].iloc[0]["run_id"] == 1
     assert set(trig.loc[trig["kind"] == "filing", "position_id"]) == {1}
     assert (
         trig.loc[trig["kind"] == "entry_break", "order_id"].iloc[0] == 3
@@ -322,7 +367,7 @@ def test_render_empty() -> None:
     for section in (
         "### Owner actions\n\nnone",
         "### Agent review needed\n\nnone",
-        "### Watch breaks\n\nnone",
+        "### Watch breaks and pullbacks\n\nnone",
         "### Headlines\n\nnone",
         "### Errors\n\nnone",
     ):

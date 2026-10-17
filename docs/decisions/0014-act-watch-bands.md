@@ -67,3 +67,28 @@ point-in-time (#138) and the labels scored against forward returns (#137). Chang
 that cannot compute a field it is banded on (e.g. `eps_revision` without revisions data) is
 handled by explicit `is nan` clauses, so the bands say which gaps are tolerated. Ranking the
 ACT list and structured WATCH reasons come in #125.
+
+## Amendment (#125): structured WATCH reasons and the ACT rank
+
+`labels` gains two nullable columns, added by `store.connect()` with `ALTER TABLE ... ADD
+COLUMN` when missing (idempotent, both backends): **`watch_on`** (TEXT, JSON) on WATCH rows and
+**`rank`** (INTEGER) on ACT rows. Older rows stay NULL.
+
+- `watch_on` is a **list**, one object per WATCH toolkit (`pipeline.watch_on`), each with
+  `toolkit` and a `kind`: technical extended (`entry` < 0) → `{"kind": "pullback", "level":
+  <10w MA>, "entry": <entry score>}` (the technical card now carries `ma10` and `ma40`);
+  levels coiled → `{"kind": "break", "trigger": <trigger>}`; levels thin → `{"kind":
+  "reward_risk", "reward_risk": x}`; relative strength → `{"kind": "rs", "rs": x}`;
+  fundamentals → `{"kind": "revisions", "eps_revision": x}`; any other WATCH toolkit keeps its
+  reason text. A list because several toolkits can be WATCH at once and the daily job acts on
+  each.
+- The daily job (ADR 0017) reads `watch_on` for the latest scan's WATCH tickers: a `break`
+  item uses its `trigger` (the levels card's pending coil when there is no item);
+  a `pullback` item fires **`watch_pullback`** when the close is within `PULLBACK_ATR` = 1 daily
+  ATR of `level` while the close is above the technical card's `ma40` (trend intact). Both are
+  report triggers: re-run the screen for the stock.
+- `rank` = position by `portfolio.fit.rank_score` over the ticker's cards among the run's ACT
+  tickers, 1 = best, NaN last, ties by ticker (`pipeline.rank_act`), so it is deterministic.
+  `store.shortlist`, `planner.final_labels` (and so the weekly pack's "ACT by rank" and the plan
+  order) and the agents' `queue` use the stored rank; unranked ACT rows fall back to a fresh
+  `rank_score`.

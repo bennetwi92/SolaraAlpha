@@ -22,7 +22,10 @@ GAP_ATR = 2.0  # |open - previous close| beyond this many daily ATRs is a gap (p
 ATR_SESSIONS = 14
 OWNER_KINDS = ("stop_close", "stop_touched", "target_hit", "entry_break", "dividend", "split")
 AGENT_KINDS = ("gap", "filing")
-REPORT_KINDS = ("watch_break", "news")
+REPORT_KINDS = ("watch_break", "watch_pullback", "news")
+PULLBACK_ATR = (
+    1.0  # a WATCH stock is "back at the 10w MA" within this many daily ATRs (placeholder)
+)
 
 
 @dataclass(frozen=True)
@@ -105,6 +108,36 @@ def watch_break(ticker: str, daily: pd.DataFrame, trigger: float | None) -> Trig
     if bar["close"] > trigger:
         return Trigger(
             ticker, "watch_break", None, None, {**bar, "trigger": trigger}, _session(daily)
+        )
+    return None
+
+
+def watch_pullback(
+    ticker: str, daily: pd.DataFrame, level: float | None, ma40: float | None
+) -> Trigger | None:
+    """A WATCH stock that was extended whose latest close is back within :data:`PULLBACK_ATR`
+    daily ATRs of its 10-week MA ``level`` while the trend holds (close above ``ma40``):
+    report, re-screen it."""
+    if daily.empty or level is None or math.isnan(level):
+        return None
+    bar = _last(daily)
+    if math.isnan(bar["atr"]):
+        return None
+    if ma40 is not None and not math.isnan(ma40) and bar["close"] <= ma40:
+        return None
+    if abs(bar["close"] - level) <= PULLBACK_ATR * bar["atr"]:
+        return Trigger(
+            ticker,
+            "watch_pullback",
+            None,
+            None,
+            {
+                **bar,
+                "level": level,
+                "ma40": ma40,
+                "distance_atr": (bar["close"] - level) / bar["atr"],
+            },
+            _session(daily),
         )
     return None
 
