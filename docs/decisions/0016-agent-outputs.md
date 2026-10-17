@@ -64,3 +64,26 @@ evidence. Mechanics:
   be built gives an ERROR verdict with the failure as the reason.
 
 Chart images and disagreement statistics are R2 (#126).
+
+## Post-mortem (#134)
+
+Every closed trade is a labelled example. `scripts/postmortem_pack.py POSITION_ID` builds the
+pack from the record alone (`solaraalpha.postmortem`): the close summary, the plan and the
+set-up type derived from it (`pullback` / `breakout` / `blue_sky`, as in the trade journal),
+the frozen entry conditions, every weekly `review` card and plan revision over the trade, the
+daily triggers, the `research` and `monitor` verdicts (and their evidence) from runs started
+between two weeks before the draft and the close, the fills and events, and weekly bars from
+the entry week - 8 to the exit week + 4. Bars come from the price snapshots **as seen at the
+close** (`load_prices(as_seen=closed_at)`); a week that completed after the close is labelled
+`hindsight` and a pre-exit week with no snapshot at the time `as_seen: false`, so the agent
+can be held to what was knowable.
+
+The `/postmortem` skill writes a `postmortem` verdict through the same door: `stage =
+"postmortem"`, no `labels` row (it is not a pipeline stage), a card under `model =
+"postmortem"` with `setup_quality` and `execution_quality` in [-1, 1], the label meaning
+ACT = repeat this set-up, WATCH = mixed, PASS = avoid, and the set-up / exit reason / signals
+right and wrong in `checks`. `record.py verdict --position ID` keeps the position id on the
+card; it is recorded under the position's `opened_from_run_id` (or `--new-run` for a position
+booked by hand). Rule suggestions in the note are proposals only. The unattended runner
+(`agents.yml`, daily mode) queues the positions closed since the previous daily run that have
+no post-mortem card (`record.py queue --stage postmortem`).

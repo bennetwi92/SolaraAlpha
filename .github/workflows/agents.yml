@@ -1,5 +1,6 @@
 # Unattended agent stages (docs/decisions/0019). Runs after the weekly pipeline (validate ->
-# research -> plan.py -> weekly_pack.py) and after the daily check (monitor), or by hand.
+# research -> plan.py -> weekly_pack.py) and after the daily check (monitor, postmortem of
+# positions closed since the previous daily run), or by hand.
 #
 # INERT UNTIL THE OWNER ADDS A CLAUDE SECRET: the gate job skips everything unless
 # CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY is set, and SOLARA_TURSO_URL / SOLARA_TURSO_TOKEN
@@ -16,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: weekly (validate, research, plan, pack) or daily (monitor)
+        description: weekly (validate, research, plan, pack) or daily (monitor, postmortem)
         type: choice
         options: [weekly, daily]
         default: weekly
@@ -43,6 +44,7 @@ jobs:
       run: ${{ steps.run.outputs.run }}
       validate: ${{ steps.queue.outputs.validate }}
       monitor: ${{ steps.queue.outputs.monitor }}
+      postmortem: ${{ steps.queue.outputs.postmortem }}
     steps:
       - id: gate
         env:
@@ -98,10 +100,12 @@ jobs:
           run="${{ steps.run.outputs.run }}"
           if [ "${{ steps.mode.outputs.mode }}" = "daily" ]; then
             echo "monitor=$(uv run --no-sync python scripts/record.py queue --run "$run" --stage monitor | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+            echo "postmortem=$(uv run --no-sync python scripts/record.py queue --run "$run" --stage postmortem | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
             echo "validate=[]" >> "$GITHUB_OUTPUT"
           else
             echo "validate=$(uv run --no-sync python scripts/record.py queue --run "$run" --stage validate | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
             echo "monitor=[]" >> "$GITHUB_OUTPUT"
+            echo "postmortem=[]" >> "$GITHUB_OUTPUT"
           fi
 
   validate:
@@ -249,9 +253,42 @@ jobs:
           uv run --no-sync python scripts/record.py error "$ticker" --run "${{ needs.gate.outputs.run }}" --stage monitor \
             --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }}, position ${{ matrix.position }})" || true
 
+  postmortem:
+    needs: gate
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'daily' && needs.gate.outputs.postmortem != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        position: ${{ fromJson(needs.gate.outputs.postmortem) }}
+    env:
+      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - id: agent
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "/postmortem ${{ matrix.position }}"
+          claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
+      - if: steps.agent.outcome == 'failure'
+        run: |
+          ticker=$(uv run --no-sync python -c "from solaraalpha.portfolio import book; c = book.connect(); print(book.position_state(c, ${{ matrix.position }}).ticker)")
+          uv run --no-sync python scripts/record.py error "$ticker" --run "${{ needs.gate.outputs.run }}" --stage postmortem \
+            --position "${{ matrix.position }}" \
+            --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }}, position ${{ matrix.position }})" || true
+
   monitor-outcome:
-    needs: [gate, monitor]
-    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'daily' && needs.gate.outputs.monitor != '[]' && !cancelled()
+    needs: [gate, monitor, postmortem]
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'daily' && (needs.gate.outputs.monitor != '[]' || needs.gate.outputs.postmortem != '[]') && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -263,4 +300,9 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage monitor | tee -a "$GITHUB_STEP_SUMMARY"
+      - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage monitor | tee -a "$GITHUB_STEP_SUMMARY" || true
+      - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage postmortem | tee -a "$GITHUB_STEP_SUMMARY" || true
+      - name: Fail only if every agent errored
+        run: |
+          uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage monitor
+          uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage postmortem

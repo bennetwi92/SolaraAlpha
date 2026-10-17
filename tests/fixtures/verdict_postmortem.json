@@ -1,0 +1,12 @@
+{
+  "stage": "postmortem",
+  "ticker": "JET2.L",
+  "run_id": 1,
+  "label": "WATCH",
+  "confidence": 0.6,
+  "reasons": ["pullback set-up, stopped out after 5 weeks", "entry conditions sound; stop too tight for the ATR"],
+  "scores": {"setup_quality": 0.5, "execution_quality": -0.2},
+  "evidence": [],
+  "note_md": "## Set-up\nPullback to the 10-week line with trend 0.9...\n\n## What worked\nThe stop held the loss to -1.1R.\n\n## What failed\nThe stop sat 6% below entry, inside the weekly ATR.\n\n## Which signal was right or wrong\ntechnical: right (trend intact at exit); levels: wrong (support failed).\n\n## Rule suggestions (proposals)\nStop at least 1.5 weekly ATR below entry.",
+  "checks": {"position_id": "1", "setup": "pullback", "exit_reason": "stop", "r_multiple": "-1.10", "signal_right": "technical", "signal_wrong": "levels"}
+}
