@@ -261,7 +261,7 @@ labelled as such (no look-ahead in the record, and the live decision uses what's
 | S5.1 | As the owner I want to approve, amend (size, price) or reject each draft position with a reason, recorded in the DB. | R1 | ✅ `book.py approve / amend / reject` · #107 |
 | S5.2 | As the owner I want approved orders listed as broker-ready tickets (ticker, side, type, qty, limit/stop price, validity) to place by hand. | R1 | ✅ `book.py tickets` · #107 |
 | S5.3 | As the owner I want to mark orders as **placed**, with the broker reference. | R1 | ✅ `book.py placed ORDER_ID --ref` · #107 |
-| S5.4 | As the owner I want rejections and amendments counted, so I can see where the system and I disagree (A11). | R2 | ⬜ · #130 |
+| S5.4 | As the owner I want rejections and amendments counted, so I can see where the system and I disagree (A11). | R2 | ✅ `book.py stats` (`approval_stats` by deciding stage, rejection reasons, amendment size) · #130 |
 | S5.5 | As the owner I want a simple CLI (`scripts/book.py approve|reject|placed ...`) and later a page, rather than raw SQL. | R1 / R2 | ✅ CLI `scripts/book.py` (#107); a page is R2 |
 
 ### A6 — Record fills (owner, daily)
@@ -272,7 +272,7 @@ labelled as such (no look-ahead in the record, and the live decision uses what's
 | S6.2 | As the owner I want to mark an order **not filled / expired / cancelled**, and a part fill to leave the rest open. | R1 | ✅ `book.py unfilled / cancel / expire` · #108 |
 | S6.3 | As the owner I want a first fill to open the position, and it to show average cost, shares, risk at the stop and R. | R1 | ✅ first fill opens the position; `show [--price P]` gives cost, shares, risk, R · #106, #108 |
 | S6.4 | As the owner I want each newly opened position to get a **protective stop order** drafted for me to place. | R1 | ✅ protective stop drafted (approved) on the first fill, re-sized on later fills · #108 |
-| S6.5 | As the owner I want a reminder of orders past their validity with no fill entered. | R2 | ⬜ · #130 |
+| S6.5 | As the owner I want a reminder of orders past their validity with no fill entered. | R2 | ✅ daily `order_stale` trigger + weekly pack "Stale orders" (`book.stale_orders`) · #130 |
 | S6.6 | As the owner I want fills reconciled against a broker statement / CSV export, if the broker offers one, so manual entry errors show up. | R3 | ⬜ (depends on the broker; owner to choose) · #141 |
 
 ### A7 — Monitor daily

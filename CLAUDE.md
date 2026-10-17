@@ -67,8 +67,10 @@ Current state:
   placeholders until backtested.
 - **Daily job** (docs/decisions/0017): `scripts/daily.py` / `daily.yml` run every weekday after
   the close over open positions, the latest scan's WATCH tickers and pending breakout entries:
-  price triggers (stop closed through / touched, target hit, gap > 2 ATR), coil and entry
-  breaks, new filings and headlines since the last daily run, saved to the `triggers` table.
+  price triggers (stop closed through / touched, target hit, gap > 2 ATR), coil breaks and
+  pullbacks, entry breaks, dividends and splits not yet booked, a scheduled event two sessions
+  out, orders past their validity, new filings and headlines since the last daily run, saved to
+  the `triggers` table.
   Owner actions and agent reviews are separated in the report; the **monitor agent**
   (`/monitor`, docs/decisions/0018) runs only on agent triggers and *proposes* plan revisions
   (`revision_proposed` events) that the owner accepts or declines in `book.py`; agents never
@@ -141,7 +143,7 @@ Current state:
 | Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
-| Book trades by hand (draft, approve, amend, reject, tickets, placed, fills, exits) | `uv run python scripts/book.py new JET2.L --entry 1520 --stop 1400 --qty 100` / `list` / `show ID` / `approve ID` / `amend ID --qty N --price P --stop P` / `reject ID --reason TEXT` / `tickets` / `placed ORDER_ID --ref REF` / `fill ORDER_ID --qty N --price P [--commission X]` / `unfilled ORDER_ID` / `cancel ORDER_ID` / `expire` / `exit ID --reason stop|target|thesis_broken|...` / `cash dividend TICKER GBP --at EXDATE` / `split ID --ratio 2:1` / `corporate-close ID --price P --reason takeover|delisting` (`--db PATH` for a local file) |
+| Book trades by hand (draft, approve, amend, reject, tickets, placed, fills, exits) | `uv run python scripts/book.py new JET2.L --entry 1520 --stop 1400 --qty 100` / `list` / `show ID` / `approve ID` / `amend ID --qty N --price P --stop P` / `reject ID --reason TEXT` / `tickets` / `placed ORDER_ID --ref REF` / `fill ORDER_ID --qty N --price P [--commission X]` / `unfilled ORDER_ID` / `cancel ORDER_ID` / `expire` / `exit ID --reason stop|target|thesis_broken|...` / `cash dividend TICKER GBP --at EXDATE` / `split ID --ratio 2:1` / `corporate-close ID --price P --reason takeover|delisting` / `stats [--since D]` (`--db PATH` for a local file) |
 | Draft the week's trade plans from a saved scan run (final ACT labels → plan → fit → draft positions) | `uv run python scripts/plan.py --run N [--dry-run]` |
 | Weekly pack for a run (new plans with approve/reject commands, fit rejections, watch list, open positions, money, errors) | `uv run python scripts/weekly_pack.py --run N [--out FILE] [--report FILE]` |
 | Portfolio view: holdings, cash, equity, heat, sector exposure, breaches | `uv run python scripts/portfolio.py [--save] [--price JET2.L=1520]` (cash in: `book.py cash deposit 10000`) |

@@ -21,6 +21,7 @@ uv run python scripts/book.py corporate-close POSITION_ID --price P --reason tak
 uv run python scripts/book.py revisions [--status proposed|accepted|declined]   # agent proposals
 uv run python scripts/book.py accept REV_ID          # drafts the orders the revision implies
 uv run python scripts/book.py decline REV_ID --reason TEXT
+uv run python scripts/book.py stats [--since DATE]   # drafted / approved / amended / rejected by deciding stage
 uv run python scripts/book.py exit POSITION_ID --reason stop|trailing_stop|target|thesis_broken|time|discretionary|corporate_action
                                  [--type market|limit] [--price P] [--qty N]
 
@@ -310,6 +311,34 @@ def _corporate_close(conn: Conn, a: argparse.Namespace) -> None:
     )
 
 
+@command("stats")
+def _stats(conn: Conn, a: argparse.Namespace) -> None:
+    from solaraalpha.store import query
+
+    pos = book.positions(conn)
+    if a.since:
+        pos = pos[pos["created_at"] >= a.since]
+    ev = book.all_position_events(conn)
+    ev = ev[ev["position_id"].isin(set(pos["position_id"]))]
+    labels = query("SELECT run_id, ticker, stage FROM labels", conn)
+    df = book.approval_stats(pos, ev, labels)
+    print(f"{len(pos)} positions" + (f" since {a.since}" if a.since else ""))
+    if df.empty:
+        print("  (none)")
+        return
+    out = df.copy()
+    for col in ("avg_qty_change_pct", "avg_price_change_pct"):
+        out[col] = out[col].map(lambda v: "-" if pd.isna(v) else f"{v:.1%}")
+    out["rejection_reasons"] = out["rejection_reasons"].replace("", "-")
+    print(table(out))
+    stale = book.stale_orders(conn)
+    print(f"\nstale orders (past validity, no fill): {len(stale)}")
+    for o in stale.to_dict("records"):
+        print(
+            f"  order {o['order_id']} {o['ticker']} {o['purpose']} {o['qty']} ({o['status']}, valid until {o['valid_until']})"
+        )
+
+
 @command("revisions")
 def _revisions(conn: Conn, a: argparse.Namespace) -> None:
     rv = book.revisions(conn, status=None if a.status == "all" else a.status)
@@ -467,6 +496,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cc.add_argument("--reason", required=True, choices=book.CORPORATE_CLOSES)
     cc.add_argument("--at", help="ISO time (default now)")
+
+    stt = sub.add_parser(
+        "stats", help="approval statistics: drafted / approved / amended / rejected"
+    )
+    stt.add_argument("--since", help="positions created on or after this date (YYYY-MM-DD)")
 
     rv = sub.add_parser("revisions", help="plan revisions proposed by the monitor")
     rv.add_argument(

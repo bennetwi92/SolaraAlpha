@@ -1004,6 +1004,24 @@ def expire_orders(conn: Conn, as_of: str | None = None, actor: str = OWNER) -> l
     return ids
 
 
+def stale_orders(conn: Conn, as_of: str | None = None) -> pd.DataFrame:
+    """Approved or placed orders past ``valid_until`` (before ``as_of``'s date, default today)
+    with no terminal status: a forgotten fill or a dead order (#130). Columns: the order plus
+    ``ticker`` and ``status``."""
+    today = pd.Timestamp(iso(as_of)).strftime("%Y-%m-%d")
+    od = orders(conn)
+    if od.empty:
+        return od.assign(ticker=pd.Series(dtype="object"))
+    stale = od[
+        od["status"].isin(["approved", "placed", "part_filled"])
+        & od["valid_until"].notna()
+        & (od["valid_until"] < today)
+    ].copy()
+    pos = positions(conn).set_index("position_id")["ticker"]
+    stale["ticker"] = [str(pos.get(int(p), "")) for p in stale["position_id"]]
+    return stale.reset_index(drop=True)
+
+
 # ---------------------------------------------------------------------------- closing
 
 EXIT_REASONS = (
@@ -1162,6 +1180,121 @@ def close_summary(
         mfe_r=mfe_r,
         mae_r=mae_r,
     )
+
+
+# ---------------------------------------------------------------------------- approval statistics
+
+STAGE_ORDER = ("research", "validate", "screen")
+
+
+def approval_stats(
+    positions_df: pd.DataFrame, events: pd.DataFrame, labels: pd.DataFrame
+) -> pd.DataFrame:
+    """Where the owner and the system disagree (#130): per deciding stage (the latest stage
+    with a label for the position's ``opened_from_run_id`` and ticker; ``hand`` when booked
+    without a run) and ``all``: positions ``drafted`` / ``approved`` / ``amended`` /
+    ``rejected``, the ``rejection_reasons`` grouped by first word, and the mean amendment size
+    (``avg_qty_change_pct``, ``avg_price_change_pct``, NaN when none).
+
+    ``positions_df`` is :func:`positions`, ``events`` every position's events (``position_id,
+    kind, payload`` as dicts, ``reason``), ``labels`` has ``run_id, ticker, stage``."""
+    cols = [
+        "stage",
+        "drafted",
+        "approved",
+        "amended",
+        "rejected",
+        "avg_qty_change_pct",
+        "avg_price_change_pct",
+        "rejection_reasons",
+    ]
+    if positions_df.empty:
+        return pd.DataFrame(columns=cols)
+    by_run: dict[tuple[int, str], str] = {}
+    for r in labels.to_dict("records") if not labels.empty else []:
+        key: tuple[int, str] = (int(r["run_id"]), str(r["ticker"]))
+        cur = by_run.get(key)
+        if cur is None or STAGE_ORDER.index(str(r["stage"])) < STAGE_ORDER.index(cur):
+            by_run[key] = str(r["stage"])
+    stage_of: dict[int, str] = {}
+    for p in positions_df.to_dict("records"):
+        run = p.get("opened_from_run_id")
+        stage_of[int(p["position_id"])] = (
+            by_run.get((int(run), str(p["ticker"])), "unknown")
+            if run is not None and not pd.isna(run)
+            else "hand"
+        )
+    groups: dict[str, dict[str, Any]] = {}
+
+    def bucket(stage: str) -> dict[str, Any]:
+        return groups.setdefault(
+            stage,
+            {
+                "drafted": set(),
+                "approved": set(),
+                "amended": set(),
+                "rejected": set(),
+                "qty": [],
+                "price": [],
+                "reasons": [],
+            },
+        )
+
+    for e in events.to_dict("records") if not events.empty else []:
+        pid = int(e["position_id"])
+        kind = str(e["kind"])
+        if kind not in ("drafted", "approved", "amended", "rejected"):
+            continue
+        payload = (
+            e["payload"] if isinstance(e["payload"], dict) else json.loads(e["payload"] or "{}")
+        )
+        for stage in (stage_of.get(pid, "unknown"), "all"):
+            g = bucket(stage)
+            g[kind].add(pid)
+            if kind == "rejected":
+                words = str(e.get("reason") or "").strip().split()
+                g["reasons"].append(words[0].lower().strip(",.;:") if words else "(none)")
+            if kind == "amended":
+                old, new = payload.get("old") or {}, payload.get("new") or {}
+                for fld, acc in (("qty", "qty"), ("price", "price")):
+                    a, b = old.get(fld), new.get(fld)
+                    if a not in (None, 0) and b is not None and not pd.isna(a) and not pd.isna(b):
+                        g[acc].append(abs(float(b) - float(a)) / abs(float(a)))
+    rows = []
+    order = [*STAGE_ORDER, "hand", "unknown", "all"]
+    for stage in sorted(groups, key=lambda s: order.index(s) if s in order else 99):
+        g = groups[stage]
+        counts = (
+            pd.Series(g["reasons"]).value_counts() if g["reasons"] else pd.Series(dtype="int64")
+        )
+        rows.append(
+            {
+                "stage": stage,
+                "drafted": len(g["drafted"]),
+                "approved": len(g["approved"]),
+                "amended": len(g["amended"]),
+                "rejected": len(g["rejected"]),
+                "avg_qty_change_pct": float(sum(g["qty"]) / len(g["qty"]))
+                if g["qty"]
+                else float("nan"),
+                "avg_price_change_pct": float(sum(g["price"]) / len(g["price"]))
+                if g["price"]
+                else float("nan"),
+                "rejection_reasons": ", ".join(f"{k!s}:{int(v)}" for k, v in counts.items()),
+            }
+        )
+    return pd.DataFrame(rows, columns=cols)
+
+
+def all_position_events(conn: Conn, since: str | None = None) -> pd.DataFrame:
+    """Every position event (payload parsed), optionally only those at or after ``since``."""
+    sql, params = "SELECT * FROM position_events", []
+    if since:
+        sql += " WHERE at >= ?"
+        params.append(since)
+    df = query(sql + " ORDER BY event_id", conn, params)
+    df["payload"] = df["payload"].map(json.loads)
+    return df
 
 
 # ---------------------------------------------------------------------------- corporate actions
