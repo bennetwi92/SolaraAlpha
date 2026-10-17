@@ -29,7 +29,7 @@ from solaraalpha.toolkits import Inputs
 
 log = get_logger(__name__)
 
-AGENT_TRIGGERS = ("gap", "filing")
+AGENT_TRIGGERS = ("gap", "filing", "thesis_hit")
 DIFF_FIELDS = (
     ("technical", "trend"),
     ("technical", "momentum"),

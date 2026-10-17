@@ -68,9 +68,9 @@ Current state:
 - **Daily job** (docs/decisions/0017): `scripts/daily.py` / `daily.yml` run every weekday after
   the close over open positions, the latest scan's WATCH tickers and pending breakout entries:
   price triggers (stop closed through / touched, target hit, gap > 2 ATR), coil breaks and
-  pullbacks, entry breaks, dividends and splits not yet booked, a scheduled event two sessions
-  out, orders past their validity, new filings and headlines since the last daily run, saved to
-  the `triggers` table.
+  pullbacks, entry breaks, machine thesis conditions re-evaluated on fresh cards (`thesis_hit`),
+  dividends and splits not yet booked, a scheduled event two sessions out, orders past their
+  validity, new filings and headlines since the last daily run, saved to the `triggers` table.
   Owner actions and agent reviews are separated in the report; the **monitor agent**
   (`/monitor`, docs/decisions/0018) runs only on agent triggers and *proposes* plan revisions
   (`revision_proposed` events) that the owner accepts or declines in `book.py`; agents never

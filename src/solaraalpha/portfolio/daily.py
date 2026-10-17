@@ -2,8 +2,8 @@
 
 Every weekday evening (``daily.yml``): fetch daily prices for the open positions, the latest
 scan's WATCH tickers and the tickers with a live entry order waiting for a break; run the
-checks in :mod:`solaraalpha.portfolio.triggers`; look for dividends and splits the book has not
-recorded, and for new filings (and headlines) since the last daily run; report owner actions and agent reviews. One ticker's failure never stops
+checks in :mod:`solaraalpha.portfolio.triggers`; evaluate each open position's machine thesis
+conditions on fresh cards; look for dividends and splits the book has not recorded, and for new filings (and headlines) since the last daily run; report owner actions and agent reviews. One ticker's failure never stops
 the others. With ``save``: one ``daily`` run, a price snapshot per ticker and the triggers in
 the ``triggers`` table (the monitor agent reads them). See docs/decisions/0017.
 """
@@ -26,12 +26,14 @@ from solaraalpha.data import news as news_mod
 from solaraalpha.data import prices as prices_mod
 from solaraalpha.data.clean import check_prices, clean_prices, trim_to_consistent
 from solaraalpha.log import get_logger
+from solaraalpha.pipeline import Condition, run_toolkit
 from solaraalpha.portfolio import book, risk
 from solaraalpha.portfolio.rules import load_rules
 from solaraalpha.portfolio.triggers import (
     AGENT_KINDS,
     OWNER_KINDS,
     Trigger,
+    _session,
     action_triggers,
     entry_break,
     event_due,
@@ -39,10 +41,12 @@ from solaraalpha.portfolio.triggers import (
     news_triggers,
     price_triggers,
     stale_order_triggers,
+    thesis_hits,
     watch_break,
     watch_pullback,
 )
 from solaraalpha.store import Conn
+from solaraalpha.toolkits import Inputs, owner_of
 
 log = get_logger(__name__)
 
@@ -215,6 +219,9 @@ def run_daily(
             raw_target = targets.get(pid)
             tgt = float(raw_target) if raw_target is not None else None
             result.triggers += price_triggers(ticker, daily, pid, st.stop, tgt, st.side)
+            hits, issues = check_thesis(conn, pid, st, raw, daily)
+            result.triggers += [Trigger(**{**h.__dict__, "at": _session(daily)}) for h in hits]
+            result.errors += [(ticker, f"thesis: {i}") for i in issues]
         if ticker in watch:
             result.triggers += watch_checks(ticker, daily, watch[ticker])
         for pb in pending:
@@ -291,6 +298,78 @@ def run_daily(
     return result
 
 
+def check_thesis(
+    conn: Conn,
+    position_id: int,
+    state: book.PositionState,
+    raw: pd.DataFrame,
+    daily: pd.DataFrame,
+) -> tuple[list[Trigger], list[str]]:
+    """Evaluate the position's ``machine`` thesis conditions on fresh cards (#131): the toolkit
+    that owns each field (:func:`solaraalpha.toolkits.owner_of`) runs once on the same prices;
+    ``close`` is the latest daily close. A condition already acted on (a revision accepted or
+    declined after its first hit) is not reported again."""
+    conds = book.thesis_conditions(conn, position_id)
+    machine = conds[conds["kind"] == "machine"] if not conds.empty else conds
+    if machine.empty:
+        return [], []
+    needed: set[str] = set()
+    issues: list[str] = []
+    for r in machine.to_dict("records"):
+        try:
+            field = Condition.parse(str(r["condition"])).field
+        except ValueError:
+            continue  # reported by thesis_hits
+        if field == "close":
+            continue
+        owner = owner_of(field)
+        if owner is not None:
+            needed.add(owner)
+    cards: dict[str, Any] = {}
+    x = Inputs(state.ticker, daily=raw)
+    entry = pd.Timestamp(state.opened_at).strftime("%Y-%m-%d") if state.opened_at else None
+    for tk in sorted(needed):
+        params = (
+            {"entry_date": entry, "entry_price": state.entry_avg}
+            if tk == "technical" and entry
+            else {}
+        )
+        step = run_toolkit(tk, x, params, stage="daily")
+        if step.status == "error":
+            issues.append(f"{tk} failed: {step.reason}")
+            continue
+        cards.update(step.cards)
+    close = float(daily["close"].iloc[-1]) if len(daily) else None
+    hits, more = thesis_hits(
+        state.ticker, position_id, machine, cards, close, suppressed_conditions(conn, position_id)
+    )
+    return hits, issues + more
+
+
+def suppressed_conditions(conn: Conn, position_id: int) -> frozenset[int]:
+    """Condition ids whose first ``thesis_hit`` was followed by a revision decision (accepted
+    or declined): acted on, so not reported again."""
+    hits = store.load_triggers(kind="thesis_hit", conn=conn)
+    if hits.empty:
+        return frozenset()
+    hits = hits[hits["position_id"] == position_id]
+    if hits.empty:
+        return frozenset()
+    ev = book.position_events(conn, position_id)
+    decided = [
+        str(a) for a in ev.loc[ev["kind"].isin(["revision_accepted", "revision_declined"]), "at"]
+    ]
+    if not decided:
+        return frozenset()
+    last_decision = max(decided)
+    out = set()
+    for cid, g in hits.groupby(hits["detail"].map(lambda d: int(d["condition_id"]))):
+        first = min(str(a) for a in g["at"])
+        if first[:10] <= last_decision[:10]:
+            out.add(int(str(cid)))
+    return frozenset(out)
+
+
 def _px(v: Any) -> str:
     return (
         f"{float(v):,.1f}"
@@ -357,6 +436,10 @@ def render_daily(r: DailyResult) -> str:
         if t.kind == "gap":
             lines.append(
                 f"- **{t.ticker}** gapped {d['gap_atr']:+.1f} ATR at the open ({_px(d['prev_close'])} → {_px(d['open'])}), position {t.position_id}"
+            )
+        elif t.kind == "thesis_hit":
+            lines.append(
+                f"- **{t.ticker}** thesis condition hit: `{d['condition']}` ({d['field']} = {_px(d['value']) if isinstance(d['value'], int | float) else d['value']}), position {t.position_id}"
             )
         else:
             lines.append(
