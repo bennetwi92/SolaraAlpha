@@ -8,6 +8,7 @@ tested on a fixture DB and reused by the dashboard. Empty sections render as "no
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -47,6 +48,9 @@ class Pack:
     watch: list[Candidate] = field(default_factory=list)
     performance: performance.Summary | None = None
     correlated: list[tuple[str, str, float]] = field(default_factory=list)
+    stale_orders: list[dict[str, Any]] = field(
+        default_factory=list
+    )  # past validity, no fill (#130)
 
 
 def latest_review_cards(conn: Conn) -> dict[int, dict[str, Any]]:
@@ -113,6 +117,7 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> Pack:
         watch=[c for c in plan.candidates if c.label == "WATCH"],
         performance=perf,
         correlated=pairs,
+        stale_orders=json.loads(book.stale_orders(conn, started).to_json(orient="records")),
     )
 
 
@@ -256,6 +261,14 @@ def render_pack(pack: Pack) -> str:
                     )
     else:
         lines.append("none")
+    lines.append("")
+
+    lines += ["## Stale orders", ""]
+    lines += [
+        f"- order {o['order_id']} {o['ticker']} {o['purpose']} {o['qty']} ({o['status']}, valid until {o['valid_until']}),"
+        f" position {o['position_id']}: enter the fill, or `book.py unfilled {o['order_id']}` / `book.py expire`"
+        for o in pack.stale_orders
+    ] or ["none"]
     lines.append("")
 
     lines += ["## Portfolio", ""]

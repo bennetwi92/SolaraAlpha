@@ -28,6 +28,7 @@ OWNER_KINDS = (
     "dividend",
     "split",
     "event_due",
+    "order_stale",
 )
 EVENT_DUE_SESSIONS = 2  # warn when a scheduled event is this many sessions away (#129)
 AGENT_KINDS = ("gap", "filing")
@@ -303,3 +304,29 @@ def event_due(
         {"event": ev.strftime("%Y-%m-%d"), "sessions": int(sessions), "policy": policy},
         t.strftime("%Y-%m-%d"),
     )
+
+
+def stale_order_triggers(stale: pd.DataFrame, today: pd.Timestamp) -> list[Trigger]:
+    """One ``order_stale`` trigger per row of :func:`solaraalpha.portfolio.book.stale_orders`
+    (owner: enter the fill, or mark it unfilled / expire it)."""
+    out = []
+    for o in stale.to_dict("records"):
+        out.append(
+            Trigger(
+                str(o["ticker"]),
+                "order_stale",
+                int(o["position_id"]),
+                int(o["order_id"]),
+                {
+                    "status": str(o["status"]),
+                    "purpose": str(o["purpose"]),
+                    "valid_until": str(o["valid_until"]),
+                    "qty": int(o["qty"]),
+                    "price": None
+                    if o.get("price") is None or pd.isna(o["price"])
+                    else float(o["price"]),
+                },
+                today.strftime("%Y-%m-%d"),
+            )
+        )
+    return out

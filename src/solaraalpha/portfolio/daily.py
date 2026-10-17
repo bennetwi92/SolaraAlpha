@@ -38,6 +38,7 @@ from solaraalpha.portfolio.triggers import (
     filing_triggers,
     news_triggers,
     price_triggers,
+    stale_order_triggers,
     watch_break,
     watch_pullback,
 )
@@ -222,6 +223,11 @@ def run_daily(
                 if eb:
                     result.triggers.append(eb)
 
+    # orders past their validity with no fill entered (#130)
+    result.triggers += stale_order_triggers(
+        book.stale_orders(conn, now.isoformat()), pd.Timestamp(now)
+    )
+
     # scheduled events two sessions away on open positions (policy decided in advance, #129)
     rules = load_rules()
     for ticker, nxt in risk.next_events(conn).items():
@@ -319,6 +325,11 @@ def render_daily(r: DailyResult) -> str:
         elif t.kind == "entry_break":
             lines.append(
                 f"- **{t.ticker}** closed {_px(d['close'])} above the trigger {_px(d['trigger'])}: place entry order {t.order_id} (position {t.position_id}) now — `book.py placed {t.order_id} --ref ...`"
+            )
+        elif t.kind == "order_stale":
+            lines.append(
+                f"- **{t.ticker}** order {t.order_id} ({d['purpose']} {d['qty']} @ {_px(d['price'])}, {d['status']}) was valid until {d['valid_until']} (position {t.position_id}):"
+                f" enter the fill (`book.py fill {t.order_id} --qty N --price P`), or run `book.py unfilled {t.order_id}` / `book.py expire`"
             )
         elif t.kind == "event_due":
             lines.append(

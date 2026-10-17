@@ -42,3 +42,11 @@ per open issuer; the news feed is best-effort. Machine-checkable thesis conditio
 stale-order reminders (#130), the event-due trigger (#129), WATCH pullbacks (#125),
 notifications (#132) and market-wide volatility (#142) extend this job later. Amends 0010's
 "daily tasks not built".
+
+**Amendments (R2).** Later issues added owner triggers on the same path: `dividend` and
+`split` (#133, corporate actions the book has not recorded), `watch_pullback` (#125, a WATCH
+stock back at its 10w MA, from `labels.watch_on`), `event_due` (#129, an open position's
+scheduled event two sessions away under a non-`hold` policy) and `order_stale` (#130, an
+approved or placed order past `valid_until` with no fill entered: enter the fill or run
+`book.py unfilled` / `expire`). Each is a pure function in `portfolio.triggers`, reported under
+"Owner actions" (or "Watch breaks and pullbacks") and saved with the others.
