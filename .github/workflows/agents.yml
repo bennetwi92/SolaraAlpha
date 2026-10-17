@@ -8,6 +8,7 @@
 # otherwise. Cost guardrails: a ticker cap (config/portfolio.toml max_agent_tickers, taken in
 # rank order), --max-turns per invocation and a job timeout. A failed skill invocation is
 # recorded as an ERROR verdict and the run carries on; the job fails only if every item errored.
+# Each invocation's cost and runtime go to the agent_runs table (record.py usage, #139).
 name: Agents
 
 on:
@@ -138,6 +139,13 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: "/validate ${{ matrix.ticker }} --run ${{ needs.gate.outputs.run }}"
           claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
+      - name: Record agent usage
+        if: always() && steps.agent.outcome != 'skipped'
+        run: >
+          uv run --no-sync python scripts/record.py usage --run "${{ needs.gate.outputs.run }}"
+          --ticker "${{ matrix.ticker }}" --stage validate
+          --file "${{ steps.agent.outputs.execution_file }}"
+          --status "${{ steps.agent.outcome == 'success' && 'success' || 'failure' }}" || true
       - if: steps.agent.outcome == 'failure'
         run: >
           uv run --no-sync python scripts/record.py error "${{ matrix.ticker }}"
@@ -190,6 +198,13 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: "/research ${{ matrix.ticker }} --run ${{ needs.gate.outputs.run }}"
           claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
+      - name: Record agent usage
+        if: always() && steps.agent.outcome != 'skipped'
+        run: >
+          uv run --no-sync python scripts/record.py usage --run "${{ needs.gate.outputs.run }}"
+          --ticker "${{ matrix.ticker }}" --stage research
+          --file "${{ steps.agent.outputs.execution_file }}"
+          --status "${{ steps.agent.outcome == 'success' && 'success' || 'failure' }}" || true
       - if: steps.agent.outcome == 'failure'
         run: >
           uv run --no-sync python scripts/record.py error "${{ matrix.ticker }}"
@@ -251,6 +266,13 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: "/monitor --run ${{ needs.gate.outputs.run }} --position ${{ matrix.position }}"
           claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
+      - name: Record agent usage
+        if: always() && steps.agent.outcome != 'skipped'
+        run: >
+          uv run --no-sync python scripts/record.py usage --run "${{ needs.gate.outputs.run }}"
+          --ticker "position-${{ matrix.position }}" --stage monitor
+          --file "${{ steps.agent.outputs.execution_file }}"
+          --status "${{ steps.agent.outcome == 'success' && 'success' || 'failure' }}" || true
       - if: steps.agent.outcome == 'failure'
         run: |
           ticker=$(uv run --no-sync python -c "from solaraalpha.portfolio import book; c = book.connect(); print(book.position_state(c, ${{ matrix.position }}).ticker)")
@@ -283,6 +305,13 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: "/postmortem ${{ matrix.position }}"
           claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
+      - name: Record agent usage
+        if: always() && steps.agent.outcome != 'skipped'
+        run: >
+          uv run --no-sync python scripts/record.py usage --run "${{ needs.gate.outputs.run }}"
+          --ticker "position-${{ matrix.position }}" --stage postmortem
+          --file "${{ steps.agent.outputs.execution_file }}"
+          --status "${{ steps.agent.outcome == 'success' && 'success' || 'failure' }}" || true
       - if: steps.agent.outcome == 'failure'
         run: |
           ticker=$(uv run --no-sync python -c "from solaraalpha.portfolio import book; c = book.connect(); print(book.position_state(c, ${{ matrix.position }}).ticker)")

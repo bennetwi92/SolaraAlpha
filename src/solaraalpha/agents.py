@@ -13,6 +13,7 @@ run and ticker (ACT > WATCH > PASS); ERROR is always allowed. See docs/decisions
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime
 from typing import Any, Literal
 
@@ -407,3 +408,81 @@ def outcome(conn: Conn, run_id: int, stage: str) -> dict[str, int]:
         }
     df = query("SELECT label FROM labels WHERE run_id = ? AND stage = ?", conn, [run_id, stage])
     return {"total": len(df), "errors": int((df["label"] == "ERROR").sum()) if len(df) else 0}
+
+
+USAGE_KEYS = ("seconds", "turns", "input_tokens", "output_tokens", "cost_usd")
+
+
+def parse_usage(data: Any) -> dict[str, float | int | None]:
+    """Cost and runtime from ``claude-code-action``'s execution output (#139).
+
+    The action writes a JSON log: a list of SDK messages whose last ``result`` message carries
+    ``total_cost_usd``, ``num_turns``, ``duration_ms`` and ``usage`` (``input_tokens``,
+    ``output_tokens``, cache tokens); a bare result dict is accepted too. Every field is
+    optional: a missing or malformed one is None, never an error."""
+    result: dict[str, Any] = {}
+    if isinstance(data, list):
+        for msg in reversed(data):
+            if isinstance(msg, dict) and (msg.get("type") == "result" or "total_cost_usd" in msg):
+                result = msg
+                break
+    elif isinstance(data, dict):
+        result = data
+    raw_usage = result.get("usage")
+    usage: dict[str, Any] = raw_usage if isinstance(raw_usage, dict) else {}
+
+    def num(v: Any) -> float | None:
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return f if f == f else None
+
+    ms = num(result.get("duration_ms"))
+    turns = num(result.get("num_turns"))
+    inp = num(usage.get("input_tokens"))
+    cache_parts = [
+        num(usage.get("cache_read_input_tokens")),
+        num(usage.get("cache_creation_input_tokens")),
+    ]
+    cache = sum(x for x in cache_parts if x is not None)
+    out_tokens = num(usage.get("output_tokens"))
+    return {
+        "seconds": ms / 1000 if ms is not None else None,
+        "turns": int(turns) if turns is not None else None,
+        "input_tokens": int(inp + cache) if inp is not None else (int(cache) if cache else None),
+        "output_tokens": int(out_tokens) if out_tokens is not None else None,
+        "cost_usd": num(result.get("total_cost_usd")),
+    }
+
+
+def agent_usage(runs: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """Cost, tokens and minutes per ISO week and per stage, plus the mean per invocation (#139)."""
+    cols = ["cost_usd", "input_tokens", "output_tokens", "seconds"]
+    out_cols = ["invocations", *cols, "minutes"]
+    if runs.empty:
+        empty = pd.DataFrame(columns=out_cols)
+        return {"by_week": empty, "by_stage": empty, "per_ticker": empty}
+    df = runs.copy()
+    for c in cols:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df["week"] = pd.to_datetime(df["started_at"], utc=True).dt.strftime("%G-W%V")
+
+    def agg(g: pd.DataFrame, divide: int = 1) -> dict[str, float]:
+        row: dict[str, float] = {"invocations": len(g) / divide}
+        for c in cols:
+            s = g[c].sum(min_count=1)
+            row[c] = float(s) / divide if pd.notna(s) else float("nan")
+        row["minutes"] = row["seconds"] / 60 if not math.isnan(row["seconds"]) else float("nan")
+        return row
+
+    by_week = pd.DataFrame(
+        [{"week": str(k), **agg(g)} for k, g in df.groupby("week", sort=True)],
+        columns=["week", *out_cols],
+    )
+    by_stage = pd.DataFrame(
+        [{"stage": str(k), **agg(g)} for k, g in df.groupby("stage", sort=True)],
+        columns=["stage", *out_cols],
+    )
+    per_ticker = pd.DataFrame([agg(df, max(1, len(df)))], columns=out_cols)
+    return {"by_week": by_week, "by_stage": by_stage, "per_ticker": per_ticker}

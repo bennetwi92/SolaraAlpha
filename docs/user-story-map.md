@@ -344,7 +344,7 @@ and WATCH stock**, and **the agent only when a check fires**.
 | S12.5 | As the owner I want a daily workflow (A7) alongside the weekly one. | R1 | ✅ `daily.yml`, 17:47 UTC weekdays, `concurrency: book` shared with the scan · #120 |
 | S12.6 | As the owner I want failures reported (ERROR labels, source outages, agent errors) without stopping the rest of the run. | R1 | ✅ toolkits (ERROR steps) and agents (`record.py error`, `outcome`) · #123 |
 | S12.7 | As the owner I want notifications (email / push) for the weekly pack and the daily actions. | R2 | ✅ GitHub issue comments (default channel, ADR 0021); email / Notion as later `send` channels · #132 |
-| S12.8 | As the owner I want agent cost and runtime per run logged, so the free / subscription limits aren't hit by surprise. | R2 | ⬜ · #139 |
+| S12.8 | As the owner I want agent cost and runtime per run logged, so the free / subscription limits aren't hit by surprise. | R2 | ✅ `agent_runs` table via `record.py usage` (agents.yml, after each invocation); `learn.py agents`; weekly pack line · #139 |
 
 ---
 

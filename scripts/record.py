@@ -8,6 +8,7 @@ uv run python scripts/record.py error TICKER --run N --stage S --reason TEXT    
 uv run python scripts/record.py queue --run N --stage validate|research|monitor|postmortem  # runner
 uv run python scripts/record.py latest-run [--script scan|daily]                 # runner: which run
 uv run python scripts/record.py outcome --run N --stage S                        # runner: exit 1 if all ERROR
+uv run python scripts/record.py usage --run N --ticker T --stage S --file execution.json [--status success|failure] [--error TEXT]
 
 verdict validates FILE against the Verdict schema (`schema` prints it) and, in one transaction,
 writes a `labels` row (events / validate / research), a card under model = stage dated with the
@@ -95,6 +96,29 @@ def _revision(args: argparse.Namespace) -> None:
         print(
             f"revision {out['revision_id']} proposed: `book.py accept {out['revision_id']}` or `book.py decline {out['revision_id']} --reason ...`"
         )
+
+
+def _usage(args: argparse.Namespace) -> None:
+    """Record an agent invocation's cost and runtime from the action's execution file; a
+    missing or unreadable file still records the invocation (with empty usage)."""
+    data: object = {}
+    path = Path(args.file) if args.file else None
+    if path is not None and path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except json.JSONDecodeError as e:
+            print(f"warning: {path} is not JSON ({e}); recording the invocation without usage")
+    elif path is not None:
+        print(f"warning: {path} not found; recording the invocation without usage")
+    usage = agents.parse_usage(data)
+    store.save_agent_run(
+        args.run, args.ticker, args.stage, usage, args.status, args.error, path=args.db
+    )
+    cost = f"${usage['cost_usd']:.2f}" if usage["cost_usd"] is not None else "n/a"
+    secs = f"{usage['seconds']:.0f}s" if usage["seconds"] is not None else "n/a"
+    print(
+        f"recorded {args.stage} {args.ticker} run {args.run}: {args.status}, {secs}, {usage['turns'] or 'n/a'} turns, cost {cost}"
+    )
 
 
 def _prior(args: argparse.Namespace) -> None:
@@ -234,6 +258,18 @@ def main(argv: list[str] | None = None) -> None:
     )
     qu.add_argument("--cap", type=int, default=None, help="default Rules.max_agent_tickers")
     qu.add_argument("--db", type=Path, default=None)
+    us = sub.add_parser("usage", help="record an agent invocation's cost and runtime (#139)")
+    us.add_argument("--run", type=int, required=True)
+    us.add_argument("--ticker", required=True)
+    us.add_argument(
+        "--stage",
+        required=True,
+        choices=("validate", "research", "events", "monitor", "postmortem"),
+    )
+    us.add_argument("--file", help="claude-code-action execution_file (JSON); missing = no usage")
+    us.add_argument("--status", choices=("success", "failure"), default="success")
+    us.add_argument("--error", default=None)
+    us.add_argument("--db", type=Path, default=None)
     lr = sub.add_parser("latest-run", help="the latest run id of a script")
     lr.add_argument("--script", default="scan")
     lr.add_argument("--db", type=Path, default=None)
@@ -242,6 +278,9 @@ def main(argv: list[str] | None = None) -> None:
     oc.add_argument("--stage", required=True)
     oc.add_argument("--db", type=Path, default=None)
     args = p.parse_args(argv)
+    if args.cmd == "usage":
+        _usage(args)
+        return
     if args.cmd == "schema":
         print(json.dumps(agents.Verdict.model_json_schema(), indent=2))
     elif args.cmd == "verdict":

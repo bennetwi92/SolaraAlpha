@@ -2,6 +2,7 @@
 
 uv run python scripts/learn.py scorecard [--since DATE] [--db PATH]   # forward returns by label
 uv run python scripts/learn.py journal   [--since DATE] [--db PATH]   # closed trades by exit / set-up
+uv run python scripts/learn.py agents    [--since DATE] [--db PATH]   # agent cost, tokens, minutes
 
 scorecard scores every saved label (from #111 on; older pass/fail steps are excluded) against
 the 2 / 4 / 8 / 16-week forward return of the stock and its excess over the market benchmark
@@ -132,21 +133,42 @@ def journal_text(db: Path | None, since: str | None) -> str:
     return "\n".join(lines)
 
 
+def agents_text(db: Path | None, since: str | None) -> str:
+    from solaraalpha.agents import agent_usage
+
+    runs = store.load_agent_runs(since, path=db)
+    if runs.empty:
+        return "No agent runs recorded yet (record.py usage writes them from agents.yml)."
+    use = agent_usage(runs)
+    fmt = lambda v: f"{v:.2f}"  # noqa: E731
+    lines = [f"{len(runs)} agent invocations" + (f" since {since}" if since else ""), ""]
+    lines += ["Per week:", use["by_week"].to_string(index=False, float_format=fmt), ""]
+    lines += ["Per stage:", use["by_stage"].to_string(index=False, float_format=fmt), ""]
+    lines += [
+        "Average per ticker / invocation:",
+        use["per_ticker"].to_string(index=False, float_format=fmt),
+    ]
+    failures = runs[runs["status"] != "success"]
+    lines += ["", f"failures: {len(failures)}"]
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("scorecard", "journal"):
+    for name in ("scorecard", "journal", "agents"):
         sp = sub.add_parser(name)
         sp.add_argument("--since", default=None, help="YYYY-MM-DD")
         sp.add_argument(
             "--db", type=Path, default=None, help="local DB file (default: configured DB)"
         )
     args = p.parse_args(argv)
-    print(
-        scorecard(args.db, args.since)
-        if args.cmd == "scorecard"
-        else journal_text(args.db, args.since)
-    )
+    if args.cmd == "scorecard":
+        print(scorecard(args.db, args.since))
+    elif args.cmd == "journal":
+        print(journal_text(args.db, args.since))
+    else:
+        print(agents_text(args.db, args.since))
 
 
 if __name__ == "__main__":

@@ -47,3 +47,13 @@ invocations plus the monitor's daily ones; cost and runtime logging per run is #
 notifications #132. `claude-code-action` is pinned to its `v1` major tag; bump deliberately.
 Until a secret exists the Sunday flow stays: scan → (`/validate`, `/research` by hand) →
 `plan.py --run N` → `weekly_pack.py`.
+
+**Amendment (#139): cost and runtime.** After every skill invocation the runner records
+`record.py usage --run N --ticker T --stage S --file <execution_file>` into the `agent_runs`
+table (`started_at, seconds, turns, input_tokens, output_tokens, cost_usd, status, error`),
+parsing `claude-code-action`'s execution output defensively (`agents.parse_usage`: the final
+`result` message's `total_cost_usd`, `num_turns`, `duration_ms` and `usage`; every field
+optional, cache tokens folded into input tokens; a missing file still records the invocation).
+`learn.py agents [--since]` reports cost, tokens and minutes per ISO week and per stage with
+the mean per invocation; the weekly pack carries one line for the week. `cost_usd` is NULL on a
+subscription (the action reports none), so minutes and turns are the budget signal there.
