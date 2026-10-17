@@ -1,0 +1,11 @@
+# Stock value models the research agent calls when they exist (issue #127, ADR 0009 / 0006).
+# One table per ticker: the Claude Code skill that knows how to map news to driver shocks,
+# and the script that does the arithmetic. Research runs the script (with the shocks the
+# skill's guidance implies from the catalysts), adds a `value` score and a "Valuation"
+# sub-section to section 8 of the note. No entry = no value model: research says so and
+# scores value as unknown.
+
+["JET2.L"]
+skill = "jet2-value"
+script = "scripts/jet2_value.py"
+note = "consensus-calibrated FY27/FY28 driver P&L, live fuel curve and FX (ADR 0009)"

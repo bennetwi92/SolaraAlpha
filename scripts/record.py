@@ -19,8 +19,9 @@ records under it. revision records a monitor verdict (card + evidence) and propo
 revision in its `checks` (action hold / tighten_stop / take_partial / exit / revise_target
 with the new stop / target / qty) as a `revision_proposed` event the owner accepts or declines
 with `book.py accept|decline`; the agent never changes orders. prior prints the ticker's latest
-verdicts and evidence and every filing already interpreted (nsm_id), so a run reuses earlier
-work instead of re-interpreting it. See docs/decisions/0016.
+verdicts (with their age in days and the latest evidence `retrieved` time, for the research
+skill's delta mode) and evidence and every filing already interpreted (nsm_id), so a run reuses
+earlier work instead of re-interpreting it. See docs/decisions/0016.
 """
 
 from __future__ import annotations
@@ -112,7 +113,8 @@ def _prior(args: argparse.Namespace) -> None:
             and isinstance(v[k], float)
         }
         print(
-            f"\n== run {v['run_id']} ({str(v['started_at'])[:16]}), card date {v['date']}: {v.get('label')} ({v.get('confidence')})"
+            f"\n== run {v['run_id']} ({str(v['started_at'])[:16]}, {v['age_days']} days ago), card date {v['date']}:"
+            f" {v.get('label')} ({v.get('confidence')}); evidence retrieved to {str(v.get('retrieved_to') or '-')[:10]}"
         )
         if scores:
             print("  scores: " + ", ".join(f"{k}={x:+.2f}" for k, x in scores.items()))

@@ -74,3 +74,12 @@ supersedes events as the Sunday agent stage**: `/research` (`.claude/skills/rese
 extends the events note into the nine-section strategist's note with web search and logged
 evidence, and its verdict is the stage the planner reads; `events` stays the fact layer (the
 pack and the toolkit card) that research starts from.
+
+**Amendment (#127).** Research now runs in **delta mode** when its prior verdict for the
+ticker is 35 days old or less (`record.py prior` prints `age_days` and `retrieved_to` per
+verdict): the scene and the commercial / policy / macro / ownership sections are carried
+forward as background ("carried from run N"), the event pack and web search cover only the
+days since `retrieved_to`, and recent catalysts, upcoming events and the verdict are always
+redone. Where `config/value_models.toml` registers a value model for the stock (Jet2 today, ADR
+0009), research calls it to turn the catalysts into an earnings and fair-value impact instead
+of guessing.
