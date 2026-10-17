@@ -16,7 +16,7 @@ and shared across stocks (:meth:`Inputs.other`).
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from functools import cached_property
 from pathlib import Path
 from typing import Any
@@ -24,11 +24,11 @@ from typing import Any
 import pandas as pd
 
 from solaraalpha.analysis.events import build_pack
-from solaraalpha.analysis.fundamentals import fundamentals_card
-from solaraalpha.analysis.levels import levels_card
-from solaraalpha.analysis.liquidity import liquidity_card
-from solaraalpha.analysis.relative_strength import compare, comparisons, rs_card
-from solaraalpha.analysis.technical import assess_position, scorecard
+from solaraalpha.analysis.fundamentals import FundamentalsCard, fundamentals_card
+from solaraalpha.analysis.levels import LevelsCard, levels_card
+from solaraalpha.analysis.liquidity import LiquidityCard, liquidity_card
+from solaraalpha.analysis.relative_strength import RelativeStrength, compare, comparisons, rs_card
+from solaraalpha.analysis.technical import Position, Scorecard, assess_position, scorecard
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.fundamentals import fetch_fundamentals
 from solaraalpha.data.prices import fetch_daily
@@ -40,9 +40,11 @@ _OTHERS: dict[str, pd.DataFrame] = {}  # other instruments' daily prices, fetche
 class Inputs:
     """Data for one ticker, fetched lazily (once) and shared by the toolkits that need it."""
 
-    def __init__(self, ticker: str) -> None:
+    def __init__(self, ticker: str, daily: pd.DataFrame | None = None) -> None:
         self.ticker = ticker
         self.others: dict[str, pd.DataFrame] = {}  # other instruments this ticker's runs used
+        if daily is not None:  # already fetched by the caller (the daily job): no second fetch
+            self.__dict__["daily"] = daily
 
     @cached_property
     def daily(self) -> pd.DataFrame:
@@ -213,3 +215,25 @@ def _events(x: Inputs, days: int = 7, horizon: int = 16, out: str | None = None)
             next_event_status=status,
         )
     }
+
+
+# The card dataclasses each toolkit produces, in the order a field is looked up (#131): a thesis
+# condition on ``trend`` belongs to technical, on ``support`` to levels, on ``rs`` to relative
+# strength ... ``close`` is technical's, though the daily job reads it from the latest session.
+CARDS: dict[str, tuple[type, ...]] = {
+    "technical": (Scorecard, Position),
+    "levels": (LevelsCard,),
+    "relative_strength": (RelativeStrength,),
+    "fundamentals": (FundamentalsCard,),
+    "liquidity": (LiquidityCard,),
+    "events": (EventsCard,),
+}
+
+
+def owner_of(field: str) -> str | None:
+    """The toolkit whose card carries ``field`` (None: no toolkit does)."""
+    for tk, types in CARDS.items():
+        for t in types:
+            if field in {f.name for f in fields(t)}:
+                return tk
+    return None

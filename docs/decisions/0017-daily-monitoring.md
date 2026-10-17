@@ -50,3 +50,14 @@ scheduled event two sessions away under a non-`hold` policy) and `order_stale` (
 approved or placed order past `valid_until` with no fill entered: enter the fill or run
 `book.py unfilled` / `expire`). Each is a pure function in `portfolio.triggers`, reported under
 "Owner actions" (or "Watch breaks and pullbacks") and saved with the others.
+
+**Amendment (#131): thesis conditions evaluated daily.** Each open position's `machine`
+thesis conditions (`field op value`, the research agent's kill criteria, ADR 0016) are checked
+every weekday on **fresh** cards: the toolkit that owns the field (`toolkits.owner_of`, from
+each toolkit's card dataclasses; `toolkits.CARDS`) runs once on the day's prices (the same
+`Inputs`, no second fetch), and `close` is the latest daily close rather than the weekly bar. A
+condition that holds is a **`thesis_hit`** agent trigger (detail: condition id, text, field,
+value now), so the monitor pack selects the position like a gap or a filing; it is reported
+every day until a revision for the position is accepted or declined after the first hit
+(`daily.suppressed_conditions`). Unparseable conditions and fields no card carries are
+reported once under Errors, never fatal.

@@ -9,6 +9,7 @@ the monitor (:mod:`.claude/skills/monitor`). Thresholds are placeholders (docs/d
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,6 +17,7 @@ import pandas as pd
 
 from solaraalpha.analysis.events import material
 from solaraalpha.analysis.technical import atr
+from solaraalpha.pipeline import Condition
 from solaraalpha.portfolio.book import to_account
 
 GAP_ATR = 2.0  # |open - previous close| beyond this many daily ATRs is a gap (placeholder)
@@ -31,7 +33,7 @@ OWNER_KINDS = (
     "order_stale",
 )
 EVENT_DUE_SESSIONS = 2  # warn when a scheduled event is this many sessions away (#129)
-AGENT_KINDS = ("gap", "filing")
+AGENT_KINDS = ("gap", "filing", "thesis_hit")
 REPORT_KINDS = ("watch_break", "watch_pullback", "news")
 PULLBACK_ATR = (
     1.0  # a WATCH stock is "back at the 10w MA" within this many daily ATRs (placeholder)
@@ -330,3 +332,67 @@ def stale_order_triggers(stale: pd.DataFrame, today: pd.Timestamp) -> list[Trigg
             )
         )
     return out
+
+
+def thesis_hits(
+    ticker: str,
+    position_id: int,
+    conditions: pd.DataFrame,
+    cards: Mapping[str, Any],
+    close: float | None,
+    suppressed: frozenset[int] = frozenset(),
+) -> tuple[list[Trigger], list[str]]:
+    """Evaluate a position's ``machine`` thesis conditions (``field op value``) against fresh
+    ``cards`` (``{toolkit: card}``) and the latest daily ``close`` (#131). A condition that
+    holds is a ``thesis_hit`` agent trigger (detail: ``condition_id``, ``condition``, ``field``,
+    ``value``); one in ``suppressed`` (already acted on) is skipped. Unparseable conditions and
+    fields no card carries come back as issue strings, never exceptions."""
+    merged: dict[str, Any] = {}
+    for card in cards.values():
+        if card is None:
+            continue
+        merged.update(card if isinstance(card, dict) else {k: getattr(card, k) for k in vars(card)})
+    if close is not None:
+        merged["close"] = close
+    out: list[Trigger] = []
+    issues: list[str] = []
+    for r in conditions.to_dict("records"):
+        if str(r["kind"]) != "machine":
+            continue
+        cid = int(r["condition_id"])
+        text = str(r["condition"])
+        try:
+            cond = Condition.parse(text)
+        except ValueError as e:
+            issues.append(f"thesis condition {cid} {text!r}: not evaluable ({e})")
+            continue
+        if cond.field not in merged:
+            issues.append(
+                f"thesis condition {cid} {text!r}: no toolkit card carries {cond.field!r}"
+            )
+            continue
+        if cid in suppressed:
+            continue
+        try:
+            hit = bool(cond.check(merged))
+        except (ValueError, KeyError, TypeError) as e:
+            issues.append(f"thesis condition {cid} {text!r}: not evaluable ({e})")
+            continue
+        if hit:
+            value = merged.get(cond.field)
+            out.append(
+                Trigger(
+                    ticker,
+                    "thesis_hit",
+                    position_id,
+                    None,
+                    {
+                        "condition_id": cid,
+                        "condition": text,
+                        "field": cond.field,
+                        "value": float(value) if isinstance(value, int | float) else value,
+                    },
+                    "",
+                )
+            )
+    return out, issues
