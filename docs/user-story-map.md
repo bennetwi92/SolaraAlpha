@@ -290,7 +290,7 @@ and WATCH stock**, and **the agent only when a check fires**.
 | S7.6 | As the owner I want "structural change" defined so the agent doesn't churn: guidance or estimate change; a thesis kill criterion hit; a capital event (placing, bid, delisting); a regulatory or legal event; a weekly-trend break (stage 2 → 3). Noise (no new information, a move inside 2 ATR) is ignored. | R1 | ✅ defined in the skill and ADR 0018 · #121 |
 | S7.7 | As the owner I want each proposal stored as a **plan revision** (old → new, reason, evidence, status proposed / accepted / rejected), and new draft orders if accepted. | R1 | ✅ `revision_proposed` / `accepted` / `declined` events; `book.py accept` drafts the orders · #121 |
 | S7.8 | As the owner I want a daily notification only when something needs me (a revision, a stop hit, a fill to enter, an error); silence otherwise. | R2 | ✅ `notify.py --mode daily` (exit 3 when nothing) → GitHub `inbox` issue · #132 |
-| S7.9 | As the owner I want market-wide volatility checks (index drawdown, VIX / VFTSE proxy) to flag "tighten everything" days. | R3 | ⬜ · #142 |
+| S7.9 | As the owner I want market-wide volatility checks (index drawdown, VIX / VFTSE proxy) to flag "tighten everything" days. | R3 | ✅ `analysis/regime.py` (calm / stressed / risk_off from `^FTAS`, realised vol only); daily `market` trigger at the top of the report; pack line; plan flag `market risk_off` · #142 |
 
 ### A8 — Review weekly (open positions, Sunday)
 

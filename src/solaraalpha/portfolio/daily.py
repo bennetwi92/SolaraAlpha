@@ -21,6 +21,7 @@ import pandas as pd
 
 from solaraalpha import store
 from solaraalpha.analysis.events import _short_name
+from solaraalpha.analysis.regime import market_regime
 from solaraalpha.data import announcements as ann_mod
 from solaraalpha.data import news as news_mod
 from solaraalpha.data import prices as prices_mod
@@ -38,6 +39,7 @@ from solaraalpha.portfolio.triggers import (
     entry_break,
     event_due,
     filing_triggers,
+    market_trigger,
     news_triggers,
     price_triggers,
     stale_order_triggers,
@@ -71,6 +73,7 @@ class DailyResult:
     triggers: list[Trigger] = field(default_factory=list)
     errors: list[tuple[str, str]] = field(default_factory=list)
     run_id: int | None = None
+    regime: Any = None  # the market RegimeCard (#142), None when the index could not be read
 
     def of(self, kinds: tuple[str, ...]) -> list[Trigger]:
         return [t for t in self.triggers if t.kind in kinds]
@@ -230,13 +233,28 @@ def run_daily(
                 if eb:
                     result.triggers.append(eb)
 
+    # the market regime from the benchmark index (#142): advisory, at the top of the report
+    rules = load_rules()
+    try:
+        idx_raw = fetch.daily(rules.benchmark)
+        result.regime = market_regime(clean_prices(idx_raw), rules.benchmark)
+        if run_id is not None:
+            store.save_ticker(
+                run_id, rules.benchmark, {"regime": result.regime}, daily=idx_raw, conn=conn
+            )
+        mt = market_trigger(result.regime)
+        if mt:
+            result.triggers.append(mt)
+    except Exception as e:
+        log.exception("%s: market regime failed", rules.benchmark)
+        result.errors.append((rules.benchmark, f"regime: {type(e).__name__}: {e}"))
+
     # orders past their validity with no fill entered (#130)
     result.triggers += stale_order_triggers(
         book.stale_orders(conn, now.isoformat()), pd.Timestamp(now)
     )
 
     # scheduled events two sessions away on open positions (policy decided in advance, #129)
-    rules = load_rules()
     for ticker, nxt in risk.next_events(conn).items():
         for pid, st in states.items():
             if st.ticker == ticker:
@@ -384,6 +402,17 @@ def render_daily(r: DailyResult) -> str:
     lines += [f"Checked: {checked}", ""]
     if r.run_id is not None:
         lines += [f"saved run {r.run_id}", ""]
+    if r.regime is not None:
+        c = r.regime
+        if c.regime == "calm":
+            lines += [f"Market ({c.index}): **calm** — {c.reason}", ""]
+        else:
+            lines += [
+                f"### Market: **{c.regime.upper()}** ({c.index} {c.date:%Y-%m-%d}): {c.reason}",
+                "",
+                "Consider tightening stops and pausing new entries today (advisory, ADR 0017).",
+                "",
+            ]
 
     lines += ["### Owner actions", ""]
     owner = r.of(OWNER_KINDS)

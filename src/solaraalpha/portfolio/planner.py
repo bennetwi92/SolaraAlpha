@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
 import pandas as pd
@@ -147,6 +147,10 @@ def plan_run(conn: Conn, run_id: int, rules: Rules | None = None, dry_run: bool 
     started = str(store.run_info(run_id, conn=conn)["started_at"])
     candidates = final_labels(conn, run_id)
     existing = book.positions(conn)
+    from solaraalpha.portfolio.weekly_pack import latest_regime
+
+    regime = latest_regime(conn)
+    risk_off = bool(regime and regime.get("regime") == "risk_off")
     done = set(existing.loc[existing["opened_from_run_id"] == run_id, "ticker"])
 
     # Equity and cash at the run's closes (held tickers not in the run: last stored close).
@@ -189,19 +193,20 @@ def plan_run(conn: Conn, run_id: int, rules: Rules | None = None, dry_run: bool 
             adv = adv_gbp(daily) if daily is not None and not daily.empty else None
         currency = str(daily.attrs.get("currency") or "GBp") if daily is not None else "GBp"
         try:
-            plans.append(
-                make_plan(
-                    c.ticker,
-                    cards["levels"],
-                    cards["technical"],
-                    cards.get("events"),
-                    rules,
-                    equity.equity,
-                    equity.cash,
-                    None if adv is None or math.isnan(adv) else adv,
-                    currency,
-                )
+            plan = make_plan(
+                c.ticker,
+                cards["levels"],
+                cards["technical"],
+                cards.get("events"),
+                rules,
+                equity.equity,
+                equity.cash,
+                None if adv is None or math.isnan(adv) else adv,
+                currency,
             )
+            if risk_off:  # the market regime (#142): every plan carries the flag while it lasts
+                plan = replace(plan, flags=(*plan.flags, "market risk_off"))
+            plans.append(plan)
         except ValueError as e:
             errors.append((c.ticker, str(e)))
             continue

@@ -34,7 +34,7 @@ OWNER_KINDS = (
 )
 EVENT_DUE_SESSIONS = 2  # warn when a scheduled event is this many sessions away (#129)
 AGENT_KINDS = ("gap", "filing", "thesis_hit")
-REPORT_KINDS = ("watch_break", "watch_pullback", "news")
+REPORT_KINDS = ("watch_break", "watch_pullback", "news", "market")
 PULLBACK_ATR = (
     1.0  # a WATCH stock is "back at the 10w MA" within this many daily ATRs (placeholder)
 )
@@ -396,3 +396,24 @@ def thesis_hits(
                 )
             )
     return out, issues
+
+
+def market_trigger(card: Any) -> Trigger | None:
+    """A ``market`` trigger when the index regime is not calm (advisory: consider tightening
+    stops and pausing new entries); ``card`` is a :class:`solaraalpha.analysis.regime.RegimeCard`."""
+    if card is None or getattr(card, "regime", "calm") == "calm":
+        return None
+    return Trigger(
+        str(card.index),
+        "market",
+        None,
+        None,
+        {
+            "regime": card.regime,
+            "reason": card.reason,
+            "drawdown_20d": float(card.drawdown_20d),
+            "ret_1d_z": float(card.ret_1d_z),
+            "vol_percentile_1y": float(card.vol_percentile_1y),
+        },
+        pd.Timestamp(card.date).strftime("%Y-%m-%d"),
+    )

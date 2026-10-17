@@ -49,6 +49,7 @@ class Pack:
     performance: performance.Summary | None = None
     correlated: list[tuple[str, str, float]] = field(default_factory=list)
     agent_usage: dict[str, float] = field(default_factory=dict)  # minutes / cost this week (#139)
+    regime: dict[str, Any] | None = None  # the latest market regime card (#142)
     stale_orders: list[dict[str, Any]] = field(
         default_factory=list
     )  # past validity, no fill (#130)
@@ -120,7 +121,23 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> Pack:
         correlated=pairs,
         stale_orders=json.loads(book.stale_orders(conn, started).to_json(orient="records")),
         agent_usage=agent_week(conn, started),
+        regime=latest_regime(conn),
     )
+
+
+def latest_regime(conn: Conn) -> dict[str, Any] | None:
+    """The latest saved ``regime`` card (the daily job writes one per run), or None."""
+    df = store.query(
+        "SELECT x.run_id, x.ticker, x.date, x.field, x.value, x.text FROM results x WHERE x.model = 'regime'"
+        " AND x.run_id = (SELECT MAX(run_id) FROM results WHERE model = 'regime') ORDER BY x.rowid",
+        conn,
+    )
+    if df.empty:
+        return None
+    card: dict[str, Any] = {"date": str(df["date"].iloc[0]), "index": str(df["ticker"].iloc[0])}
+    for r in df.to_dict("records"):
+        card[str(r["field"])] = r["text"] if pd.notna(r["text"]) else r["value"]
+    return card
 
 
 def agent_week(conn: Conn, started: str) -> dict[str, float]:
@@ -179,6 +196,13 @@ def render_pack(pack: Pack) -> str:
     if rules.warning:
         lines += [f"> **{rules.warning}**", ""]
 
+    if pack.regime:
+        rg = pack.regime
+        mark = "**" if rg.get("regime") != "calm" else ""
+        lines += [
+            f"Market regime ({rg.get('index')}, {str(rg.get('date'))[:10]}): {mark}{rg.get('regime')}{mark} — {rg.get('reason', '')}",
+            "",
+        ]
     lines += ["## New plans", ""]
     if pack.new_positions:
         for p in pack.new_positions:

@@ -74,7 +74,9 @@ Current state:
   Owner actions and agent reviews are separated in the report; the **monitor agent**
   (`/monitor`, docs/decisions/0018) runs only on agent triggers and *proposes* plan revisions
   (`revision_proposed` events) that the owner accepts or declines in `book.py`; agents never
-  change orders. Market-wide volatility is not built yet.
+  change orders. The **market regime** (`analysis/regime.py`: `^FTAS` drawdown, 1-day z, realised
+  vol percentile → calm / stressed / risk_off, placeholders) heads the daily report, is saved as a
+  `regime` card, shows in the weekly pack and flags every plan `market risk_off` (advisory).
 - **Agents run unattended when the owner adds a Claude secret** (docs/decisions/0019):
   `agents.yml` runs after the scan (`/validate` → `/macro` → `/research` → `plan.py` → `weekly_pack.py`)
   and after the daily job (`/monitor`) via `claude-code-action`, capped by
@@ -219,6 +221,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         + volume as a PNG (Agg) for the validator's pack
     backtest.py         point-in-time replay of the screen (cards per Friday from the bars up to
                         it), forward returns, one-threshold-at-a-time sweep, suggested bands — #138
+    regime.py           market regime from the index (drawdown_20d, ret_1d_z, realised vol and its
+                        1y percentile → calm / stressed / risk_off; realised vol only) — #142
     scorecard.py        label scorecard: 2/4/8/16-week forward returns (and excess vs market) per
                         saved label, by stage x label and toolkit x band, no look-ahead
     events.py           events model (any stock): market reaction per filing, expected

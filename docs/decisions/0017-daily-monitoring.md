@@ -61,3 +61,14 @@ value now), so the monitor pack selects the position like a gap or a filing; it 
 every day until a revision for the position is accepted or declined after the first hit
 (`daily.suppressed_conditions`). Unparseable conditions and fields no card carries are
 reported once under Errors, never fatal.
+
+**Amendment (#142): market regime.** Each daily run reads the benchmark index
+(`Rules.benchmark`, `^FTAS`) and computes `analysis.regime.market_regime`: `drawdown_20d`
+(close vs the 20-day high), `ret_1d_z` (the day's log return over 60-day daily vol),
+`realised_vol_20d` and its percentile over the last year, and `regime` = `risk_off` when the
+drawdown is below -8% or the day is below -3 sigma, `stressed` when the vol percentile is above
+0.8, else `calm` (all placeholders). The card is saved under model `regime` for the index; a
+non-calm regime is a `market` trigger that heads the daily report ("consider tightening stops
+and pausing new entries": advisory, nothing is drafted), the weekly pack shows the latest
+regime, and `plan.py` flags every plan `market risk_off` while it lasts. Realised volatility
+only: Yahoo has no free UK implied-volatility series (docs/data-sources.md).
