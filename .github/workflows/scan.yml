@@ -19,6 +19,10 @@ concurrency:
   group: book  # shared with daily.yml: never write the book at the same time
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   scan:
     runs-on: ubuntu-latest
@@ -48,6 +52,19 @@ jobs:
           else
             echo "no saved run: weekly pack skipped" >> "$GITHUB_STEP_SUMMARY"
           fi
+      - name: Notify the owner (GitHub inbox issue) only when something needs them
+        if: always() && hashFiles('run_id.txt') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+        run: |
+          set +e
+          uv run --no-sync python scripts/notify.py --mode weekly --run "$(cat run_id.txt)" --summary-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --channel github-issue
+          rc=$?
+          set -e
+          if [ "$rc" = "3" ]; then echo "nothing to notify" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:

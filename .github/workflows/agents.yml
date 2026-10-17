@@ -29,6 +29,10 @@ concurrency:
   group: book
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  issues: write
+
 env:
   MAX_TURNS: 60
   # Tools the skills need: our scripts, files, and the web for research.
@@ -302,6 +306,16 @@ jobs:
       - run: uv sync --no-default-groups
       - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage monitor | tee -a "$GITHUB_STEP_SUMMARY" || true
       - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage postmortem | tee -a "$GITHUB_STEP_SUMMARY" || true
+      - name: Notify the owner of new revision proposals and errors (GitHub inbox issue)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set +e
+          uv run --no-sync python scripts/notify.py --mode daily --run "${{ needs.gate.outputs.run }}" --only revisions,errors --channel github-issue
+          rc=$?
+          set -e
+          if [ "$rc" = "3" ]; then echo "nothing to notify" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
       - name: Fail only if every agent errored
         run: |
           uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage monitor

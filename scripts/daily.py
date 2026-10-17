@@ -1,6 +1,6 @@
 """Daily check of open positions, the watch list and pending breakout entries.
 
-uv run python scripts/daily.py [--save] [--report FILE] [--db PATH]
+uv run python scripts/daily.py [--save] [--report FILE] [--run-id-file FILE] [--db PATH]
 
 Fetches daily prices (check / clean / trim), evaluates the triggers in portfolio.triggers
 (stop closed through, stop touched, target hit, gap, coil trigger broken, waiting entry
@@ -25,6 +25,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--save", action="store_true", help="record the run, prices and triggers")
     p.add_argument("--report", type=Path, help="append the markdown report to this file")
     p.add_argument("--db", type=Path, default=None, help="local DB file (default: configured DB)")
+    p.add_argument("--run-id-file", type=Path, help="write the saved run id to this file")
     args = p.parse_args(argv)
     conn = book.connect(args.db)
     try:
@@ -33,6 +34,8 @@ def main(argv: list[str] | None = None) -> None:
         conn.close()
     report = render_daily(result)
     print(report)
+    if args.run_id_file and result.run_id is not None:
+        args.run_id_file.write_text(f"{result.run_id}\n")
     if args.report:
         with args.report.open("a") as f:
             f.write(report + "\n")
