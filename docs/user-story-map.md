@@ -191,8 +191,8 @@ research. Its job is to catch model artefacts: bad data, a score driven by one o
 | S2.2 | As the validator I want a fixed checklist: data issues (`check_prices`, trim span, gaps, suspensions); one-off spikes (bid, placing, results gap) inflating trend or momentum; overextension vs ATR; levels that are stale or that the price just broke; RS driven by one peer; fundamentals stale, a one-off, or currency-mismatched; agreement between the toolkits. | R1 | ✅ the seven-item checklist in the skill, answered in `checks` · #118 |
 | S2.3 | As the owner I want its output to be ACT / WATCH / PASS / ERROR + confidence + reasons, written to the DB as a `validate` card and step on the **same run**. | R1 | ✅ `record.py verdict` (#117), `/validate` records `stage = validate` (#118) |
 | S2.4 | As the owner I want it to be **independent**: it sees the raw data and the cards, never the other agents' notes, and can only *downgrade* (ACT → WATCH / PASS), never upgrade. | R1 | ✅ pack excludes other agents' cards; `record.py` enforces downgrade only · #118 |
-| S2.5 | As the owner I want it rendered as a short chart pack (weekly bars, MAs, levels, stop, target) the agent can read, so it judges the picture as well as the numbers. | R2 | ⬜ · #126 |
-| S2.6 | As the owner I want the validator's disagreements logged and counted, so bad toolkit rules surface (feeds A11). | R2 | ⬜ · #126 |
+| S2.5 | As the owner I want it rendered as a short chart pack (weekly bars, MAs, levels, stop, target) the agent can read, so it judges the picture as well as the numbers. | R2 | ✅ `chart.png` next to the validate pack (`analysis/charts.py`); checklist item `picture_agrees` · #126 |
+| S2.6 | As the owner I want the validator's disagreements logged and counted, so bad toolkit rules surface (feeds A11). | R2 | ✅ `validator_stats.py` (`disagreements`: not-warranted toolkits, concerns, rate per run) · #126 |
 
 ### A3 — Research: events, catalysts and headwinds (agent, Sunday)
 

@@ -6,7 +6,8 @@ uv run python scripts/validate_pack.py --run RUN_ID --all
 Writes pack.json to data/processed/validate/<ticker>/<run_id>/ from the DB only: the cards,
 steps and screen label, the price snapshot as seen at the run (issues, span kept, weekly bars
 with 10w / 40w MAs, daily bars, largest moves), the fundamentals known at the card date, and the
-recent filings' headlines (the one live fetch; "unavailable" on failure). Never includes
+recent filings' headlines (the one live fetch; "unavailable" on failure), plus chart.png (the
+weekly picture with the levels and the plan drawn on). Never includes
 events, research or other agents' notes: the validator is independent. Then `/validate`.
 """
 
@@ -17,7 +18,7 @@ import sys
 from pathlib import Path
 
 from solaraalpha import store
-from solaraalpha.validation import build_pack, write_pack
+from solaraalpha.validation import build_pack, write_chart, write_pack
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -42,6 +43,7 @@ def main(argv: list[str] | None = None) -> None:
         for ticker in tickers:
             pack = build_pack(conn, ticker, args.run)
             out = write_pack(pack, args.out if not args.all else None)
+            chart = write_chart(conn, pack, out)
             n_issues = (
                 len(pack["prices"].get("issues", [])) if isinstance(pack["prices"], dict) else 0
             )
@@ -49,7 +51,8 @@ def main(argv: list[str] | None = None) -> None:
             n_fil = len(filings["items"]) if isinstance(filings, dict) else filings
             lab = pack["screen_label"]["label"] if pack["screen_label"] else "-"
             print(
-                f"{ticker}: screen {lab}; {len(pack['cards'])} cards; {n_issues} price issues; filings: {n_fil}; written to {out}"
+                f"{ticker}: screen {lab}; {len(pack['cards'])} cards; {n_issues} price issues; filings: {n_fil};"
+                f" chart: {chart.name if chart else 'none (no prices)'}; written to {out}"
             )
     finally:
         conn.close()
