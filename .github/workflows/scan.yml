@@ -65,6 +65,19 @@ jobs:
           rc=$?
           set -e
           if [ "$rc" = "3" ]; then echo "nothing to notify" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
+      - name: Dashboard
+        if: always()
+        env:
+          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+        run: uv run --no-sync python scripts/dashboard.py --out data/processed/dashboard.html || echo "dashboard failed" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dashboard-${{ github.run_id }}
+          path: data/processed/dashboard.html
+          if-no-files-found: ignore
+          retention-days: 90
       - uses: actions/upload-artifact@v4
         if: always()
         with:

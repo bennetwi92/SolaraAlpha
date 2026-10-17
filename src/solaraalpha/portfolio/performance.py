@@ -59,22 +59,28 @@ def equity_curve(
     stop = end if end is not None else (last_price if last_price is not None else max(starts))
     days = pd.bdate_range(min(starts), _utc_day(stop), tz="UTC", name="date")
 
-    pos = {d: i for i, d in enumerate(days)}
+    def slot(ts: object) -> int | None:
+        """Index of the business day on or after ``ts`` (a weekend booking lands on Monday)."""
+        day = max(_utc_day(ts), days[0])
+        if day > days[-1]:
+            return None
+        return int(days.searchsorted(day))
+
     cash_flow = np.zeros(len(days))
     for a, c, k, t in zip(cash["amount"], cash["currency"], cash["kind"], cash["at"], strict=True):
-        day = max(_utc_day(t), days[0])
-        if day > days[-1]:
+        i = slot(t)
+        if i is None:
             continue
-        cash_flow[pos[day]] += to_account(float(a), str(c)) * (1 if k in CASH_IN else -1)
+        cash_flow[i] += to_account(float(a), str(c)) * (1 if k in CASH_IN else -1)
     shares: dict[str, np.ndarray] = {}
     for f in fills.to_dict("records"):
-        day = max(_utc_day(f["at"]), days[0])
-        if day > days[-1]:
+        i = slot(f["at"])
+        if i is None:
             continue
         money = to_account(float(f["price"]) * int(f["qty"]), str(f["currency"]))
-        cash_flow[pos[day]] -= int(f["side"]) * money + float(f["commission"]) + float(f["fees"])
+        cash_flow[i] -= int(f["side"]) * money + float(f["commission"]) + float(f["fees"])
         held = shares.setdefault(str(f["ticker"]), np.zeros(len(days)))
-        held[pos[day] :] += int(f["side"]) * int(f["qty"])
+        held[i:] += int(f["side"]) * int(f["qty"])
     cash_level = pd.Series(cash_flow.cumsum(), index=days)
 
     value = pd.Series(0.0, index=days)

@@ -152,6 +152,7 @@ Current state:
 | Weekly pack for a run (new plans with approve/reject commands, fit rejections, watch list, open positions, money, errors) | `uv run python scripts/weekly_pack.py --run N [--out FILE] [--report FILE]` |
 | Portfolio view: holdings, cash, equity, heat, sector exposure, breaches | `uv run python scripts/portfolio.py [--save] [--price JET2.L=1520]` (cash in: `book.py cash deposit 10000`) |
 | Equity curve, time-weighted return, drawdown, vs benchmark, correlated holdings | `uv run python scripts/portfolio.py --history` |
+| Static HTML dashboard over the DB (holdings, portfolio, equity curve, this week's pack, history) | `uv run python scripts/dashboard.py [--out FILE] [--run N]` |
 | Label scorecard (forward returns per label / toolkit band) and trade journal | `uv run python scripts/learn.py scorecard [--since D]` / `journal` |
 | Results DB: which is in use, copy local ↔ Turso | `uv run python scripts/db.py status` / `push [--from PATH] [--append-new-runs]` / `pull [--to PATH]` |
 | Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `relative_strength` / `fundamentals` / `jet2_value` / `scan` |
@@ -180,6 +181,8 @@ src/solaraalpha/        importable package — all reusable code lives here
   monitoring.py         the monitor's pack: position then (entry conditions) vs now (fresh cards),
                         thesis conditions evaluated, triggers + filing text — docs/decisions/0018
   value_models.py       register of per-stock value models (config/value_models.toml) for research
+  dashboard.py          render_dashboard: one self-contained HTML page from the DB (inline CSS,
+                        base64 PNG charts, md_to_html for the pack) — #136
   notify.py             owner notifications: daily (owner triggers, revision proposals, errors) and
                         weekly (pack headlines) messages; channels stdout / GitHub inbox issue — 0021
   toolkits.py           toolkit register: id -> run fn + act / watch bands; Inputs (lazy,
