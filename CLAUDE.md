@@ -157,7 +157,7 @@ Current state:
 | Equity curve, time-weighted return, drawdown, vs benchmark, correlated holdings | `uv run python scripts/portfolio.py --history` |
 | Static HTML dashboard over the DB (holdings, portfolio, equity curve, this week's pack, history) | `uv run python scripts/dashboard.py [--out FILE] [--run N]` |
 | Backtest the screen point-in-time and sweep the band thresholds (report only; bands unchanged) | `uv run python scripts/backtest.py [TICKERS...] [--years 5] [--step N] [--out FILE]` |
-| Label scorecard (forward returns per label / toolkit band) and trade journal | `uv run python scripts/learn.py scorecard [--since D]` / `journal` / `agents` (cost, tokens, minutes) |
+| Label scorecard (forward returns per label / toolkit band) and trade journal | `uv run python scripts/learn.py scorecard [--since D]` / `journal` / `agents` (cost, tokens, minutes) / `agents-value` (did downgrades avoid losers; calibration) |
 | Results DB: which is in use, copy local ↔ Turso | `uv run python scripts/db.py status` / `push [--from PATH] [--append-new-runs]` / `pull [--to PATH]` |
 | Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `relative_strength` / `fundamentals` / `jet2_value` / `scan` |
 | Notebooks | `make notebook` |
@@ -224,7 +224,8 @@ src/solaraalpha/        importable package — all reusable code lives here
     regime.py           market regime from the index (drawdown_20d, ret_1d_z, realised vol and its
                         1y percentile → calm / stressed / risk_off; realised vol only) — #142
     scorecard.py        label scorecard: 2/4/8/16-week forward returns (and excess vs market) per
-                        saved label, by stage x label and toolkit x band, no look-ahead
+                        saved label, by stage x label and toolkit x band, no look-ahead; agent_value
+                        (kept vs downgraded, bootstrap interval) and confidence calibration — #144
     events.py           events model (any stock): market reaction per filing, expected
                         scheduled events from the issuer's own history — see docs/decisions/0006
     jet2_value.py       Jet2-only fair value: consensus-calibrated FY27/FY28 driver P&L, live

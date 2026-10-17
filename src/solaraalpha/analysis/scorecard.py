@@ -117,3 +117,134 @@ def toolkit_scorecard(
         return df
     df["_l"] = df["label"].map(LABELS.index)
     return df.sort_values(["toolkit", "_l"]).drop(columns="_l").reset_index(drop=True)
+
+
+AGENT_STAGES = ("validate", "research")
+DOWNGRADE_LABELS = ("WATCH", "PASS")
+MIN_GROUP = 20  # fewer scored weeks than this per group: say so, conclude nothing
+CONFIDENCE_BUCKETS = ((0.0, 0.5), (0.5, 0.75), (0.75, 1.0001))
+BOOTSTRAP_N = 2000
+
+
+def _bootstrap_diff(
+    a: np.ndarray, b: np.ndarray, n: int = BOOTSTRAP_N, seed: int = 0
+) -> tuple[float, float]:
+    """90% bootstrap interval (5th, 95th percentile) for mean(a) - mean(b); NaN without data."""
+    if len(a) == 0 or len(b) == 0:
+        return np.nan, np.nan
+    rng = np.random.default_rng(seed)
+    diffs = rng.choice(a, (n, len(a))).mean(axis=1) - rng.choice(b, (n, len(b))).mean(axis=1)
+    lo, hi = np.percentile(diffs, [5, 95])
+    return float(lo), float(hi)
+
+
+def agent_value(
+    labels: pd.DataFrame,
+    fwd: pd.DataFrame,
+    horizons: tuple[int, ...] = HORIZONS,
+    seed: int = 0,
+) -> pd.DataFrame:
+    """Did the agents' downgrades avoid losers? (issue #144, S11.4)
+
+    For each agent stage (validate, research) and horizon: the stocks the screen called ACT
+    split into **kept** (the agent also said ACT) and **downgraded** (the agent said WATCH or
+    PASS). Columns: counts, mean and median return and mean excess of each group, hit rates,
+    the kept - downgraded difference in mean return and a seeded 90% bootstrap interval on it,
+    and ``conclusive`` (both groups have at least :data:`MIN_GROUP` scored weeks). ``labels``
+    has ``run_id, ticker, stage, label`` (and ``confidence``); ``fwd`` is :func:`forward_returns`
+    for the same labels. Rows with no forward return at the horizon are left out."""
+    cols = [
+        "stage",
+        "horizon",
+        "n_kept",
+        "n_downgraded",
+        "kept_mean",
+        "downgraded_mean",
+        "kept_median",
+        "downgraded_median",
+        "kept_excess",
+        "downgraded_excess",
+        "kept_hit",
+        "downgraded_hit",
+        "diff_mean",
+        "diff_lo90",
+        "diff_hi90",
+        "conclusive",
+    ]
+    if labels.empty or fwd.empty:
+        return pd.DataFrame(columns=cols)
+    screen = labels[labels["stage"] == "screen"][["run_id", "ticker", "label"]].rename(
+        columns={"label": "screen_label"}
+    )
+    screen_act = screen[screen["screen_label"] == "ACT"]
+    rows = []
+    for stage in AGENT_STAGES:
+        agent = labels[labels["stage"] == stage][["run_id", "ticker", "label"]]
+        if agent.empty:
+            continue
+        joined = agent.merge(screen_act, on=["run_id", "ticker"], how="inner")
+        ret = fwd[fwd["stage"] == "screen"].drop(
+            columns=["stage", "label", "date"], errors="ignore"
+        )
+        joined = joined.merge(ret, on=["run_id", "ticker"], how="left")
+        for n in horizons:
+            col, exc = f"ret_{n}w", f"exc_{n}w"
+            have = joined.dropna(subset=[col])
+            kept = have[have["label"] == "ACT"]
+            down = have[have["label"].isin(DOWNGRADE_LABELS)]
+            a, b = kept[col].to_numpy(dtype="float64"), down[col].to_numpy(dtype="float64")
+            lo, hi = _bootstrap_diff(a, b, seed=seed)
+            rows.append(
+                {
+                    "stage": stage,
+                    "horizon": n,
+                    "n_kept": len(a),
+                    "n_downgraded": len(b),
+                    "kept_mean": float(a.mean()) if len(a) else np.nan,
+                    "downgraded_mean": float(b.mean()) if len(b) else np.nan,
+                    "kept_median": float(np.median(a)) if len(a) else np.nan,
+                    "downgraded_median": float(np.median(b)) if len(b) else np.nan,
+                    "kept_excess": float(kept[exc].mean())
+                    if exc in kept and kept[exc].notna().any()
+                    else np.nan,
+                    "downgraded_excess": float(down[exc].mean())
+                    if exc in down and down[exc].notna().any()
+                    else np.nan,
+                    "kept_hit": float((a > 0).mean()) if len(a) else np.nan,
+                    "downgraded_hit": float((b > 0).mean()) if len(b) else np.nan,
+                    "diff_mean": float(a.mean() - b.mean()) if len(a) and len(b) else np.nan,
+                    "diff_lo90": lo,
+                    "diff_hi90": hi,
+                    "conclusive": bool(len(a) >= MIN_GROUP and len(b) >= MIN_GROUP),
+                }
+            )
+    return pd.DataFrame(rows, columns=cols)
+
+
+def calibration(labels: pd.DataFrame, fwd: pd.DataFrame, horizon: int = 8) -> pd.DataFrame:
+    """Did the agents' confidence mean anything? Per agent stage and confidence bucket
+    (0-0.5, 0.5-0.75, 0.75-1): the count of ACT verdicts and their forward hit rate and mean
+    return at ``horizon`` weeks."""
+    cols = ["stage", "bucket", "n", "hit_rate", "mean_return"]
+    if labels.empty or fwd.empty or "confidence" not in labels:
+        return pd.DataFrame(columns=cols)
+    ret = fwd[fwd["stage"] == "screen"][["run_id", "ticker", f"ret_{horizon}w"]]
+    rows = []
+    for stage in AGENT_STAGES:
+        agent = labels[(labels["stage"] == stage) & (labels["label"] == "ACT")]
+        joined = agent.merge(ret, on=["run_id", "ticker"], how="inner").dropna(
+            subset=[f"ret_{horizon}w", "confidence"]
+        )
+        for lo, hi in CONFIDENCE_BUCKETS:
+            g = joined[(joined["confidence"] >= lo) & (joined["confidence"] < hi)]
+            r = g[f"ret_{horizon}w"].to_numpy(dtype="float64")
+            rows.append(
+                {
+                    "stage": stage,
+                    "bucket": f"{lo:.2f}-{min(hi, 1.0):.2f}",
+                    "n": len(r),
+                    "hit_rate": float((r > 0).mean()) if len(r) else np.nan,
+                    "mean_return": float(r.mean()) if len(r) else np.nan,
+                }
+            )
+    return pd.DataFrame(rows, columns=cols)

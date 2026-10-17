@@ -3,6 +3,7 @@
 uv run python scripts/learn.py scorecard [--since DATE] [--db PATH]   # forward returns by label
 uv run python scripts/learn.py journal   [--since DATE] [--db PATH]   # closed trades by exit / set-up
 uv run python scripts/learn.py agents    [--since DATE] [--db PATH]   # agent cost, tokens, minutes
+uv run python scripts/learn.py agents-value [--since DATE] [--db PATH]  # did downgrades avoid losers?
 
 scorecard scores every saved label (from #111 on; older pass/fail steps are excluded) against
 the 2 / 4 / 8 / 16-week forward return of the stock and its excess over the market benchmark
@@ -20,7 +21,14 @@ import pandas as pd
 
 from solaraalpha import store
 from solaraalpha.analysis.relative_strength import comparisons
-from solaraalpha.analysis.scorecard import forward_returns, label_scorecard, toolkit_scorecard
+from solaraalpha.analysis.scorecard import (
+    MIN_GROUP,
+    agent_value,
+    calibration,
+    forward_returns,
+    label_scorecard,
+    toolkit_scorecard,
+)
 from solaraalpha.data.clean import clean_prices
 from solaraalpha.data.prices import fetch_daily
 from solaraalpha.portfolio import book
@@ -31,7 +39,7 @@ from solaraalpha.store import Conn, query
 def labels_with_dates(conn: Conn, since: str | None) -> pd.DataFrame:
     """Labels joined with the screen card's week (``date``) for the run and ticker."""
     sql = (
-        "SELECT l.run_id, l.ticker, l.stage, l.label, (SELECT MIN(x.date) FROM results x"
+        "SELECT l.run_id, l.ticker, l.stage, l.label, l.confidence, (SELECT MIN(x.date) FROM results x"
         " WHERE x.run_id = l.run_id AND x.ticker = l.ticker"
         " AND x.model IN ('technical', 'levels', 'relative_strength', 'fundamentals')) AS date"
         " FROM labels l ORDER BY l.run_id, l.rowid"
@@ -153,10 +161,54 @@ def agents_text(db: Path | None, since: str | None) -> str:
     return "\n".join(lines)
 
 
+def agents_value_text(db: Path | None, since: str | None) -> str:
+    conn = store.connect(db)
+    try:
+        labels = labels_with_dates(conn, since)
+        if labels.empty:
+            return "No labels to score yet."
+        tickers = sorted(set(labels["ticker"]))
+        prices = prices_for(conn, tickers)
+        market_of = {t: comparisons(t).market or "" for t in tickers}
+        bench = prices_for(conn, sorted({m for m in market_of.values() if m}))
+        fwd = forward_returns(labels, prices, bench=bench, market_of=market_of)
+    finally:
+        conn.close()
+    av = agent_value(labels, fwd)
+    if av.empty:
+        return "No agent verdicts (validate / research) to compare with the screen yet."
+    pct = lambda v: "-" if pd.isna(v) else f"{v:+.1%}"  # noqa: E731
+    lines = [
+        f"{len(labels)} labels" + (f" since {since}" if since else ""),
+        "",
+        "Kept (screen ACT -> agent ACT) vs downgraded (screen ACT -> agent WATCH / PASS):",
+    ]
+    for r in av.to_dict("records"):
+        verdict = (
+            "" if r["conclusive"] else f"  (too few to conclude: fewer than {MIN_GROUP} in a group)"
+        )
+        lines.append(
+            f"  {r['stage']:<9} {r['horizon']:>2}w  kept n={r['n_kept']} mean {pct(r['kept_mean'])} hit {pct(r['kept_hit'])}"
+            f" | downgraded n={r['n_downgraded']} mean {pct(r['downgraded_mean'])} hit {pct(r['downgraded_hit'])}"
+            f" | diff {pct(r['diff_mean'])} [90%: {pct(r['diff_lo90'])}, {pct(r['diff_hi90'])}]{verdict}"
+        )
+    cal = calibration(labels, fwd)
+    lines += ["", "Calibration (ACT verdicts by confidence, 8-week hit rate):"]
+    lines += [
+        f"  {r['stage']:<9} {r['bucket']}  n={r['n']}  hit {pct(r['hit_rate'])}  mean {pct(r['mean_return'])}"
+        for r in cal.to_dict("records")
+    ] or ["  (none)"]
+    lines += [
+        "",
+        "A positive diff means the agent kept the better stocks; the interval is a seeded bootstrap.",
+    ]
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("scorecard", "journal", "agents"):
+    for name in ("scorecard", "journal", "agents", "agents-value"):
         sp = sub.add_parser(name)
         sp.add_argument("--since", default=None, help="YYYY-MM-DD")
         sp.add_argument(
@@ -167,6 +219,8 @@ def main(argv: list[str] | None = None) -> None:
         print(scorecard(args.db, args.since))
     elif args.cmd == "journal":
         print(journal_text(args.db, args.since))
+    elif args.cmd == "agents-value":
+        print(agents_value_text(args.db, args.since))
     else:
         print(agents_text(args.db, args.since))
 
