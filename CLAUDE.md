@@ -153,6 +153,7 @@ Current state:
 | Portfolio view: holdings, cash, equity, heat, sector exposure, breaches | `uv run python scripts/portfolio.py [--save] [--price JET2.L=1520]` (cash in: `book.py cash deposit 10000`) |
 | Equity curve, time-weighted return, drawdown, vs benchmark, correlated holdings | `uv run python scripts/portfolio.py --history` |
 | Static HTML dashboard over the DB (holdings, portfolio, equity curve, this week's pack, history) | `uv run python scripts/dashboard.py [--out FILE] [--run N]` |
+| Backtest the screen point-in-time and sweep the band thresholds (report only; bands unchanged) | `uv run python scripts/backtest.py [TICKERS...] [--years 5] [--step N] [--out FILE]` |
 | Label scorecard (forward returns per label / toolkit band) and trade journal | `uv run python scripts/learn.py scorecard [--since D]` / `journal` |
 | Results DB: which is in use, copy local ↔ Turso | `uv run python scripts/db.py status` / `push [--from PATH] [--append-new-runs]` / `pull [--to PATH]` |
 | Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `relative_strength` / `fundamentals` / `jet2_value` / `scan` |
@@ -215,6 +216,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         zero-volume share, Corwin-Schultz spread proxy, max position at max_adv_pct
     charts.py           weekly_chart: candles + 10/40w MAs + levels, coil, trigger, stop/target
                         + volume as a PNG (Agg) for the validator's pack
+    backtest.py         point-in-time replay of the screen (cards per Friday from the bars up to
+                        it), forward returns, one-threshold-at-a-time sweep, suggested bands — #138
     scorecard.py        label scorecard: 2/4/8/16-week forward returns (and excess vs market) per
                         saved label, by stage x label and toolkit x band, no look-ahead
     events.py           events model (any stock): market reaction per filing, expected

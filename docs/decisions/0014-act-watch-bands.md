@@ -92,3 +92,17 @@ COLUMN` when missing (idempotent, both backends): **`watch_on`** (TEXT, JSON) on
   `store.shortlist`, `planner.final_labels` (and so the weekly pack's "ACT by rank" and the plan
   order) and the agents' `queue` use the stored rank; unranked ACT rows fall back to a fresh
   `rank_score`.
+
+## Amendment (#138): backtesting the bands
+
+`analysis/backtest.py` replays the screen **point-in-time**: for each Friday the technical,
+levels and relative-strength cards are computed from the weekly bars up to that week (benchmark
+bars sliced the same way) and the fundamentals card with `as_of` = that week (`known()` lags),
+then labelled with the current bands. `forward` gives the 4 / 8 / 16-week forward return and
+the excess over the market; `sweep` changes one ACT threshold at a time (`trend` in {0, 0.1,
+0.25, 0.4}; `reward_risk` in {1.5, 2, 3}; `rs` in {-0.1, 0, 0.1}) and reports the ACT count,
+mean return, excess and hit rate; `report` adds the sample sizes and a **suggested** band
+table (best mean 8-week return with at least 30 ACT weeks). The universe is today's watchlist,
+so the report carries the survivorship caveat and the bands in code are never changed by it:
+the owner reads the report and edits `toolkits.py` if convinced. `scripts/backtest.py` fetches
+fresh and caches nothing but the report.
