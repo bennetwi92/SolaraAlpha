@@ -173,6 +173,7 @@ src/solaraalpha/        importable package — all reusable code lives here
                         weekly bars as seen at the close (post-exit weeks = hindsight) — 0016
   monitoring.py         the monitor's pack: position then (entry conditions) vs now (fresh cards),
                         thesis conditions evaluated, triggers + filing text — docs/decisions/0018
+  value_models.py       register of per-stock value models (config/value_models.toml) for research
   toolkits.py           toolkit register: id -> run fn + act / watch bands; Inputs (lazy,
                         shared per-ticker data)
   pipeline.py           WEEKLY stages (runs_on), clauses, band / combine / screen_label,
@@ -236,6 +237,7 @@ src/solaraalpha/        importable package — all reusable code lives here
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM UK 50 snapshot)
 config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)
+config/value_models.toml  per-stock value models (skill + script) the research agent calls — #127
 config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeholders until confirmed)
 .github/workflows/      ci.yml (checks), scan.yml (weekly pipeline + weekly pack, Sunday), daily.yml
                         (weekday daily check), agents.yml (unattended agents after both; inert
@@ -243,7 +245,8 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
 .claude/skills/validate/  agent skill: re-checks a run's screen labels against the pack; downgrade only
-.claude/skills/research/  agent skill: strategist's 9-section pre-trade note, web search, evidence → record.py
+.claude/skills/research/  agent skill: strategist's 9-section pre-trade note, web search, evidence → record.py;
+                        delta mode on a prior note ≤ 35 days; calls the stock's value model when registered
 .claude/skills/monitor/   agent skill: structural change or noise on a triggered position; proposes one action
 .claude/skills/postmortem/  agent skill: post-mortem of a closed trade from its pack; setup / execution scores
 notebooks/              exploration only; promote anything reused into src/

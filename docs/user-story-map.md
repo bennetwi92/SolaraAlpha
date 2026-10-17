@@ -236,8 +236,8 @@ labelled as such (no look-ahead in the record, and the live decision uses what's
 | S3.5 | As the owner I want the research verdict saved as a `research` card and step on the same run, so it reads like any other stage. | R1 | ✅ `record.py verdict` (#117); `/research` records `stage = research` (#119) |
 | S3.6 | As the owner I want the agent to separate facts (quoted, cited) from interpretation, and never invent consensus or dates. | R1 | ✅ rule in `/events` and `/research` · #119 |
 | S3.7 | As the owner I want the free web/news sources it uses listed in `docs/data-sources.md`, with terms checked. | R1 | ✅ web search row in `docs/data-sources.md` (owner to confirm source types, §6 Q6) · #119 |
-| S3.8 | As the owner I want stock-specific value models (e.g. `/jet2-value`) called from research when they exist, so news is turned into earnings impact. | R2 | 🟡 Jet2 only, not wired in · #127 |
-| S3.9 | As the owner I want the prior week's research for a stock reused as background and only the delta researched, so repeat candidates are cheap. | R2 | ⬜ · #127 |
+| S3.8 | As the owner I want stock-specific value models (e.g. `/jet2-value`) called from research when they exist, so news is turned into earnings impact. | R2 | ✅ `config/value_models.toml` register; research Step 3b runs the model, scores `value` · #127 |
+| S3.9 | As the owner I want the prior week's research for a stock reused as background and only the delta researched, so repeat candidates are cheap. | R2 | ✅ research delta mode (prior ≤ 35 days: carry 1, 4-7; search since `retrieved_to`) · #127 |
 | S3.10 | As the owner I want a sector / macro note shared across the week's candidates (the same headwind researched once). | R3 | ⬜ · #140 |
 
 ### A4 — Plan and size (Sunday)

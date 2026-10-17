@@ -83,3 +83,10 @@ own weekly trailing P/E has a 7.2x median over 2023-26 (Yahoo).
 - The jet-fuel proxy (heating oil + fixed premium) ignores crack-spread changes between jet and
   diesel. Pass-through rates, `FAIR_PE` and the Monte Carlo sigmas are judgement, not fitted.
   Backtest them against reactions to past trading updates before trusting the score.
+
+**Amendment (#127).** The model is called from research: `config/value_models.toml` registers
+`JET2.L` → skill `jet2-value`, script `scripts/jet2_value.py`. When `/research` works a ticker
+with an entry it reads that skill, runs the script plain and with the shocks the week's
+catalysts imply, writes a "Valuation" sub-section in section 8 of its note and scores `value`
+in [-1, +1]; the run is logged as `data` evidence. Other stocks get "no value model" until one
+is built and registered; the register, not the research skill, is where that happens.

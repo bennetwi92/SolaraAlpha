@@ -247,6 +247,11 @@ def prior(conn: Conn, ticker: str, stage: str = "research", limit: int = 3) -> d
             card[str(r["field"])] = r["text"] if pd.notna(r["text"]) else r["value"]
         ev = store.load_evidence(ticker, int(str(run_id)), stage, conn=conn)
         card["evidence"] = ev.to_dict("records")
+        retrieved = [str(x) for x in ev["retrieved"]] if "retrieved" in ev and len(ev) else []
+        card["retrieved_to"] = max(retrieved) if retrieved else None
+        started = pd.Timestamp(card["started_at"])
+        started = started.tz_localize("UTC") if started.tz is None else started
+        card["age_days"] = int((pd.Timestamp.now(tz="UTC") - started).days)
         verdicts.append(card)
         if len(verdicts) >= limit:
             break
