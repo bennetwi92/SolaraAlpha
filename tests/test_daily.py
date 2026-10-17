@@ -291,7 +291,7 @@ def test_run_daily_saves_triggers_and_reports(
         book.split(conn, 1, "2:1", at="2026-10-21T07:00:00+00:00")
     r = run_daily(conn, _fetchers(frames))
     conn.close()
-    assert r.since.startswith("2026-10-16") or r.since > "2026-10-18"
+    assert r.since.startswith(pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%d"))  # this run
     assert not r.of(("dividend", "split"))
 
 
