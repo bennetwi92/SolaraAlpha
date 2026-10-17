@@ -140,7 +140,7 @@ Story format: *as <actor>, I want <capability> so that <outcome>*, then acceptan
 | S0.2 | As the owner I want per-stock benchmarks and peers so relative strength is meaningful. | R1 | ✅ `config/benchmarks.toml` |
 | S0.3 | As the owner I want **portfolio rules** in one config file (capital, risk per trade, max open positions, max per stock / sector, max portfolio heat, cash buffer, min liquidity) so sizing and checks are consistent and versioned. | R1 | ✅ `config/portfolio.toml`, `portfolio.rules` (placeholders, `confirmed = false`) · #105 |
 | S0.4 | As the owner I want a reminder when the watchlist snapshot is older than the last quarterly FTSE review, so the universe doesn't drift. | R2 | ✅ `snapshot` in `watchlist.toml`; `scan.py` warns after the next FTSE review month · #124 |
-| S0.5 | As the owner I want each stock's sector / industry recorded so concentration can be checked. | R2 | 🟡 `sector` key per stock in `benchmarks.toml`; only JET2.L confirmed (the LSE pages need JavaScript; fill by hand, #124) |
+| S0.5 | As the owner I want each stock's sector / industry recorded so concentration can be checked. | R2 | ✅ `sector` (ICB sector from the LSE instrument data) for every watchlist stock in `benchmarks.toml`, with industry ETF and peers · #124 |
 | S0.6 | As the owner I want each stock's liquidity (median daily £ volume, spread proxy) so size is capped at what AIM names can absorb. | R2 | ✅ `liquidity` toolkit (`analysis/liquidity.py`); `plan.py` sizes on its `adv_gbp_20` · #124 |
 
 S0.3 acceptance (proposal for the values; owner to set them):
