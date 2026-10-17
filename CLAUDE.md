@@ -219,6 +219,7 @@ src/solaraalpha/        importable package — all reusable code lives here
     risk.py             holdings / equity / heat / exposure / breaches vs the rules; sector_of
                         (optional `sector` per stock in config/benchmarks.toml)
     plan.py             TradePlan + make_plan: entry (breakout trigger or limit), stop, targets,
+                        add_plan: scale into a winner (>= 1R, breakout or pullback, #128),
                         risk-based size with caps, review dates, flags — see docs/decisions/0015
     fit.py              portfolio fit before drafting: slots, sector cap, heat (reject);
                         correlation, event clash (flag); rank_score — 0015
