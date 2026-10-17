@@ -289,7 +289,7 @@ and WATCH stock**, and **the agent only when a check fires**.
 | S7.5 | As the owner I want the **monitor agent** run only for positions with a fired trigger: read the filing / news, compare it with the entry conditions and the thesis, and propose **hold / tighten stop / take partial / exit / revise target**, with evidence logged (as S3.4). | R1 | ✅ `/monitor`, `scripts/monitor_pack.py`, `record.py revision` · #121 |
 | S7.6 | As the owner I want "structural change" defined so the agent doesn't churn: guidance or estimate change; a thesis kill criterion hit; a capital event (placing, bid, delisting); a regulatory or legal event; a weekly-trend break (stage 2 → 3). Noise (no new information, a move inside 2 ATR) is ignored. | R1 | ✅ defined in the skill and ADR 0018 · #121 |
 | S7.7 | As the owner I want each proposal stored as a **plan revision** (old → new, reason, evidence, status proposed / accepted / rejected), and new draft orders if accepted. | R1 | ✅ `revision_proposed` / `accepted` / `declined` events; `book.py accept` drafts the orders · #121 |
-| S7.8 | As the owner I want a daily notification only when something needs me (a revision, a stop hit, a fill to enter, an error); silence otherwise. | R2 | ⬜ · #132 |
+| S7.8 | As the owner I want a daily notification only when something needs me (a revision, a stop hit, a fill to enter, an error); silence otherwise. | R2 | ✅ `notify.py --mode daily` (exit 3 when nothing) → GitHub `inbox` issue · #132 |
 | S7.9 | As the owner I want market-wide volatility checks (index drawdown, VIX / VFTSE proxy) to flag "tighten everything" days. | R3 | ⬜ · #142 |
 
 ### A8 — Review weekly (open positions, Sunday)
@@ -343,7 +343,7 @@ and WATCH stock**, and **the agent only when a check fires**.
 | S12.4 | As the owner I want the agent stages (A2, A3, A7) runnable unattended (Actions or a scheduled Claude session) after the scan, reading the run from the DB. | R1 | ✅ `agents.yml` + `claude-code-action` (ADR 0019); inert until the owner adds a Claude secret · #123 |
 | S12.5 | As the owner I want a daily workflow (A7) alongside the weekly one. | R1 | ✅ `daily.yml`, 17:47 UTC weekdays, `concurrency: book` shared with the scan · #120 |
 | S12.6 | As the owner I want failures reported (ERROR labels, source outages, agent errors) without stopping the rest of the run. | R1 | ✅ toolkits (ERROR steps) and agents (`record.py error`, `outcome`) · #123 |
-| S12.7 | As the owner I want notifications (email / push) for the weekly pack and the daily actions. | R2 | ⬜ · #132 |
+| S12.7 | As the owner I want notifications (email / push) for the weekly pack and the daily actions. | R2 | ✅ GitHub issue comments (default channel, ADR 0021); email / Notion as later `send` channels · #132 |
 | S12.8 | As the owner I want agent cost and runtime per run logged, so the free / subscription limits aren't hit by surprise. | R2 | ⬜ · #139 |
 
 ---

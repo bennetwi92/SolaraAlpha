@@ -81,6 +81,9 @@ Current state:
   `max_agent_tickers` and `--max-turns`; without `CLAUDE_CODE_OAUTH_TOKEN` or
   `ANTHROPIC_API_KEY` it skips and nothing is spent. A failed invocation is recorded as an
   ERROR verdict (`record.py error`); the job fails only if every item errored.
+- **Notifications** (docs/decisions/0021): the workflows post to the GitHub issue labelled
+  `inbox` only when `scripts/notify.py` has something for the owner (owner-action triggers,
+  revision proposals, errors; the weekly pack's headlines on Sunday); silence otherwise.
 - **Agents write through one door** (docs/decisions/0016): a `verdict.json` (schema:
   `record.py schema`) recorded with `scripts/record.py verdict`, which writes the `labels` row,
   a card under `model = stage` and the `evidence` rows on the same run. Agents can only
@@ -140,6 +143,7 @@ Current state:
 | Post-mortem (agent): set-up, what worked / failed, signal right or wrong, rule proposals | `/postmortem POSITION_ID` in Claude Code → `record.py verdict ... --position ID` |
 | Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `revision FILE --position ID` / `prior JET2.L [--stage research]` / `schema`; runner: `error TICKER --run N --stage S --reason ...` / `queue --run N --stage S` / `latest-run` / `outcome --run N --stage S` |
 | Daily check: prices, triggers (stops, targets, gaps, breaks), new filings and headlines | `uv run python scripts/daily.py [--save] [--report FILE]` |
+| Notify the owner only when something needs them (exit 3 = nothing) | `uv run python scripts/notify.py --mode daily\|weekly --run N [--channel stdout\|github-issue]` |
 | Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
@@ -176,6 +180,8 @@ src/solaraalpha/        importable package — all reusable code lives here
   monitoring.py         the monitor's pack: position then (entry conditions) vs now (fresh cards),
                         thesis conditions evaluated, triggers + filing text — docs/decisions/0018
   value_models.py       register of per-stock value models (config/value_models.toml) for research
+  notify.py             owner notifications: daily (owner triggers, revision proposals, errors) and
+                        weekly (pack headlines) messages; channels stdout / GitHub inbox issue — 0021
   toolkits.py           toolkit register: id -> run fn + act / watch bands; Inputs (lazy,
                         shared per-ticker data)
   pipeline.py           WEEKLY stages (runs_on), clauses, band / combine / screen_label,

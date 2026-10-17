@@ -2,7 +2,8 @@
 # breakout entries (scripts/daily.py), weekday evenings after the London close. Writes a
 # `daily` run with the triggers to the results DB (Turso secrets, else the local file) and the
 # report to the job summary. Shares the `book` concurrency group with scan.yml so the two never
-# write at once (docs/decisions/0017).
+# write at once (docs/decisions/0017). Posts to the GitHub issue labelled `inbox` only when the
+# run needs the owner (docs/decisions/0021).
 name: Daily check
 
 on:
@@ -13,6 +14,10 @@ on:
 concurrency:
   group: book
   cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
 
 jobs:
   daily:
@@ -28,7 +33,20 @@ jobs:
         env:
           SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
           SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
-        run: uv run --no-sync python scripts/daily.py --save --report "$GITHUB_STEP_SUMMARY"
+        run: uv run --no-sync python scripts/daily.py --save --report "$GITHUB_STEP_SUMMARY" --run-id-file run_id.txt
+      - name: Notify the owner (GitHub inbox issue) only when something needs them
+        if: always() && hashFiles('run_id.txt') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+        run: |
+          set +e
+          uv run --no-sync python scripts/notify.py --mode daily --run "$(cat run_id.txt)" --channel github-issue
+          rc=$?
+          set -e
+          if [ "$rc" = "3" ]; then echo "nothing to notify" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
