@@ -48,6 +48,7 @@ class Pack:
     watch: list[Candidate] = field(default_factory=list)
     performance: performance.Summary | None = None
     correlated: list[tuple[str, str, float]] = field(default_factory=list)
+    agent_usage: dict[str, float] = field(default_factory=dict)  # minutes / cost this week (#139)
     stale_orders: list[dict[str, Any]] = field(
         default_factory=list
     )  # past validity, no fill (#130)
@@ -118,7 +119,24 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> Pack:
         performance=perf,
         correlated=pairs,
         stale_orders=json.loads(book.stale_orders(conn, started).to_json(orient="records")),
+        agent_usage=agent_week(conn, started),
     )
+
+
+def agent_week(conn: Conn, started: str) -> dict[str, float]:
+    """Agent invocations, minutes and cost in the seven days up to ``started`` (#139)."""
+    since = (pd.Timestamp(started) - pd.Timedelta(days=7)).isoformat()
+    runs = store.load_agent_runs(since, conn=conn)
+    if runs.empty:
+        return {}
+    secs = pd.to_numeric(runs["seconds"], errors="coerce").sum(min_count=1)
+    cost = pd.to_numeric(runs["cost_usd"], errors="coerce").sum(min_count=1)
+    return {
+        "invocations": float(len(runs)),
+        "minutes": float(secs) / 60 if pd.notna(secs) else float("nan"),
+        "cost_usd": float(cost) if pd.notna(cost) else float("nan"),
+        "failures": float((runs["status"] != "success").sum()),
+    }
 
 
 def performance_from_store(
@@ -283,6 +301,14 @@ def render_pack(pack: Pack) -> str:
         lines.append(
             "- correlated holdings (26w > 0.7): "
             + ", ".join(f"{a}/{b} {c:.2f}" for a, b, c in pack.correlated)
+        )
+    au = pack.agent_usage
+    if au:
+        cost = f"${au['cost_usd']:.2f}" if not math.isnan(au["cost_usd"]) else "n/a (subscription)"
+        mins = f"{au['minutes']:.0f}" if not math.isnan(au["minutes"]) else "n/a"
+        lines.append(
+            f"- agents this week: {int(au['invocations'])} invocation(s), {mins} minutes, cost {cost}"
+            + (f", {int(au['failures'])} failure(s)" if au["failures"] else "")
         )
     lines += [
         f"- equity {_money(eq.equity)} = cash {_money(eq.cash)} + market value {_money(eq.market_value)}",

@@ -40,6 +40,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import subprocess
+from collections.abc import Mapping
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -116,6 +117,19 @@ CREATE TABLE IF NOT EXISTS triggers (
     order_id    INTEGER,
     detail      TEXT NOT NULL,      -- JSON: the numbers that fired
     at          TEXT NOT NULL       -- session date or publication time
+);
+CREATE TABLE IF NOT EXISTS agent_runs (
+    run_id        INTEGER NOT NULL REFERENCES runs,
+    ticker        TEXT NOT NULL,
+    stage         TEXT NOT NULL,      -- validate / research / monitor / postmortem
+    started_at    TEXT NOT NULL,
+    seconds       REAL,
+    turns         INTEGER,
+    input_tokens  INTEGER,
+    output_tokens INTEGER,
+    cost_usd      REAL,               -- NULL when the action reports none (subscription)
+    status        TEXT NOT NULL,      -- success / failure
+    error         TEXT
 );
 CREATE TABLE IF NOT EXISTS labels (
     run_id     INTEGER NOT NULL REFERENCES runs,
@@ -320,6 +334,65 @@ def load_labels(
         conn.close()
     df["watch_on"] = [json.loads(w) if isinstance(w, str) else None for w in df["watch_on"]]
     return df
+
+
+def save_agent_run(
+    run_id: int,
+    ticker: str,
+    stage: str,
+    usage: Mapping[str, Any],
+    status: str = "success",
+    error: str | None = None,
+    started_at: str | None = None,
+    path: Path | None = None,
+    conn: Conn | None = None,
+) -> None:
+    """Record one agent invocation's cost and runtime (#139): ``usage`` as returned by
+    :func:`solaraalpha.agents.parse_usage` (``seconds, turns, input_tokens, output_tokens,
+    cost_usd``; any may be None)."""
+    own = conn is None
+    conn = conn or connect(path)
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO agent_runs (run_id, ticker, stage, started_at, seconds, turns,"
+                " input_tokens, output_tokens, cost_usd, status, error)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    run_id,
+                    ticker,
+                    stage,
+                    started_at or datetime.now(UTC).isoformat(),
+                    usage.get("seconds"),
+                    usage.get("turns"),
+                    usage.get("input_tokens"),
+                    usage.get("output_tokens"),
+                    usage.get("cost_usd"),
+                    status,
+                    error,
+                ),
+            )
+    finally:
+        if own:
+            conn.close()
+
+
+def load_agent_runs(
+    since: str | None = None, path: Path | None = None, conn: Conn | None = None
+) -> pd.DataFrame:
+    """Every recorded agent invocation (with the run's script), optionally from ``since``."""
+    own = conn is None
+    conn = conn or connect(path)
+    sql = "SELECT r.script, a.* FROM agent_runs a JOIN runs r USING (run_id)"
+    params: list[Any] = []
+    if since:
+        sql += " WHERE a.started_at >= ?"
+        params.append(since)
+    try:
+        return query(sql + " ORDER BY a.started_at, a.rowid", conn, params)
+    finally:
+        if own:
+            conn.close()
 
 
 def save_triggers(

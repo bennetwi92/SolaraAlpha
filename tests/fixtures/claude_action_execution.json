@@ -1,0 +1,24 @@
+[
+  {"type": "system", "subtype": "init", "session_id": "sess_01", "tools": ["Bash", "Read", "Write"], "model": "claude-example"},
+  {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Building the pack."}]}},
+  {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "JET2.L: screen ACT; 4 cards"}]}},
+  {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Recording the verdict."}]}},
+  {
+    "type": "result",
+    "subtype": "success",
+    "is_error": false,
+    "duration_ms": 184230,
+    "duration_api_ms": 171004,
+    "num_turns": 23,
+    "result": "recorded validate ACT (0.80) for JET2.L in run 12",
+    "session_id": "sess_01",
+    "total_cost_usd": 0.4137,
+    "usage": {
+      "input_tokens": 1842,
+      "cache_creation_input_tokens": 51230,
+      "cache_read_input_tokens": 412880,
+      "output_tokens": 6120,
+      "server_tool_use": {"web_search_requests": 2}
+    }
+  }
+]
