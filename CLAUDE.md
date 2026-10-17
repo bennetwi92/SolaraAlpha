@@ -76,7 +76,7 @@ Current state:
   (`revision_proposed` events) that the owner accepts or declines in `book.py`; agents never
   change orders. Market-wide volatility is not built yet.
 - **Agents run unattended when the owner adds a Claude secret** (docs/decisions/0019):
-  `agents.yml` runs after the scan (`/validate` → `/research` → `plan.py` → `weekly_pack.py`)
+  `agents.yml` runs after the scan (`/validate` → `/macro` → `/research` → `plan.py` → `weekly_pack.py`)
   and after the daily job (`/monitor`) via `claude-code-action`, capped by
   `max_agent_tickers` and `--max-turns`; without `CLAUDE_CODE_OAUTH_TOKEN` or
   `ANTHROPIC_API_KEY` it skips and nothing is spent. A failed invocation is recorded as an
@@ -133,6 +133,7 @@ Current state:
 | Jet2 news analyst (agent) | `/jet2-value <news or question>` in Claude Code |
 | Read one announcement | `uv run python scripts/announcement.py <NSM url>` |
 | Events analyst (agent; persists its note via `record.py`) | `/events JET2.L [--run N]` in Claude Code |
+| Macro analyst (agent): one shared sector / macro note per group of the run's ACT stocks | `/macro --run N` in Claude Code (`record.py queue --stage macro` lists the groups) |
 | Research analyst (agent): 9-section pre-trade note with web search, evidence logged | `/research JET2.L --run N` or `/research --run N` in Claude Code |
 | Validator pack (DB only, independent of other agents) | `uv run python scripts/validate_pack.py JET2.L --run N` / `--run N --all` |
 | Validator (agent) | `/validate JET2.L --run N` or `/validate --run N` in Claude Code |
@@ -262,6 +263,8 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
 .claude/skills/validate/  agent skill: re-checks a run's screen labels against the pack; downgrade only
 .claude/skills/research/  agent skill: strategist's 9-section pre-trade note, web search, evidence → record.py;
                         delta mode on a prior note ≤ 35 days; calls the stock's value model when registered
+.claude/skills/macro/     agent skill: one shared sector / macro note per group of the week's ACT stocks
+                        (stage macro, pseudo-ticker _SECTOR:<name>); research reads it — #140
 .claude/skills/monitor/   agent skill: structural change or noise on a triggered position; proposes one action
 .claude/skills/postmortem/  agent skill: post-mortem of a closed trade from its pack; setup / execution scores
 notebooks/              exploration only; promote anything reused into src/

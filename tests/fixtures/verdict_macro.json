@@ -1,0 +1,28 @@
+{
+  "stage": "macro",
+  "ticker": "_SECTOR:Travel & Leisure",
+  "run_id": 1,
+  "label": "WATCH",
+  "confidence": 0.6,
+  "reasons": ["jet fuel down 12% since August, hedged carriers see it in FY27", "UK consumer confidence flat; summer 27 on-sale ahead of last year"],
+  "scores": {"sector": 0.2, "policy": -0.1, "macro": 0.3, "macro_risk": 0.4},
+  "evidence": [
+    {
+      "url": "https://www.example.com/jet-fuel-prices-fall",
+      "title": "Jet fuel prices fall to 18-month low",
+      "publisher": "Example News",
+      "published": "2026-10-10T09:30:00Z",
+      "retrieved": "2026-10-11T19:05:00Z",
+      "kind": "web",
+      "section": "macro",
+      "summary": "Jet fuel CIF NWE down 12% since August.",
+      "impact_score": 0.3,
+      "impact_confidence": 0.6,
+      "driver": "fuel",
+      "horizon_weeks": 16,
+      "nsm_id": null
+    }
+  ],
+  "note_md": "## Sector picture\nLeisure travel demand is holding...\n\n## Policy and regulation\nAPD rises in April...\n\n## Macro\nFuel down, sterling flat...\n\n## Members\n- JET2.L: 80% hedged, less exposed\n\n## Watch\n- 2026-11-26 Budget",
+  "checks": {"members": "JET2.L", "drivers": "fuel,consumer"}
+}

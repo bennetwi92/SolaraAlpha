@@ -5,7 +5,8 @@ uv run python scripts/record.py revision FILE --position ID [--actor agent:monit
 uv run python scripts/record.py prior TICKER [--stage research] [--limit 3] [--db PATH]
 uv run python scripts/record.py schema
 uv run python scripts/record.py error TICKER --run N --stage S --reason TEXT     # runner: skill failed
-uv run python scripts/record.py queue --run N --stage validate|research|monitor|postmortem  # runner
+uv run python scripts/record.py queue --run N --stage validate|research|monitor|postmortem|macro  # runner
+uv run python scripts/record.py members --run N --sector "_SECTOR:Travel & Leisure"   # tickers in a macro group
 uv run python scripts/record.py latest-run [--script scan|daily]                 # runner: which run
 uv run python scripts/record.py outcome --run N --stage S                        # runner: exit 1 if all ERROR
 uv run python scripts/record.py usage --run N --ticker T --stage S --file execution.json [--status success|failure] [--error TEXT]
@@ -119,6 +120,15 @@ def _usage(args: argparse.Namespace) -> None:
     print(
         f"recorded {args.stage} {args.ticker} run {args.run}: {args.status}, {secs}, {usage['turns'] or 'n/a'} turns, cost {cost}"
     )
+
+
+def _members(args: argparse.Namespace) -> None:
+    conn = store.connect(args.db)
+    try:
+        for t in agents.sector_members(conn, args.run, args.sector):
+            print(t)
+    finally:
+        conn.close()
 
 
 def _prior(args: argparse.Namespace) -> None:
@@ -243,7 +253,7 @@ def main(argv: list[str] | None = None) -> None:
     er.add_argument(
         "--stage",
         required=True,
-        choices=("validate", "research", "events", "monitor", "postmortem"),
+        choices=("validate", "research", "events", "monitor", "postmortem", "macro"),
     )
     er.add_argument("--reason", required=True)
     er.add_argument("--position", type=int, help="postmortem: the closed position")
@@ -254,7 +264,9 @@ def main(argv: list[str] | None = None) -> None:
     )
     qu.add_argument("--run", type=int, required=True)
     qu.add_argument(
-        "--stage", required=True, choices=("validate", "research", "monitor", "postmortem")
+        "--stage",
+        required=True,
+        choices=("validate", "research", "monitor", "postmortem", "macro"),
     )
     qu.add_argument("--cap", type=int, default=None, help="default Rules.max_agent_tickers")
     qu.add_argument("--db", type=Path, default=None)
@@ -264,12 +276,16 @@ def main(argv: list[str] | None = None) -> None:
     us.add_argument(
         "--stage",
         required=True,
-        choices=("validate", "research", "events", "monitor", "postmortem"),
+        choices=("validate", "research", "events", "monitor", "postmortem", "macro"),
     )
     us.add_argument("--file", help="claude-code-action execution_file (JSON); missing = no usage")
     us.add_argument("--status", choices=("success", "failure"), default="success")
     us.add_argument("--error", default=None)
     us.add_argument("--db", type=Path, default=None)
+    mb = sub.add_parser("members", help="the run's ACT tickers in a _SECTOR:<name> group (#140)")
+    mb.add_argument("--run", type=int, required=True)
+    mb.add_argument("--sector", required=True)
+    mb.add_argument("--db", type=Path, default=None)
     lr = sub.add_parser("latest-run", help="the latest run id of a script")
     lr.add_argument("--script", default="scan")
     lr.add_argument("--db", type=Path, default=None)
@@ -280,6 +296,9 @@ def main(argv: list[str] | None = None) -> None:
     args = p.parse_args(argv)
     if args.cmd == "usage":
         _usage(args)
+        return
+    if args.cmd == "members":
+        _members(args)
         return
     if args.cmd == "schema":
         print(json.dumps(agents.Verdict.model_json_schema(), indent=2))

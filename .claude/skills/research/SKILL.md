@@ -35,7 +35,14 @@ stage that decided it).
 ```
 uv run python scripts/record.py prior <TICKER> --stage research
 uv run python scripts/record.py prior <TICKER> --stage events
+uv run python scripts/record.py prior "_SECTOR:<sector>" --stage macro     # this week's shared note
 ```
+
+The stock's `sector` is in `config/benchmarks.toml` (`unknown` when unset). When the run has a
+`macro` note for the sector (or for a driver group `_SECTOR:driver-<name>` the stock belongs
+to), **sections 5 and 6 reference it** ("per the macro note, run N: ...") and add only what is
+specific to the stock; do not re-research the shared picture. Without a note, research them
+as before.
 
 Reuse prior notes as background and carry forward what still holds. Do not re-interpret
 filings already logged: match on `nsm_id`.

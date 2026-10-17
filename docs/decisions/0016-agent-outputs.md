@@ -98,3 +98,17 @@ card; it is recorded under the position's `opened_from_run_id` (or `--new-run` f
 booked by hand). Rule suggestions in the note are proposals only. The unattended runner
 (`agents.yml`, daily mode) queues the positions closed since the previous daily run that have
 no post-mortem card (`record.py queue --stage postmortem`).
+
+## Macro notes (#140)
+
+The same headwind should be researched once a week, not once per stock. `/macro --run N`
+(`.claude/skills/macro/SKILL.md`) groups the run's screen-ACT tickers by `sector`
+(`config/benchmarks.toml`; `record.py queue --stage macro` lists the groups, `members` their
+tickers) and by a driver shared across sectors, writes one note per group with web search and
+logged evidence, and records it through the same door as a `macro` verdict under the
+**pseudo-ticker `_SECTOR:<name>`** (`agents.SECTOR_PREFIX`). `macro` is a card-only stage: no
+`labels` row, no downgrade rule (there is no screen label for a sector), one note per group
+per run. `/research` reads the run's macro note for the stock's sector with `record.py prior
+"_SECTOR:<name>" --stage macro` and references it in sections 5 and 6 instead of
+re-researching. The unattended runner (ADR 0019) runs the `macro` job after `validate` and
+before `research`, with usage and ERROR recording like the other stages.

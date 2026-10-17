@@ -25,7 +25,8 @@ from solaraalpha.pipeline import SCREEN_TOOLKITS
 from solaraalpha.store import Conn, query
 
 Label = Literal["ACT", "WATCH", "PASS", "ERROR"]
-Stage = Literal["validate", "research", "events", "monitor", "postmortem"]
+Stage = Literal["validate", "research", "events", "monitor", "postmortem", "macro"]
+SECTOR_PREFIX = "_SECTOR:"  # pseudo-ticker of a shared sector / macro note (#140)
 LABEL_STAGES = ("events", "validate", "research")  # stages that write a labels row
 RANK = {"ACT": 3, "WATCH": 2, "PASS": 1}  # ERROR is outside the order
 PREVIOUS = {"validate": ("screen",), "research": ("validate", "screen")}
@@ -346,6 +347,8 @@ def queue(conn: Conn, run_id: int, stage: str, cap: int) -> list[str]:
 
     if stage == "monitor":
         return [str(p) for p in positions_to_review(conn, run_id)[:cap]]
+    if stage == "macro":
+        return sector_groups(conn, run_id)[:cap]
     if stage == "postmortem":
         prev = conn.execute(
             "SELECT started_at FROM runs WHERE script = 'daily' AND run_id < ?"
@@ -393,10 +396,48 @@ def queue(conn: Conn, run_id: int, stage: str, cap: int) -> list[str]:
     return [t for _, _, t in sorted(scored)][:cap]
 
 
+def sector_groups(conn: Conn, run_id: int) -> list[str]:
+    """The run's screen-ACT tickers grouped by ``sector`` (config/benchmarks.toml) as
+    ``_SECTOR:<name>`` pseudo-tickers, largest group first, those with a ``macro`` card in the
+    run already left out (#140)."""
+    from solaraalpha.portfolio.risk import sector_of
+
+    df = query(
+        "SELECT ticker FROM labels WHERE run_id = ? AND stage = 'screen' AND label = 'ACT'",
+        conn,
+        [run_id],
+    )
+    groups: dict[str, list[str]] = {}
+    for t in df["ticker"]:
+        groups.setdefault(sector_of(str(t)), []).append(str(t))
+    done = set(
+        query(
+            "SELECT DISTINCT ticker FROM results WHERE run_id = ? AND model = 'macro'",
+            conn,
+            [run_id],
+        )["ticker"]
+    )
+    names = sorted(groups, key=lambda s: (-len(groups[s]), s))
+    return [f"{SECTOR_PREFIX}{s}" for s in names if f"{SECTOR_PREFIX}{s}" not in done]
+
+
+def sector_members(conn: Conn, run_id: int, sector: str) -> list[str]:
+    """The run's screen-ACT tickers in ``sector`` (the name after ``_SECTOR:``)."""
+    from solaraalpha.portfolio.risk import sector_of
+
+    name = sector.removeprefix(SECTOR_PREFIX)
+    df = query(
+        "SELECT ticker FROM labels WHERE run_id = ? AND stage = 'screen' AND label = 'ACT'",
+        conn,
+        [run_id],
+    )
+    return [str(t) for t in df["ticker"] if sector_of(str(t)) == name]
+
+
 def outcome(conn: Conn, run_id: int, stage: str) -> dict[str, int]:
     """Counts of labels for ``stage`` in ``run_id`` (``total`` and ``errors``); for ``monitor``
-    and ``postmortem`` the cards instead of labels."""
-    if stage in ("monitor", "postmortem"):
+    ``postmortem`` and ``macro`` the cards instead of labels."""
+    if stage in ("monitor", "postmortem", "macro"):
         df = query(
             "SELECT ticker, text FROM results WHERE run_id = ? AND model = ? AND field = 'label'",
             conn,
