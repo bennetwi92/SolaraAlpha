@@ -161,6 +161,8 @@ class Scorecard:
     close: float
     stop: float  # initial stop if entering now
     risk_pct: float  # distance to that stop as a fraction of price
+    ma10: float = float("nan")  # 10-week MA level (the pullback level when extended)
+    ma40: float = float("nan")  # 40-week MA level (the trend line)
 
 
 @dataclass(frozen=True)
@@ -264,4 +266,6 @@ def scorecard(weekly: pd.DataFrame, side: int = 1) -> Scorecard:
         close=float(last["close"]),
         stop=float(last["stop"]),
         risk_pct=float(last["risk_pct"]),
+        ma10=float(last["sma_fast"]),
+        ma40=float(last["sma_slow"]),
     )

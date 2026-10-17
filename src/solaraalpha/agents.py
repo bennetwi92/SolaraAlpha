@@ -158,7 +158,8 @@ def record_verdict(
                     f"{v.stage} already recorded for {v.ticker} in run {v.run_id} ({existing[0]})"
                 )
             conn.execute(
-                "INSERT INTO labels VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO labels (run_id, ticker, stage, label, confidence, reason, actor)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (v.run_id, v.ticker, v.stage, v.label, v.confidence, "; ".join(v.reasons), actor),
             )
             wrote_label = True
@@ -357,13 +358,16 @@ def queue(conn: Conn, run_id: int, stage: str, cap: int) -> list[str]:
         return [str(p) for p in ids[:cap]]
     if stage == "validate":
         df = query(
-            "SELECT ticker FROM labels WHERE run_id = ? AND stage = 'screen' AND label = 'ACT'",
+            "SELECT ticker, rank FROM labels WHERE run_id = ? AND stage = 'screen' AND label = 'ACT'",
             conn,
             [run_id],
         )
         tickers = [str(t) for t in df["ticker"]]
+        ranks = {str(t): r for t, r in zip(df["ticker"], df["rank"], strict=True) if pd.notna(r)}
     elif stage == "research":
-        tickers = [c.ticker for c in final_labels(conn, run_id) if c.label == "ACT"]
+        cands = [c for c in final_labels(conn, run_id) if c.label == "ACT"]
+        tickers = [c.ticker for c in cands]
+        ranks = {c.ticker: c.rank for c in cands if c.rank is not None}
     else:
         raise ValueError(f"no queue for stage {stage!r}")
     done = set(
@@ -375,9 +379,12 @@ def queue(conn: Conn, run_id: int, stage: str, cap: int) -> list[str]:
     for t in tickers:
         if t in done:
             continue
+        if t in ranks:  # the screen's stored rank (#125)
+            scored.append((0, float(ranks[t]), t))
+            continue
         score = rank_score(store.load_cards(run_id, t, conn=conn))
-        scored.append((-(score if score == score else -float("inf")), t))
-    return [t for _, t in sorted(scored)][:cap]
+        scored.append((1, -(score if score == score else -float("inf")), t))
+    return [t for _, _, t in sorted(scored)][:cap]
 
 
 def outcome(conn: Conn, run_id: int, stage: str) -> dict[str, int]:

@@ -57,7 +57,8 @@ Current state:
   strength + liquidity, on every stock; liquidity has no bands and feeds sizing) → `fundamentals`
   (on ACT and WATCH) → `events` (on ACT; it has no bands and is the input to research, not a
   gate). The **screen label** combines the four
-  screening toolkits and is saved per stock in the `labels` table (`store.shortlist`). Stocks:
+  screening toolkits and is saved per stock in the `labels` table (`store.shortlist`), with
+  `watch_on` (what a WATCH stock waits for, JSON) and `rank` (ACT order, 1 = best). Stocks:
   `config/watchlist.toml` (hand snapshot with a `snapshot` date; the scan warns once a quarterly
   FTSE review month has passed since it). After the pipeline the scan **reviews every open position** (all
   toolkits with the position's entry → a `review` card; the stop ratchets up and is drafted as

@@ -230,7 +230,63 @@ def test_labels_round_trip(db: Path | None) -> None:
     assert store.shortlist(run_id, path=db) == ["JET2.L"]
     assert store.shortlist(run_id, "research", ("WATCH", "ACT"), path=db) == ["JET2.L"]
     assert store.load_labels(ticker="EZJ.L", path=db)["label"].tolist() == ["WATCH"]
+    assert got["watch_on"].tolist() == [None, None, None] and got["rank"].isna().all()
     with pytest.raises(ValueError, match="label must be"):
         store.save_label(run_id, "X.L", "screen", "MAYBE", path=db)
     with pytest.raises(Exception, match=r"(?i)unique|constraint"):
         store.save_label(run_id, "JET2.L", "screen", "PASS", path=db)  # one per run/ticker/stage
+
+
+def test_labels_watch_on_and_rank(db: Path | None) -> None:
+    run_id = store.start_run("scan", {}, path=db)
+    store.save_label(run_id, "C.L", "screen", "ACT", "", path=db, rank=3)
+    store.save_label(run_id, "A.L", "screen", "ACT", "", path=db, rank=1)
+    store.save_label(run_id, "U.L", "screen", "ACT", "", path=db)  # unranked: last
+    store.save_label(run_id, "B.L", "screen", "ACT", "", path=db, rank=2)
+    store.save_label(
+        run_id,
+        "W.L",
+        "screen",
+        "WATCH",
+        "technical WATCH: extended",
+        path=db,
+        watch_on=[{"toolkit": "technical", "kind": "pullback", "level": 1480.5, "entry": -0.4}],
+    )
+    assert store.shortlist(run_id, path=db) == ["A.L", "B.L", "C.L", "U.L"]
+    got = store.load_labels(run_id=run_id, path=db).set_index("ticker")
+    assert got.loc["W.L", "watch_on"] == [
+        {"toolkit": "technical", "kind": "pullback", "level": 1480.5, "entry": -0.4}
+    ]
+    assert got.loc["A.L", "rank"] == 1 and got.loc["W.L", "watch_on"] is not None
+    assert got.loc["U.L", "watch_on"] is None
+    # the migration is idempotent: connecting again adds nothing and loses nothing
+    conn = store.connect(db)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(labels)")]
+    assert cols.count("watch_on") == 1 and cols.count("rank") == 1
+    conn.close()
+    assert store.shortlist(run_id, path=db) == ["A.L", "B.L", "C.L", "U.L"]
+
+
+def test_labels_migration_from_the_old_layout(tmp_path: Path) -> None:
+    import sqlite3
+
+    db = tmp_path / "old.db"
+    raw = sqlite3.connect(db)
+    raw.executescript(
+        "CREATE TABLE runs (run_id INTEGER PRIMARY KEY, started_at TEXT, script TEXT, git_sha TEXT, args TEXT);"
+        "CREATE TABLE labels (run_id INTEGER NOT NULL, ticker TEXT NOT NULL, stage TEXT NOT NULL,"
+        " label TEXT NOT NULL, confidence REAL, reason TEXT NOT NULL, actor TEXT NOT NULL,"
+        " PRIMARY KEY (run_id, ticker, stage));"
+        "INSERT INTO runs VALUES (1, '2026-10-01T00:00:00+00:00', 'scan', 'x', '{}');"
+        "INSERT INTO labels VALUES (1, 'OLD.L', 'screen', 'ACT', NULL, 'r', 'pipeline');"
+    )
+    raw.commit()
+    raw.close()
+    conn = store.connect(db)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(labels)")]
+    assert cols[-2:] == ["watch_on", "rank"]
+    conn.close()
+    got = store.load_labels(run_id=1, path=db)
+    assert got["ticker"].tolist() == ["OLD.L"] and got["watch_on"].tolist() == [None]
+    store.save_label(1, "NEW.L", "screen", "ACT", "", path=db, rank=1)
+    assert store.shortlist(1, path=db) == ["NEW.L", "OLD.L"]

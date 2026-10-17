@@ -32,7 +32,7 @@ import math
 import operator
 import re
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -239,6 +239,59 @@ def screen_label(steps: list[Step]) -> tuple[str, str]:
         f"{s.toolkit} {s.label}" + (f": {s.reason}" if s.label != "ACT" else "") for s in judged
     )
     return label, reason or "no toolkit ran"
+
+
+def _field(cards: Cards, model: str, field: str) -> Any:
+    card = cards.get(model)
+    if card is None:
+        return None
+    v = card.get(field) if isinstance(card, dict) else getattr(card, field, None)
+    if isinstance(v, float) and math.isnan(v):
+        return None
+    return v
+
+
+def watch_on(steps: list[Step]) -> list[dict[str, Any]] | None:
+    """What each WATCH toolkit is waiting for, in machine form (None when no toolkit is WATCH):
+    technical extended → ``pullback`` to the 10-week MA ``level``; levels coiled → ``break`` of
+    ``trigger``; levels thin → ``reward_risk``; relative strength → ``rs``; fundamentals →
+    ``revisions`` (``eps_revision``). Anything else keeps the toolkit's reason text."""
+    out: list[dict[str, Any]] = []
+    for s in steps:
+        if s.label != "WATCH" or s.toolkit not in SCREEN_TOOLKITS:
+            continue
+        c = s.cards
+        item: dict[str, Any] = {"toolkit": s.toolkit}
+        if s.toolkit == "technical" and (_field(c, "technical", "entry") or 0) < 0:
+            item |= {
+                "kind": "pullback",
+                "level": _field(c, "technical", "ma10"),
+                "entry": _field(c, "technical", "entry"),
+            }
+        elif s.toolkit == "levels" and _field(c, "levels", "coil_pending"):
+            item |= {"kind": "break", "trigger": _field(c, "levels", "trigger")}
+        elif s.toolkit == "levels":
+            item |= {"kind": "reward_risk", "reward_risk": _field(c, "levels", "reward_risk")}
+        elif s.toolkit == "relative_strength":
+            item |= {"kind": "rs", "rs": _field(c, "relative_strength", "rs")}
+        elif s.toolkit == "fundamentals":
+            item |= {"kind": "revisions", "eps_revision": _field(c, "fundamentals", "eps_revision")}
+        else:
+            item |= {"kind": s.toolkit, "reason": s.reason}
+        out.append(item)
+    return out or None
+
+
+def rank_act(cards_by_ticker: Mapping[str, Cards]) -> dict[str, int]:
+    """``ticker -> rank`` (1 = best) by :func:`solaraalpha.portfolio.fit.rank_score` over each
+    ticker's cards; NaN scores last, ties broken by ticker, so the order is deterministic."""
+    from solaraalpha.portfolio.fit import rank_score
+
+    scored = []
+    for t, cards in cards_by_ticker.items():
+        v = rank_score(cards)
+        scored.append((math.isnan(v), -v if not math.isnan(v) else 0.0, t))
+    return {t: i for i, (_, _, t) in enumerate(sorted(scored), 1)}
 
 
 def run_toolkit(

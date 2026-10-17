@@ -164,7 +164,16 @@ def connect(path: Path | None = None) -> Conn:
             " FROM steps_0008 ORDER BY rowid; DROP TABLE steps_0008;"
         )
     conn.executescript(STEPS)
+    have = _columns(conn, "labels")
+    for col, typ in LABEL_COLUMNS_ADDED:  # additive migrations (#125), idempotent
+        if col not in have:
+            conn.execute(f"ALTER TABLE labels ADD COLUMN {col} {typ}")
     return conn
+
+
+# Columns added to ``labels`` after its creation: ``watch_on`` (JSON list, WATCH rows: what each
+# WATCH toolkit is waiting for) and ``rank`` (ACT rows: 1 = best by rank_score).
+LABEL_COLUMNS_ADDED = (("watch_on", "TEXT"), ("rank", "INTEGER"))
 
 
 def save_run(
@@ -257,8 +266,12 @@ def save_label(
     actor: str = "pipeline",
     path: Path | None = None,
     conn: Conn | None = None,
+    watch_on: list[dict[str, Any]] | None = None,
+    rank: int | None = None,
 ) -> None:
-    """Record ``ticker``'s label for ``stage`` in ``run_id`` (one per run, ticker and stage)."""
+    """Record ``ticker``'s label for ``stage`` in ``run_id`` (one per run, ticker and stage).
+    ``watch_on`` (WATCH rows) is what each WATCH toolkit waits for, stored as JSON; ``rank``
+    (ACT rows) orders the shortlist, 1 = best."""
     if label not in ("ACT", "WATCH", "PASS", "ERROR"):
         raise ValueError(f"label must be ACT / WATCH / PASS / ERROR, got {label!r}")
     own = conn is None
@@ -266,8 +279,19 @@ def save_label(
     try:
         with conn:
             conn.execute(
-                "INSERT INTO labels VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (run_id, ticker, stage, label, confidence, reason, actor),
+                "INSERT INTO labels (run_id, ticker, stage, label, confidence, reason, actor,"
+                " watch_on, rank) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    run_id,
+                    ticker,
+                    stage,
+                    label,
+                    confidence,
+                    reason,
+                    actor,
+                    json.dumps(watch_on) if watch_on is not None else None,
+                    rank,
+                ),
             )
     finally:
         if own:
@@ -280,7 +304,7 @@ def load_labels(
     stage: str | None = None,
     path: Path | None = None,
 ) -> pd.DataFrame:
-    """Saved labels, with each run's time, script and commit."""
+    """Saved labels, with each run's time, script and commit; ``watch_on`` parsed from JSON."""
     sql = "SELECT r.started_at, r.script, r.git_sha, l.* FROM labels l JOIN runs r USING (run_id)"
     where, params = [], []
     for col, val in (("run_id", run_id), ("ticker", ticker), ("stage", stage)):
@@ -291,9 +315,11 @@ def load_labels(
         sql += " WHERE " + " AND ".join(where)
     conn = connect(path)
     try:
-        return query(sql + " ORDER BY l.run_id, l.rowid", conn, params=params)
+        df = query(sql + " ORDER BY l.run_id, l.rowid", conn, params=params)
     finally:
         conn.close()
+    df["watch_on"] = [json.loads(w) if isinstance(w, str) else None for w in df["watch_on"]]
+    return df
 
 
 def save_triggers(
@@ -384,9 +410,12 @@ def shortlist(
     labels: tuple[str, ...] = ("ACT",),
     path: Path | None = None,
 ) -> list[str]:
-    """Tickers whose ``stage`` label in ``run_id`` is one of ``labels``, in saved order."""
+    """Tickers whose ``stage`` label in ``run_id`` is one of ``labels``: ranked ones first (by
+    ``rank``), the rest in saved order."""
     df = load_labels(run_id, stage=stage, path=path)
-    return [str(t) for t in df.loc[df["label"].isin(labels), "ticker"]]
+    df = df.loc[df["label"].isin(labels)].reset_index(drop=True)
+    key = [(pd.isna(r), float(r) if not pd.isna(r) else 0.0, i) for i, r in enumerate(df["rank"])]
+    return [str(df["ticker"].iloc[i]) for _, _, i in sorted(key)]
 
 
 def git_sha() -> str:

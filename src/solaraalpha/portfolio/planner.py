@@ -47,6 +47,7 @@ class Candidate:
     label: str
     stage: str  # the stage that decided the final label
     reasons: dict[str, str]  # stage -> reason, every stage present
+    rank: int | None = None  # screen rank of an ACT ticker (1 = best), #125
 
 
 @dataclass
@@ -65,20 +66,26 @@ class PlanRun:
 
 def final_labels(conn: Conn, run_id: int) -> list[Candidate]:
     """Every ticker's final label in ``run_id``: the latest stage present, research > validate
-    > screen. ACT tickers first, then by ticker."""
+    > screen. ACT tickers first in screen-rank order (unranked last), then by ticker."""
     df = store.query(
-        "SELECT ticker, stage, label, reason FROM labels WHERE run_id = ?", conn, [run_id]
+        "SELECT ticker, stage, label, reason, rank FROM labels WHERE run_id = ?", conn, [run_id]
     )
     out = []
     for ticker, g in df.groupby("ticker"):
         by = {str(r["stage"]): (str(r["label"]), str(r["reason"])) for r in g.to_dict("records")}
         stage = next(s for s in STAGE_ORDER if s in by)
+        ranks = g.loc[g["stage"] == "screen", "rank"]
+        rank = int(ranks.iloc[0]) if len(ranks) and pd.notna(ranks.iloc[0]) else None
         out.append(
             Candidate(
-                str(ticker), by[stage][0], stage, {s: by[s][1] for s in STAGE_ORDER if s in by}
+                str(ticker),
+                by[stage][0],
+                stage,
+                {s: by[s][1] for s in STAGE_ORDER if s in by},
+                rank,
             )
         )
-    return sorted(out, key=lambda c: (c.label != "ACT", c.ticker))
+    return sorted(out, key=lambda c: (c.label != "ACT", c.rank is None, c.rank or 0, c.ticker))
 
 
 def _weekly_returns(ticker: str, as_seen: str, conn: Conn) -> pd.Series | None:

@@ -70,7 +70,7 @@ def test_scan_labels_report_and_save(
     assert "| MID.L | WATCH | WATCH | WATCH | ACT | WATCH | - | **WATCH** |" in md
     assert "| DOWN.L | pass | pass | pass | ACT | - | - | **PASS** |" in md
     assert "| ERR.L | ACT | ACT | ACT | ACT | ACT | ERROR | **ACT** |" in md
-    assert "**ACT:** UP.L, ERR.L" in md
+    assert "**ACT (ranked):** ERR.L, UP.L" in md  # no rank fields in the stub cards: ticker order
     assert "- MID.L: technical WATCH: failed score > 0.0 (score=-0.30); levels WATCH" in md
     assert "- ERR.L `events`: RuntimeError: NSM down" in md
 
@@ -79,7 +79,7 @@ def test_scan_labels_report_and_save(
     assert list(labels["label"]) == ["ACT", "WATCH", "PASS", "ACT"]
     assert set(labels["stage"]) == {"screen"} and set(labels["actor"]) == {"pipeline"}
     assert labels["confidence"].isna().all()
-    assert store.shortlist(1) == ["UP.L", "ERR.L"]
+    assert store.shortlist(1) == ["ERR.L", "UP.L"]  # ranked 1, 2 (ticker order on a tie)
     assert store.shortlist(1, labels=("WATCH",)) == ["MID.L"]
     steps = store.load_steps("MID.L")
     assert list(steps["status"]) == ["watch", "watch", "watch", "act", "watch", "skip"]
