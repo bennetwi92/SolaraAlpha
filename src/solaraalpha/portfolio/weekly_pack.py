@@ -161,9 +161,26 @@ def performance_from_store(
 ) -> tuple[performance.Summary | None, list[tuple[str, str, float]]]:
     """Equity-curve summary and correlated holdings from the price snapshots in the DB (no
     network); None when the book has no history."""
+    out = _history_from_store(conn, as_seen, rules)
+    if out is None:
+        return None, []
+    _, summary, pairs = out
+    return summary, pairs
+
+
+def drawdown_from_store(conn: Conn, as_seen: str, rules: Rules) -> float | None:
+    """The book's current drawdown (equity vs its high, <= 0) from the stored snapshots, for
+    the circuit breaker (#143); None without history."""
+    out = _history_from_store(conn, as_seen, rules)
+    return performance.current_drawdown(out[0]) if out is not None else None
+
+
+def _history_from_store(
+    conn: Conn, as_seen: str, rules: Rules
+) -> tuple[pd.Series, performance.Summary, list[tuple[str, str, float]]] | None:
     fl = book.fills_with_tickers(conn)
     if fl.empty:
-        return None, []
+        return None
     prices = {}
     for t in sorted(set(fl["ticker"])):
         px = store.load_prices(str(t), as_seen, conn=conn)
@@ -171,11 +188,22 @@ def performance_from_store(
             prices[str(t)] = px
     bench_px = store.load_prices(rules.benchmark, as_seen, conn=conn)
     bench = bench_px["close"] if not bench_px.empty else None
-    summary = performance.history_from_book(conn, prices, bench)[2]
+    equity, _, summary = performance.history_from_book(conn, prices, bench)
     open_tickers = sorted(set(book.positions(conn, status="open")["ticker"]))
     rets = {t: performance.weekly_returns(prices[t]) for t in open_tickers if t in prices}
     _, pairs = performance.correlation(rets)
-    return summary, pairs
+    return equity, summary, pairs
+
+
+def _breaker_line(drawdown: float | None, tripped: bool, rules: Rules) -> str:
+    """The drawdown vs the circuit-breaker limit and whether the breaker is on / active (#143)."""
+    dd = f"{-drawdown:.1%}" if drawdown is not None and not math.isnan(drawdown) else "n/a"
+    state = (
+        "**ACTIVE: new entries stopped**"
+        if tripped
+        else ("on" if rules.circuit_breaker else "off (owner to confirm)")
+    )
+    return f"- drawdown {dd} vs circuit-breaker limit {rules.max_drawdown_new_entries:.0%}; breaker {state}"
 
 
 def _money(v: float) -> str:
@@ -340,6 +368,7 @@ def render_pack(pack: Pack) -> str:
         "- exposure by sector: "
         + (", ".join(f"{s} {v:.0%}" for s, v in pack.exposure.items()) or "none"),
         "- breaches: " + ("; ".join(pack.breaches) if pack.breaches else "none"),
+        _breaker_line(pack.plan.report.drawdown, pack.plan.report.breaker, rules),
         "",
     ]
 

@@ -121,3 +121,15 @@ declines; nothing is ever drafted without the owner. The daily job fires `event_
 event is two sessions away and the policy is not `hold` (owner action). The weekly pack shows
 the event and the policy under each open position. §6 Q9 stays open: `flag` takes no action
 until the owner sets a policy.
+
+## Drawdown circuit breaker (#143)
+
+After a run of losses the safest move is to stop adding risk until the book recovers or the
+owner reviews it. `config/portfolio.toml` carries `circuit_breaker = false` (off until the
+owner turns it on, §6 Q1) and `max_drawdown_new_entries = 0.10` (placeholder). `fit` takes the
+book's current drawdown (equity vs its running high, from the stored price snapshots:
+`weekly_pack.drawdown_from_store` → `performance.current_drawdown`); with the breaker on and
+the drawdown beyond the limit it rejects **every** new plan with `circuit breaker: drawdown X% >
+Y%`. Open positions, their stops and reviews are untouched. The weekly pack's portfolio section
+and the daily report show the drawdown vs the limit and whether the breaker is off, on or
+active, so the owner sees it coming before it trips.

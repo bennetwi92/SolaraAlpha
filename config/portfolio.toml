@@ -29,4 +29,6 @@ max_adds = 2               # PLACEHOLDER adds per position
 add_min_r = 1.0            # PLACEHOLDER only add once the position is this many R in profit
 event_policy = "flag"      # PLACEHOLDER results inside event_flag_days of an open position: flag / hold / trim / exit (§6 Q9, #129)
 event_trim_fraction = 0.5  # PLACEHOLDER fraction of the shares a `trim` policy proposes to sell
+circuit_breaker = false    # off until the owner turns it on (#143, §6 Q1)
+max_drawdown_new_entries = 0.10  # PLACEHOLDER equity this far below its high stops new entries while the breaker is on
 benchmark = "^FTAS"        # equity-curve comparison (Yahoo ticker). ^FTAI = FTSE AIM All-Share is also served

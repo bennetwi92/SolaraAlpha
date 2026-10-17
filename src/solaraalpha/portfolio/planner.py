@@ -219,7 +219,18 @@ def plan_run(conn: Conn, run_id: int, rules: Rules | None = None, dry_run: bool 
         if r is not None:
             returns[ticker] = r
 
-    report = fit(plans, held, pending_positions(conn), equity, rules, scores, returns)
+    from solaraalpha.portfolio.weekly_pack import drawdown_from_store
+
+    report = fit(
+        plans,
+        held,
+        pending_positions(conn),
+        equity,
+        rules,
+        scores,
+        returns,
+        drawdown=drawdown_from_store(conn, started, rules),
+    )
     out = PlanRun(
         run_id,
         candidates,

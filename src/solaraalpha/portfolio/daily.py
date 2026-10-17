@@ -74,6 +74,9 @@ class DailyResult:
     errors: list[tuple[str, str]] = field(default_factory=list)
     run_id: int | None = None
     regime: Any = None  # the market RegimeCard (#142), None when the index could not be read
+    drawdown: float | None = None  # the book's drawdown from stored snapshots (#143)
+    breaker_limit: float = 0.0
+    breaker_on: bool = False
 
     def of(self, kinds: tuple[str, ...]) -> list[Trigger]:
         return [t for t in self.triggers if t.kind in kinds]
@@ -249,6 +252,16 @@ def run_daily(
         log.exception("%s: market regime failed", rules.benchmark)
         result.errors.append((rules.benchmark, f"regime: {type(e).__name__}: {e}"))
 
+    # the book's drawdown vs the circuit breaker (#143): shown, never acted on here
+    from solaraalpha.portfolio.weekly_pack import drawdown_from_store
+
+    try:
+        result.drawdown = drawdown_from_store(conn, now.isoformat(), rules)
+    except Exception as e:
+        log.warning("drawdown unavailable (%s)", e)
+    result.breaker_limit = rules.max_drawdown_new_entries
+    result.breaker_on = rules.circuit_breaker
+
     # orders past their validity with no fill entered (#130)
     result.triggers += stale_order_triggers(
         book.stale_orders(conn, now.isoformat()), pd.Timestamp(now)
@@ -413,6 +426,14 @@ def render_daily(r: DailyResult) -> str:
                 "Consider tightening stops and pausing new entries today (advisory, ADR 0017).",
                 "",
             ]
+
+    if r.drawdown is not None:
+        tripped = r.breaker_on and r.drawdown < -r.breaker_limit
+        lines += [
+            f"Book drawdown {-r.drawdown:.1%} vs circuit-breaker limit {r.breaker_limit:.0%}; breaker "
+            + ("**ACTIVE: no new entries**" if tripped else ("on" if r.breaker_on else "off")),
+            "",
+        ]
 
     lines += ["### Owner actions", ""]
     owner = r.of(OWNER_KINDS)

@@ -36,6 +36,8 @@ class FitReport:
     rejected: list[tuple[TradePlan, str]]
     flags: dict[str, list[str]]  # ticker -> flags (accepted and rejected alike)
     ranked: list[str]  # candidates in the order they were considered
+    drawdown: float | None = None  # equity vs its high when known (<= 0), #143
+    breaker: bool = False  # the circuit breaker rejected every plan
 
 
 def rank_score(cards: Mapping[str, Any]) -> float:
@@ -68,6 +70,7 @@ def fit(
     scores: Mapping[str, float],
     returns: Mapping[str, pd.Series] | None = None,
     sectors: Mapping[str, str] | None = None,
+    drawdown: float | None = None,
 ) -> FitReport:
     """Check ``plans`` against the book in rank order (highest ``scores`` first, ties by ticker).
 
@@ -80,8 +83,16 @@ def fit(
     after adding <= ``max_sector_pct`` x equity), **heat** ((open + pending + accepted + plan
     risk) / equity <= ``max_heat``); a plan sized to zero shares is rejected too. **Correlation**
     (26-week weekly-return correlation with a holding > 0.7) and the plan's **event** flag only
-    flag.
+    flag. **Circuit breaker** (#143): with ``rules.circuit_breaker`` on and ``drawdown`` (equity
+    vs its high, <= 0) below ``-rules.max_drawdown_new_entries``, every plan is rejected with
+    ``circuit breaker: drawdown X% > Y%``; open positions are untouched.
     """
+    tripped = (
+        rules.circuit_breaker
+        and drawdown is not None
+        and not math.isnan(drawdown)
+        and drawdown < -rules.max_drawdown_new_entries
+    )
 
     def sector(ticker: str) -> str:
         return (sectors or {}).get(ticker) or sector_of(ticker)
@@ -117,7 +128,12 @@ def fit(
             flags[plan.ticker] = fl
         sec = sector(plan.ticker)
         reason = None
-        if plan.shares <= 0:
+        if tripped:
+            reason = (
+                f"circuit breaker: drawdown {-float(drawdown or 0):.0%} >"
+                f" {rules.max_drawdown_new_entries:.0%}"
+            )
+        elif plan.shares <= 0:
             reason = "size zero"
         elif n_open + n_pending + len(accepted) >= rules.max_positions:
             reason = (
@@ -142,7 +158,7 @@ def fit(
         accepted.append(plan)
         risk_total += plan.risk_amount
         by_sector[sec] = by_sector.get(sec, 0.0) + plan.position_value
-    return FitReport(accepted, rejected, flags, [p.ticker for p in order])
+    return FitReport(accepted, rejected, flags, [p.ticker for p in order], drawdown, bool(tripped))
 
 
 def _correlations(

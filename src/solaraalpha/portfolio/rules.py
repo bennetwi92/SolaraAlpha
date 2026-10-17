@@ -41,6 +41,8 @@ class Rules:
     add_min_r: float  # only add once the position is at least this many R in profit
     event_policy: str  # results inside event_flag_days: flag / hold / trim / exit (#129)
     event_trim_fraction: float  # the share of the position a trim proposes to sell
+    circuit_breaker: bool  # stop new entries in a drawdown (#143); off until the owner confirms
+    max_drawdown_new_entries: float  # equity this far below its high stops new entries
     benchmark: str  # Yahoo ticker the equity curve is compared with
 
     @property
@@ -74,6 +76,8 @@ _TYPES = {
     "add_min_r": float,
     "event_policy": str,
     "event_trim_fraction": float,
+    "circuit_breaker": bool,
+    "max_drawdown_new_entries": float,
     "benchmark": str,
 }
 EVENT_POLICIES = ("flag", "hold", "trim", "exit")
@@ -126,6 +130,10 @@ def _validate(r: Rules) -> None:
         raise ValueError(f"event_policy: must be one of {EVENT_POLICIES}, got {r.event_policy!r}")
     if not 0 < r.event_trim_fraction <= 1:
         raise ValueError(f"event_trim_fraction: must be in (0, 1], got {r.event_trim_fraction}")
+    if not 0 < r.max_drawdown_new_entries <= 1:
+        raise ValueError(
+            f"max_drawdown_new_entries: must be in (0, 1], got {r.max_drawdown_new_entries}"
+        )
     for name in _FRACTIONS:
         v = getattr(r, name)
         if not 0 < v <= 1:
