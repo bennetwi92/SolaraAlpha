@@ -11,12 +11,14 @@ wrapped so a failure becomes ``"unavailable"``. See docs/decisions/0016 "Validat
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
 from solaraalpha import store
+from solaraalpha.analysis.charts import weekly_chart
 from solaraalpha.analysis.events import material
 from solaraalpha.analysis.fundamentals import known
 from solaraalpha.analysis.technical import FAST_MA, SLOW_MA, sma
@@ -73,6 +75,17 @@ def build_pack(conn: Conn, ticker: str, run_id: int) -> dict[str, Any]:
         "filings": filings_section(ticker, started),
     }
     return pack
+
+
+def weekly_frame(conn: Conn, ticker: str, as_seen: str) -> pd.DataFrame:
+    """Completed weekly bars (with ``ma10`` / ``ma40``) from the price snapshot as seen at
+    ``as_seen``, after check / clean / trim; empty when there is no snapshot."""
+    daily = store.load_prices(ticker, as_seen, conn=conn)
+    if daily.empty:
+        return pd.DataFrame()
+    kept = trim_to_consistent(clean_prices(daily), check_prices(daily))
+    weekly = to_weekly(kept, as_of=pd.Timestamp(as_seen))
+    return weekly.assign(ma10=sma(weekly["close"], FAST_MA), ma40=sma(weekly["close"], SLOW_MA))
 
 
 def prices_section(conn: Conn, ticker: str, as_seen: str) -> dict[str, Any]:
@@ -138,6 +151,118 @@ def filings_section(ticker: str, as_seen: str) -> dict[str, Any] | str:
     ann = material(ann)
     cols = ["published", "type_code", "type", "category", "headline", "id", "url"]
     return {"issuer": issuer.name, "lei": issuer.lei, "items": _records(ann[cols])}
+
+
+def write_chart(conn: Conn, pack: dict[str, Any], out: Path) -> Path | None:
+    """``chart.png`` next to the pack: the weekly picture with the levels and the plan drawn
+    on (None when the run has no price snapshot)."""
+    weekly = weekly_frame(conn, pack["ticker"], pack["run_started_at"])
+    if weekly.empty:
+        return None
+    cards = pack.get("cards") or {}
+    return weekly_chart(
+        weekly,
+        cards.get("levels"),
+        cards.get("technical"),
+        out / "chart.png",
+        title=f"{pack['ticker']} run {pack['run_id']}",
+    )
+
+
+RANK = {"ACT": 3, "WATCH": 2, "PASS": 1}
+CHECKLIST = (
+    "data_issues",
+    "one_off_spikes",
+    "overextension",
+    "levels_stale_or_broken",
+    "rs_concentration",
+    "fundamentals_quality",
+    "toolkit_agreement",
+    "picture_agrees",
+)
+TOOLKIT_CHECKS = ("technical", "levels", "relative_strength", "fundamentals")
+
+
+def disagreements(
+    labels: pd.DataFrame, cards: Mapping[tuple[int, str], Mapping[str, Any]]
+) -> pd.DataFrame:
+    """One row per run and ticker where the ``validate`` label is worse than the ``screen``
+    label (ERROR rows ignored): ``run_id, ticker, screen, validate, not_warranted`` (the
+    toolkits the validator marked ``not warranted`` in ``checks``), ``concerns`` (the checklist
+    items marked ``concern``). ``labels`` has ``run_id, ticker, stage, label`` (as
+    :func:`solaraalpha.store.load_labels`); ``cards`` maps ``(run_id, ticker)`` to the validate
+    card (its ``checks`` field is the JSON the agent wrote)."""
+    cols = ["run_id", "ticker", "screen", "validate", "not_warranted", "concerns"]
+    if labels.empty:
+        return pd.DataFrame(columns=cols)
+    by = {
+        (int(r["run_id"]), str(r["ticker"]), str(r["stage"])): str(r["label"])
+        for r in labels.to_dict("records")
+    }
+    rows = []
+    for (run_id, ticker, stage), val in sorted(by.items()):
+        if stage != "validate":
+            continue
+        screen = by.get((run_id, ticker, "screen"))
+        if screen not in RANK or val not in RANK or RANK[val] >= RANK[screen]:
+            continue
+        checks = _checks(cards.get((run_id, ticker)))
+        rows.append(
+            {
+                "run_id": run_id,
+                "ticker": ticker,
+                "screen": screen,
+                "validate": val,
+                "not_warranted": ",".join(
+                    k
+                    for k in TOOLKIT_CHECKS
+                    if str(checks.get(k, "")).lower().startswith("not warranted")
+                ),
+                "concerns": ",".join(
+                    k for k in CHECKLIST if str(checks.get(k, "")).lower().startswith("concern")
+                ),
+            }
+        )
+    return pd.DataFrame(rows, columns=cols)
+
+
+def _checks(card: Mapping[str, Any] | None) -> dict[str, Any]:
+    raw = (card or {}).get("checks")
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw:
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def disagreement_stats(dis: pd.DataFrame, labels: pd.DataFrame) -> dict[str, Any]:
+    """Counts by toolkit marked not warranted, by checklist item flagged concern, and the
+    disagreement rate per run (disagreements / validate labels in the run)."""
+    by_toolkit: dict[str, int] = dict.fromkeys(TOOLKIT_CHECKS, 0)
+    by_check: dict[str, int] = dict.fromkeys(CHECKLIST, 0)
+    for r in dis.to_dict("records"):
+        for k in filter(None, str(r["not_warranted"]).split(",")):
+            by_toolkit[k] = by_toolkit.get(k, 0) + 1
+        for k in filter(None, str(r["concerns"]).split(",")):
+            by_check[k] = by_check.get(k, 0) + 1
+    per_run = []
+    validated = labels[labels["stage"] == "validate"] if not labels.empty else labels
+    for run_id, g in validated.groupby("run_id") if not validated.empty else []:
+        n = len(g)
+        d = int((dis["run_id"] == run_id).sum()) if not dis.empty else 0
+        per_run.append(
+            {
+                "run_id": int(str(run_id)),
+                "validated": n,
+                "disagreements": d,
+                "rate": d / n if n else 0.0,
+            }
+        )
+    return {"by_toolkit": by_toolkit, "by_check": by_check, "per_run": per_run, "total": len(dis)}
 
 
 def write_pack(pack: dict[str, Any], out: Path | None = None) -> Path:

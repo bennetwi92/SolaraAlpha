@@ -55,11 +55,22 @@ evidence. Mechanics:
   weekly moves) and the fundamentals **known at the card date** (statutory lags). The one live
   fetch is the recent filings' headlines (13 weeks, material only, published before the run);
   a failure becomes `"unavailable"`.
-- The skill `.claude/skills/validate/SKILL.md` answers a fixed seven-item checklist (data
+- The skill `.claude/skills/validate/SKILL.md` answers a fixed eight-item checklist (data
   issues; one-off spikes vs filings; overextension in ATRs; stale or just-broken levels;
   relative strength carried by one comparison; stale, one-off or currency-mismatched
-  fundamentals; agreement between toolkits), each `ok` / `concern` / `unknown` with a line of
-  pack evidence, and marks each toolkit *warranted* or *not warranted*, all in `checks`.
+  fundamentals; agreement between toolkits; the picture agrees with the numbers), each `ok` /
+  `concern` / `unknown` with a line of pack evidence, and marks each toolkit *warranted* or
+  *not warranted*, all in `checks`.
+- **Chart pack (#126)**: `validate_pack.py` also writes `chart.png` (`analysis/charts.py`,
+  matplotlib Agg, now a main dependency): the last 104 weekly candles, 10w / 40w MAs, the levels
+  card's support, resistance, trendlines, coil lines and trigger, the stop and targets, over
+  volume. The agent reads the image; the `picture_agrees` item records what it saw.
+- **Disagreement log (#126)**: a validate label worse than the screen label is a disagreement.
+  `validation.disagreements(labels, cards)` lists them with the toolkits the validator marked
+  `not warranted` and the checklist items it flagged `concern` (parsed from the card's
+  `checks`, which is why the skill must use those words); `scripts/validator_stats.py` counts
+  them by toolkit and by item and gives the rate per run, so a rule that is often overruled
+  surfaces (A11).
 - It records a `validate` verdict through `record.py` (downgrade only). A pack that cannot
   be built gives an ERROR verdict with the failure as the reason.
 
