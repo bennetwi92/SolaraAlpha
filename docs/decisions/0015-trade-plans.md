@@ -79,4 +79,29 @@ position**, in the watchlist or not (`solaraalpha.portfolio.review`):
 
 ## Scaling (#128)
 
-*Added by #128.*
+The strategy holds "while the stock keeps climbing", so adding to a working position is
+planned and rule-based; **never add to a loser**. `portfolio.plan.add_plan(state, review_card,
+levels, technical, rules, adds)` proposes an add only when **all** hold:
+
+- the position is at least `add_min_r` R in profit (the review card's `r_multiple`);
+- `adds` so far (filled or live `add` orders) < `max_adds`;
+- a **confirmed breakout** (`levels.breakout == 1`, closed above last week's nearest
+  resistance) **or** a **pullback to new support** (close within 1 ATR above `levels.support`
+  with `technical.trend` ≥ 0.25).
+
+The add is a limit at `close x (1 + entry_limit_buffer)`, valid `entry_validity_days`. Its
+stop is the position's current stop **raised to at least breakeven on the original entry**
+(`state.entry_avg`), and the whole position moves to that stop. Size = `add_fraction x` the
+initial shares, capped so that the open risk of the whole position at the new stop stays ≤ the
+original risk (`state.r_unit`); with an equity figure the `max_position_pct` cap applies too
+(the weekly review passes none: the owner's accept, and the portfolio view, are the fit check).
+
+The weekly review runs `add_plan` for every `hold` position and, with `--save`, records the
+add as a `revision_proposed` event (action `add`, actor `pipeline`), once per position while
+one is pending; the report and the weekly pack show it. The owner decides: `book.py accept`
+drafts the `add` order (approved) and raises the stop for the whole position (`stop_raised`,
+ratchet only); `decline` drops it. A fill on the add increases the shares and re-sizes the
+protective stop (`book.fill` → `protect`, as for entry fills).
+
+`add_fraction = 0.5`, `max_adds = 2`, `add_min_r = 1.0` are placeholders in
+`config/portfolio.toml`.

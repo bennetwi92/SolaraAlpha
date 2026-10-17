@@ -1314,7 +1314,7 @@ def corporate_close(
 
 # ---------------------------------------------------------------------------- revisions
 
-REVISION_ACTIONS = ("hold", "tighten_stop", "take_partial", "exit", "revise_target")
+REVISION_ACTIONS = ("hold", "tighten_stop", "take_partial", "exit", "revise_target", "add")
 
 
 def propose_revision(
@@ -1423,7 +1423,9 @@ def accept_revision(
     """Accept a proposed revision: a ``revision_accepted`` event, then the orders it implies,
     all ``approved`` (tighten_stop: replace the stop, ratchet only, + ``stop_raised``;
     take_partial: an exit order for the qty; exit: an exit order with reason thesis_broken;
-    revise_target: a ``revised`` event). Returns what was done."""
+    revise_target: a ``revised`` event; add: an ``add`` buy order for ``qty`` at ``entry`` and
+    the stop raised to ``stop`` (at least breakeven, never lower) for the whole position).
+    Returns what was done."""
     rev = _revision(conn, revision_id)
     pid, action, new = int(rev["position_id"]), str(rev["action"]), dict(rev["new"] or {})
     t = iso(at)
@@ -1487,6 +1489,57 @@ def accept_revision(
         if not payload:
             raise ValueError("revise_target needs a new target")
         position_event(conn, pid, "revised", {**payload, "revision_id": revision_id}, actor, "", t)
+    elif action == "add":
+        qty = int(new.get("qty") or 0)
+        if qty <= 0 or new.get("entry") is None:
+            raise ValueError("add needs a positive qty and an entry price")
+        if st.status != "open" or st.shares <= 0:
+            raise ValueError(f"position {pid} is {st.status}; nothing to add to")
+        stop = float(new["stop"]) if new.get("stop") is not None else st.stop
+        if stop is not None and (st.stop is None or stop > st.stop + 1e-9):
+            od = orders(conn, pid)
+            live = od[(od["purpose"] == "stop") & od["status"].isin(LIVE_ORDER)]
+            if live.empty:
+                done["stop_order_id"] = add_order(
+                    conn,
+                    pid,
+                    -st.side,
+                    "stop",
+                    st.shares,
+                    stop,
+                    "stop",
+                    None,
+                    "approved",
+                    actor,
+                    at=t,
+                )
+            else:
+                done["stop_order_id"] = replace_order(
+                    conn, int(live["order_id"].iloc[-1]), None, stop, "add accepted", actor, t
+                )
+            position_event(
+                conn,
+                pid,
+                "stop_raised",
+                {"old": st.stop, "new": stop, "revision_id": revision_id},
+                actor,
+                "",
+                t,
+            )
+        done["add_order_id"] = add_order(
+            conn,
+            pid,
+            st.side,
+            str(new.get("type", "limit")),
+            qty,
+            float(new["entry"]),
+            "add",
+            new.get("valid_until"),
+            "approved",
+            actor,
+            f"add accepted (revision {revision_id})",
+            at=t,
+        )
     return done
 
 
