@@ -100,19 +100,19 @@ Evidence (articles, filings, events) ──linked to── candidates, plans, re
 
 | # | Activity | Cadence | Actor | Today |
 |---|---|---|---|---|
-| A0 | Set up universe, reference data and portfolio rules | quarterly / ad hoc | Owner | 🟡 |
-| A1 | **Screen**: technical, levels, relative strength, fundamentals → label | Sunday | Pipeline | 🟡 |
-| A2 | **Validate**: independent agent check of the labels | Sunday | Validator | ⬜ |
-| A3 | **Research**: events, news, headwinds; log evidence and impact | Sunday | Strategist | 🟡 |
-| A4 | **Plan and size**: trade plan, size, portfolio fit; draft orders and positions | Sunday | Pipeline | 🟡 |
-| A5 | **Approve and place**: owner reviews the week's pack, places orders at the broker | Sun eve / Mon | Owner | ⬜ |
-| A6 | **Record fills**: fill, part-fill, not filled; open positions | daily | Owner | ⬜ |
-| A7 | **Monitor daily**: prices vs stops/triggers, announcements, news, volatility | daily | Pipeline + Monitor | ⬜ |
-| A8 | **Review weekly**: re-run toolkits on open positions; hold / trail / add / exit | Sunday | Pipeline + Monitor | 🟡 |
-| A9 | **Exit and close**: exit orders, final fill, P&L, post-mortem | when triggered | Owner | ⬜ |
-| A10 | **Portfolio view and risk**: holdings, exposure, cash, heat, drawdown | daily / weekly | Pipeline | ⬜ |
-| A11 | **Learn**: track record, calibrate thresholds and labels against returns | monthly / quarterly | Owner + agent | ⬜ |
-| A12 | **Operate**: schedules, hosted DB, notifications, costs, failures | always | Pipeline | 🟡 |
+| A0 | Set up universe, reference data and portfolio rules | quarterly / ad hoc | Owner | 🟡 rules are placeholders (`confirmed = false`); sectors known for JET2.L only |
+| A1 | **Screen**: technical, levels, relative strength, fundamentals → label | Sunday | Pipeline | ✅ bands are placeholders until the backtest report is read |
+| A2 | **Validate**: independent agent check of the labels | Sunday | Validator | ✅ |
+| A3 | **Research**: events, news, headwinds; log evidence and impact | Sunday | Strategist | ✅ |
+| A4 | **Plan and size**: trade plan, size, portfolio fit; draft orders and positions | Sunday | Pipeline | ✅ |
+| A5 | **Approve and place**: owner reviews the week's pack, places orders at the broker | Sun eve / Mon | Owner | ✅ pack + `book.py approve` / `placed` |
+| A6 | **Record fills**: fill, part-fill, not filled; open positions | daily | Owner | ✅ by hand (`book.py fill`); broker reconciliation open (#141) |
+| A7 | **Monitor daily**: prices vs stops/triggers, announcements, news, volatility | daily | Pipeline + Monitor | ✅ |
+| A8 | **Review weekly**: re-run toolkits on open positions; hold / trail / add / exit | Sunday | Pipeline + Monitor | ✅ |
+| A9 | **Exit and close**: exit orders, final fill, P&L, post-mortem | when triggered | Owner | ✅ |
+| A10 | **Portfolio view and risk**: holdings, exposure, cash, heat, drawdown | daily / weekly | Pipeline | ✅ |
+| A11 | **Learn**: track record, calibrate thresholds and labels against returns | monthly / quarterly | Owner + agent | ✅ tools built; needs a record to learn from |
+| A12 | **Operate**: schedules, hosted DB, notifications, costs, failures | always | Pipeline | ✅ agents inert until a Claude secret is added |
 
 A typical week:
 
