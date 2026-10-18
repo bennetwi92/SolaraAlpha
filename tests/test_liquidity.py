@@ -96,4 +96,4 @@ def test_stale_watchlist() -> None:
     )  # next review March 2027
     assert stale_watchlist(pd.Timestamp("2026-12-20"), pd.Timestamp("2027-04-07")) is None
     assert "no `snapshot`" in (stale_watchlist(None, pd.Timestamp("2026-10-16")) or "")
-    assert watchlist_snapshot() == pd.Timestamp("2026-10-16")
+    assert watchlist_snapshot() == pd.Timestamp("2026-10-18")

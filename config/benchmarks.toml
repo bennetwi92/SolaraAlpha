@@ -9,12 +9,16 @@
 #              Optional; a stock without one is "unknown". Set only from a public source, never
 #              guessed: the LSE's own classification, the 6-digit ICB `sectorcode` returned by
 #              api.londonstockexchange.com/api/gw/lse/instruments/alldata/<TIDM> (the data behind
-#              the LSE company page), read 2026-10-17 and named per FTSE Russell ICB.
+#              the LSE company page), read 2026-10-17 (FTSE AIM 100 additions 2026-10-18) and
+#              named per FTSE Russell ICB (the code -> name map is ICB_SECTORS in
+#              scripts/universe.py, which prints the sector of each new constituent).
 #
 # Industry: the closest sector ETF with 5 years of Yahoo history (UK sector indices have none),
-# mostly the iShares STOXX Europe 600 sector ETF for the stock's ICB sector. Peers: listed
-# companies in the same business, chosen by hand; every ticker was checked to return Yahoo
-# history on 2026-10-17. Refresh both when the watchlist changes.
+# mostly the iShares STOXX Europe 600 sector ETF for the stock's ICB sector (precious metals:
+# GDXJ). Peers: listed companies in the same business, chosen by hand; every ticker was checked
+# to return Yahoo history on 2026-10-17 (FTSE AIM 100 additions 2026-10-18). Most FTSE AIM 100
+# additions have no peers yet: they are compared with their market and industry. Refresh both
+# when the watchlist changes.
 #
 # A stock with no entry is compared with its market only.
 
@@ -34,6 +38,10 @@ peers = [
     "OTB.L",    # On the Beach: UK online package holidays
 ]
 
+[stocks."AAZ.L"]  # Anglo Asian Mining
+sector = "Industrial Metals & Mining"
+industry = "EXV6.DE"  # iShares STOXX Europe 600 Basic Resources (EUR)
+
 [stocks."ABDP.L"]  # AB Dynamics
 sector = "Automobiles & Parts"
 industry = "EXV5.DE"  # iShares STOXX Europe 600 Automobiles & Parts (EUR)
@@ -44,6 +52,10 @@ peers = [
     "JDG.L",   # Judges Scientific
     "HLMA.L",  # Halma
 ]
+
+[stocks."ADVT.L"]  # AdvancedAdvT
+sector = "Software & Computer Services"
+industry = "EXV3.DE"  # iShares STOXX Europe 600 Technology (EUR)
 
 [stocks."AET.L"]  # Afentra
 sector = "Oil, Gas & Coal"
@@ -67,6 +79,10 @@ peers = [
     "IART",       # Integra LifeSciences (USD)
 ]
 
+[stocks."AOM.L"]  # ActiveOps
+sector = "Software & Computer Services"
+industry = "EXV3.DE"  # iShares STOXX Europe 600 Technology (EUR)
+
 [stocks."ARBB.L"]  # Arbuthnot Banking Group
 sector = "Banks"
 industry = "EXV1.DE"  # iShares STOXX Europe 600 Banks (EUR)
@@ -77,6 +93,14 @@ peers = [
     "OSB.L",   # OSB Group
     "VANQ.L",  # Vanquis
 ]
+
+[stocks."AVCT.L"]  # Avacta Group
+sector = "Pharmaceuticals & Biotechnology"
+industry = "EXV4.DE"  # iShares STOXX Europe 600 Health Care (EUR)
+
+[stocks."AVG.L"]  # Avingtrans
+sector = "Industrial Engineering"
+industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
 
 [stocks."AXS.L"]  # Accsys Technologies
 sector = "Construction & Materials"
@@ -97,6 +121,14 @@ peers = [
     "GEO",        # GEO Group: BI Inc. monitoring (USD)
     "SECU-B.ST",  # Securitas (SEK)
 ]
+
+[stocks."BOKU.L"]  # Boku
+sector = "Industrial Support Services"
+industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
+
+[stocks."BPM.L"]  # B.P. Marsh & Partners
+sector = "Finance & Credit Services"
+industry = "EXH2.DE"  # iShares STOXX Europe 600 Financial Services (EUR)
 
 [stocks."BRCK.L"]  # BRCK Group
 sector = "Construction & Materials"
@@ -119,6 +151,10 @@ peers = [
     "KGH.L",  # Knights: professional services
 ]
 
+[stocks."BUR.L"]  # Burford Capital
+sector = "Investment Banking & Brokerage Services"
+industry = "EXH2.DE"  # iShares STOXX Europe 600 Financial Services (EUR)
+
 [stocks."CAM.L"]  # Camellia
 sector = "Food Producers"
 industry = "EXH3.DE"  # iShares STOXX Europe 600 Food & Beverage (EUR)
@@ -140,6 +176,10 @@ peers = [
     "TKO.TO",  # Taseko (CAD)
 ]
 
+[stocks."CER.L"]  # Cerillion
+sector = "Software & Computer Services"
+industry = "EXV3.DE"  # iShares STOXX Europe 600 Technology (EUR)
+
 [stocks."CHRT.L"]  # Cohort
 sector = "Aerospace & Defense"
 industry = "DFEN.DE"  # VanEck Defense (EUR; history from 2023-03)
@@ -151,6 +191,20 @@ peers = [
     "BA.L",    # BAE Systems
 ]
 
+[stocks."CMCL.L"]  # Caledonia Mining
+sector = "Precious Metals & Mining"
+industry = "GDXJ"  # VanEck Junior Gold Miners (USD)
+peers = [
+    "PAF.L",  # Pan African Resources: Southern Africa gold
+    "THX.L",  # Thor Explorations
+    "SRB.L",  # Serabi Gold
+    "HOC.L",  # Hochschild Mining
+]
+
+[stocks."CNC.L"]  # Concurrent Technologies
+sector = "Technology Hardware & Equipment"
+industry = "EXV3.DE"  # iShares STOXX Europe 600 Technology (EUR)
+
 [stocks."CRW.L"]  # Craneware
 sector = "Health Care Providers"
 industry = "EXV4.DE"  # iShares STOXX Europe 600 Health Care (EUR)
@@ -159,6 +213,16 @@ peers = [
     "EVH",   # Evolent Health (USD)
     "PHR",   # Phreesia (USD)
     "WAY",   # Waystar: revenue cycle (USD; from 2024-06)
+]
+
+[stocks."DEBS.L"]  # Boohoo Group
+sector = "Retailers"
+industry = "EXH8.DE"  # iShares STOXX Europe 600 Retail (EUR)
+peers = [
+    "ASC.L",   # ASOS: online fashion
+    "ZAL.DE",  # Zalando (EUR)
+    "NXT.L",   # Next
+    "FRAS.L",  # Frasers Group
 ]
 
 [stocks."DOTD.L"]  # Dotdigital Group
@@ -170,6 +234,14 @@ peers = [
     "HUBS",      # HubSpot (USD)
     "SINCH.ST",  # Sinch: messaging (SEK)
 ]
+
+[stocks."ECO.L"]  # Eco (Atlantic) Oil & Gas
+sector = "Oil, Gas & Coal"
+industry = "EXH1.DE"  # iShares STOXX Europe 600 Oil & Gas (EUR)
+
+[stocks."EEE.L"]  # Empire Metals
+sector = "Precious Metals & Mining"
+industry = "GDXJ"  # VanEck Junior Gold Miners (USD)
 
 [stocks."EKF.L"]  # EKF Diagnostics Holdings
 sector = "Medical Equipment & Services"
@@ -224,6 +296,10 @@ peers = [
     "QLT.L",  # Quilter
 ]
 
+[stocks."FNX.L"]  # Fonix
+sector = "Industrial Support Services"
+industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
+
 [stocks."FRAN.L"]  # Franchise Brands
 sector = "Industrial Support Services"
 industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
@@ -231,6 +307,29 @@ peers = [
     "RTO.L",  # Rentokil: B2B services
     "ROL",    # Rollins (USD)
     "MTO.L",  # Mitie
+]
+
+[stocks."FRP.L"]  # FRP Advisory Group
+sector = "Industrial Support Services"
+industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
+
+[stocks."FTC.L"]  # Filtronic
+sector = "Telecommunications Equipment"
+industry = "EXV2.DE"  # iShares STOXX Europe 600 Telecommunications (EUR)
+
+[stocks."GFM.L"]  # Griffin Mining
+sector = "Industrial Metals & Mining"
+industry = "EXV6.DE"  # iShares STOXX Europe 600 Basic Resources (EUR)
+
+[stocks."GGP.L"]  # Greatland Resources
+sector = "Precious Metals & Mining"
+industry = "GDXJ"  # VanEck Junior Gold Miners (USD)
+peers = [
+    "NST.AX",  # Northern Star: Australian gold producer (AUD)
+    "EVN.AX",  # Evolution Mining (AUD)
+    "PRU.AX",  # Perseus Mining (AUD)
+    "RRL.AX",  # Regis Resources (AUD)
+    "PAF.L",   # Pan African Resources
 ]
 
 [stocks."GHH.L"]  # Gooch & Housego
@@ -253,6 +352,10 @@ peers = [
     "TUN.L",   # Tungsten West
 ]
 
+[stocks."GRP.L"]  # Greencoat Renewables
+sector = "Electricity"
+industry = "EXH9.DE"  # iShares STOXX Europe 600 Utilities (EUR)
+
 [stocks."HPOW.L"]  # H-Power
 sector = "Alternative Energy"
 industry = "INRG.L"  # iShares Global Clean Energy (USD)
@@ -266,7 +369,7 @@ peers = [
 ]
 
 [stocks."HSP.L"]  # Hargreaves Services
-sector = "Industrial Engineering"
+sector = "General Industrials"
 industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
 peers = [
     "KIE.L",   # Kier
@@ -274,6 +377,10 @@ peers = [
     "MGNS.L",  # Morgan Sindall
     "HWG.L",   # Harworth: land development
 ]
+
+[stocks."HUW.L"]  # Helios Underwriting
+sector = "Non-life Insurance"
+industry = "EXH5.DE"  # iShares STOXX Europe 600 Insurance (EUR)
 
 [stocks."IPX.L"]  # Impax Asset Management Group
 sector = "Investment Banking & Brokerage Services"
@@ -306,6 +413,10 @@ peers = [
     "HPOW.L",   # H-Power (AFC Energy)
 ]
 
+[stocks."JDG.L"]  # Judges Scientific
+sector = "Electronic & Electrical Equipment"
+industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
+
 [stocks."JHD.L"]  # James Halstead
 sector = "Construction & Materials"
 industry = "EXV8.DE"  # iShares STOXX Europe 600 Construction & Materials (EUR)
@@ -315,6 +426,10 @@ peers = [
     "FORN.SW",  # Forbo (CHF)
     "MHK",      # Mohawk (USD)
 ]
+
+[stocks."JSE.L"]  # Jadestone Energy
+sector = "Oil, Gas & Coal"
+industry = "EXH1.DE"  # iShares STOXX Europe 600 Oil & Gas (EUR)
 
 [stocks."KEFI.L"]  # KEFI Gold and Copper
 sector = "Industrial Metals & Mining"
@@ -326,6 +441,10 @@ peers = [
     "GGP.L",  # Greatland
 ]
 
+[stocks."KEYS.L"]  # Keystone Law Group
+sector = "Industrial Support Services"
+industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
+
 [stocks."KGH.L"]  # Knights Group Holdings
 sector = "Industrial Support Services"
 industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
@@ -335,6 +454,28 @@ peers = [
     "FRP.L",   # FRP Advisory
     "BTG.L",   # BTG Consulting (Begbies Traynor)
 ]
+
+[stocks."KIST.L"]  # Kistos Holdings
+sector = "Oil, Gas & Coal"
+industry = "EXH1.DE"  # iShares STOXX Europe 600 Oil & Gas (EUR)
+peers = [
+    "SQZ.L",   # Serica Energy: North Sea gas
+    "HBR.L",   # Harbour Energy
+    "ENQ.L",   # EnQuest
+    "DNO.OL",  # DNO: Norway / Kurdistan E&P (NOK)
+]
+
+[stocks."KP2.L"]  # Kore Potash
+sector = "Industrial Metals & Mining"
+industry = "EXV6.DE"  # iShares STOXX Europe 600 Basic Resources (EUR)
+
+[stocks."LTHM.L"]  # Latham (James)
+sector = "Industrial Support Services"
+industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
+
+[stocks."MHA.L"]  # MHA
+sector = "Industrial Support Services"
+industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
 
 [stocks."MIDW.L"]  # Midwich Group
 sector = "Technology Hardware & Equipment"
@@ -347,6 +488,10 @@ peers = [
     "ARW",      # Arrow Electronics (USD)
 ]
 
+[stocks."MKA.L"]  # Mkango Magnetic Materials
+sector = "Industrial Metals & Mining"
+industry = "EXV6.DE"  # iShares STOXX Europe 600 Basic Resources (EUR)
+
 [stocks."MPE.L"]  # M.P. Evans Group
 sector = "Food Producers"
 industry = "EXH3.DE"  # iShares STOXX Europe 600 Food & Beverage (EUR)
@@ -358,6 +503,18 @@ peers = [
     "5285.KL",  # SD Guthrie (MYR)
     "F34.SI",   # Wilmar (SGD)
 ]
+
+[stocks."MSI.L"]  # M.S. International
+sector = "Aerospace & Defense"
+industry = "DFEN.DE"  # VanEck Defense (EUR; history from 2023-03)
+
+[stocks."MTL.L"]  # Metals Exploration
+sector = "Industrial Metals & Mining"
+industry = "EXV6.DE"  # iShares STOXX Europe 600 Basic Resources (EUR)
+
+[stocks."NET.L"]  # Netcall
+sector = "Software & Computer Services"
+industry = "EXV3.DE"  # iShares STOXX Europe 600 Technology (EUR)
 
 [stocks."NFG.L"]  # Next 15 Group
 sector = "Media"
@@ -390,6 +547,10 @@ peers = [
     "TRIB",   # Trinity Biotech (USD)
 ]
 
+[stocks."OPT.L"]  # Optima Health
+sector = "Health Care Providers"
+industry = "EXV4.DE"  # iShares STOXX Europe 600 Health Care (EUR)
+
 [stocks."PANR.L"]  # Pantheon Resources
 sector = "Oil, Gas & Coal"
 industry = "EXH1.DE"  # iShares STOXX Europe 600 Oil & Gas (EUR)
@@ -410,6 +571,14 @@ peers = [
     "ASHM.L",  # Ashmore
 ]
 
+[stocks."PPHC.L"]  # Public Policy Holding Company
+sector = "Industrial Support Services"
+industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
+
+[stocks."PTAL.L"]  # PetroTal
+sector = "Oil, Gas & Coal"
+industry = "EXH1.DE"  # iShares STOXX Europe 600 Oil & Gas (EUR)
+
 [stocks."RCN.L"]  # Redcentric
 sector = "Software & Computer Services"
 industry = "EXV3.DE"  # iShares STOXX Europe 600 Technology (EUR)
@@ -419,6 +588,10 @@ peers = [
     "CCC.L",  # Computacenter
     "SCT.L",  # Softcat
 ]
+
+[stocks."RFX.L"]  # Ramsdens Holdings
+sector = "Finance & Credit Services"
+industry = "EXH2.DE"  # iShares STOXX Europe 600 Financial Services (EUR)
 
 [stocks."RKH.L"]  # Rockhopper Exploration
 sector = "Oil, Gas & Coal"
@@ -442,6 +615,10 @@ peers = [
     "GFRD.L",  # Galliford Try
 ]
 
+[stocks."RST.L"]  # Restore
+sector = "Industrial Support Services"
+industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
+
 [stocks."RWS.L"]  # RWS Holdings
 sector = "Industrial Support Services"
 industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
@@ -462,6 +639,22 @@ peers = [
     "PUB.PA",  # Publicis (EUR)
 ]
 
+[stocks."SAG.L"]  # Science Group
+sector = "Industrial Support Services"
+industry = "EXH4.DE"  # iShares STOXX Europe 600 Industrial Goods & Services (EUR)
+
+[stocks."SAV.L"]  # Savannah Resources
+sector = "Industrial Metals & Mining"
+industry = "EXV6.DE"  # iShares STOXX Europe 600 Basic Resources (EUR)
+
+[stocks."SEE.L"]  # Seeing Machines
+sector = "Software & Computer Services"
+industry = "EXV3.DE"  # iShares STOXX Europe 600 Technology (EUR)
+
+[stocks."SLP.L"]  # Sylvania Platinum
+sector = "Precious Metals & Mining"
+industry = "GDXJ"  # VanEck Junior Gold Miners (USD)
+
 [stocks."SQZ.L"]  # Serica Energy
 sector = "Oil, Gas & Coal"
 industry = "EXH1.DE"  # iShares STOXX Europe 600 Oil & Gas (EUR)
@@ -471,6 +664,16 @@ peers = [
     "ITH.L",   # Ithaca Energy (from 2022-11)
     "KIST.L",  # Kistos
     "TLW.L",   # Tullow Oil
+]
+
+[stocks."SRB.L"]  # Serabi Gold
+sector = "Precious Metals & Mining"
+industry = "GDXJ"  # VanEck Junior Gold Miners (USD)
+peers = [
+    "CMCL.L",  # Caledonia Mining
+    "THX.L",   # Thor Explorations
+    "HOC.L",   # Hochschild Mining: Americas gold / silver
+    "PAF.L",   # Pan African Resources
 ]
 
 [stocks."SRC.L"]  # SigmaRoc
@@ -483,6 +686,18 @@ peers = [
     "HOLN.SW",  # Holcim (CHF)
     "IBST.L",   # Ibstock
 ]
+
+[stocks."SRT.L"]  # SRT Marine Systems
+sector = "Telecommunications Equipment"
+industry = "EXV2.DE"  # iShares STOXX Europe 600 Telecommunications (EUR)
+
+[stocks."SUP.L"]  # Supreme
+sector = "Personal Care, Drug & Grocery Stores"
+industry = "EXH7.DE"  # iShares STOXX Europe 600 Personal & Household Goods (EUR)
+
+[stocks."SVML.L"]  # Sovereign Metals
+sector = "Industrial Metals & Mining"
+industry = "EXV6.DE"  # iShares STOXX Europe 600 Basic Resources (EUR)
 
 [stocks."TAM.L"]  # Tatton Asset Management
 sector = "Investment Banking & Brokerage Services"
@@ -507,6 +722,21 @@ peers = [
     "LUCE.L",    # Luceco
 ]
 
+[stocks."THX.L"]  # Thor Explorations
+sector = "Precious Metals & Mining"
+industry = "GDXJ"  # VanEck Junior Gold Miners (USD)
+peers = [
+    "PRU.AX",  # Perseus Mining: West Africa gold (AUD)
+    "EDV.L",   # Endeavour Mining: West Africa gold
+    "CMCL.L",  # Caledonia Mining
+    "SRB.L",   # Serabi Gold
+    "PAF.L",   # Pan African Resources
+]
+
+[stocks."TPFG.L"]  # The Property Franchise Group
+sector = "Real Estate Investment & Services"
+industry = "EXI5.DE"  # iShares STOXX Europe 600 Real Estate (EUR)
+
 [stocks."TRB.L"]  # Tribal Group
 sector = "Software & Computer Services"
 industry = "EXV3.DE"  # iShares STOXX Europe 600 Technology (EUR)
@@ -515,6 +745,29 @@ peers = [
     "TYL",     # Tyler Technologies (USD)
     "KNOS.L",  # Kainos
 ]
+
+[stocks."TSTL.L"]  # Tristel
+sector = "Health Care Providers"
+industry = "EXV4.DE"  # iShares STOXX Europe 600 Health Care (EUR)
+
+[stocks."TUN.L"]  # Tungsten West
+sector = "Industrial Metals & Mining"
+industry = "EXV6.DE"  # iShares STOXX Europe 600 Basic Resources (EUR)
+
+[stocks."TUNE.L"]  # Focusrite
+sector = "Leisure Goods"
+# Focusrite makes audio hardware, not games: not the ESPO.L used for the Leisure Goods developers
+industry = "EXH7.DE"  # iShares STOXX Europe 600 Personal & Household Goods (EUR)
+peers = [
+    "SONO",    # Sonos (USD)
+    "LOGI",    # Logitech (USD)
+    "GN.CO",   # GN Store Nord: audio (DKK)
+    "7951.T",  # Yamaha: instruments and audio (JPY)
+]
+
+[stocks."UPR.L"]  # Uniphar
+sector = "Personal Care, Drug & Grocery Stores"
+industry = "EXH7.DE"  # iShares STOXX Europe 600 Personal & Household Goods (EUR)
 
 [stocks."VIC.L"]  # Victorian Plumbing Group
 sector = "Retailers"
@@ -537,6 +790,14 @@ peers = [
     "LAD",     # Lithia Motors (USD)
 ]
 
+[stocks."W7L.L"]  # Warpaint London
+sector = "Personal Goods"
+industry = "EXH7.DE"  # iShares STOXX Europe 600 Personal & Household Goods (EUR)
+
+[stocks."YCA.L"]  # Yellow Cake
+sector = "Industrial Metals & Mining"
+industry = "EXV6.DE"  # iShares STOXX Europe 600 Basic Resources (EUR)
+
 [stocks."YOU.L"]  # YouGov
 sector = "Media"
 industry = "EXH6.DE"  # iShares STOXX Europe 600 Media (EUR)
@@ -546,3 +807,7 @@ peers = [
     "FORR",    # Forrester (USD)
     "NFG.L",   # Next 15
 ]
+
+[stocks."YU.L"]  # Yu Group
+sector = "Gas, Water & Multi-utilities"
+industry = "EXH9.DE"  # iShares STOXX Europe 600 Utilities (EUR)
