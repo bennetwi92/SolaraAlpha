@@ -20,18 +20,26 @@ used once it is confirmed.
 * **significant levels** — prior 52-week and 5-year highs/lows (5-year = as far back as the
   supplied history goes, up to 5 years). ``blue_sky`` = closed above the 5-year high, so no
   overhead supply.
+* **compression** — the stock against its own past year: the last ``COIL_WEEKS`` weeks' range
+  as a percentile of the year's ranges and their volume against the year's median. Compressed
+  (a narrowing range on drying-up volume) means a move may be close. Context, not a signal
+  (docs/decisions/0022).
+* **wedge** — the upper and lower trendlines converging, with the weeks to their apex.
 
 :func:`levels_card` turns the level map into a plan for a position on ``side`` and two scores in
 [-1, +1]: ``structure`` (market view, + bullish) and ``setup`` (reward:risk for ``side``).
 When coiled the plan is entered on a stop order beyond the coil (``trigger``) rather than at the
-close, so reward:risk is measured from where the trade would actually start.
+close, so reward:risk is measured from where the trade would actually start. Reward:risk to
+the next level is information, not an estimate of the move: the bands don't use it (0004
+amendment). ``context`` puts compression, wedge, breakout and distance to the high in one line
+for the agents.
 All levels use raw ``high``/``low``/``close`` so they are real price levels.
 Parameters are documented in ``docs/decisions/0004-levels.md``.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from itertools import combinations
 
 import numpy as np
@@ -53,6 +61,9 @@ MIN_STOP_ATR = 1.0  # ...but at least this far from the close
 YEAR = 52  # weeks
 FIVE_YEARS = 5 * YEAR
 FULL_RR = 3.0  # reward:risk that scores a full +1 on setup (1/3 scores -1, 1 scores 0)
+COMPRESS_PCTILE = 0.2  # compressed: the coil weeks' range is in the tightest fifth of the year
+VOLUME_DRY = 0.8  # ...and their volume at most this share of the year's median
+WEDGE_APEX_WEEKS = 26  # converging trendlines count as a wedge when they meet within this
 
 
 def pivots(weekly: pd.DataFrame, k: int = PIVOT_WEEKS) -> pd.DataFrame:
@@ -193,6 +204,41 @@ def coil(weekly: pd.DataFrame, n: int = COIL_WEEKS) -> Coil:
     )
 
 
+@dataclass(frozen=True)
+class Compression:
+    range_pctile: float  # share of the prior year's ranges that were tighter (0 = tightest)
+    volume_ratio: float  # volume per session vs the prior year's median (< 1 = drying up)
+    score: float  # [-1, 1], + = compressed: mean of the range and volume parts
+    compressed: bool  # range_pctile <= COMPRESS_PCTILE and volume_ratio <= VOLUME_DRY
+
+
+def compression(weekly: pd.DataFrame, n: int = COIL_WEEKS, year: int = YEAR) -> Compression:
+    """How compressed the last ``n`` weeks are against the stock's own past ``year`` weeks.
+
+    ``range_pctile``: the ``n``-week high-low range (log, so price level doesn't matter) as the
+    share of the ``year`` earlier ``n``-week ranges that were tighter. ``volume_ratio``: mean
+    volume per session over the ``n`` weeks over the median of the ``year`` weeks before them.
+    NaN when there is less than half a year of either. ``score`` = mean of
+    ``1 - 2 range_pctile`` and ``-log2(volume_ratio)`` clipped to [-1, 1] (half the usual
+    volume scores +1). Uses only the frame given, so it is point-in-time."""
+    rng = pd.Series(np.log(weekly["high"].rolling(n).max() / weekly["low"].rolling(n).min()))
+    past = rng.iloc[-year - 1 : -1].dropna()
+    now = float(rng.iloc[-1])
+    pct = float((past < now).mean()) if len(past) >= year // 2 else np.nan
+    vps = (weekly["volume"] / weekly.get("sessions", 5)).replace([np.inf, -np.inf], np.nan)
+    base = vps.iloc[:-n].iloc[-year:].dropna()
+    med = float(base.median()) if len(base) >= year // 2 else np.nan
+    ratio = float(vps.iloc[-n:].mean()) / med if med > 0 else np.nan
+    parts = [1 - 2 * pct, float(np.clip(-np.log2(ratio), -1, 1)) if ratio > 0 else np.nan]
+    finite = [p for p in parts if np.isfinite(p)]
+    return Compression(
+        range_pctile=pct,
+        volume_ratio=ratio,
+        score=float(np.mean(finite)) if finite else np.nan,
+        compressed=bool(pct <= COMPRESS_PCTILE and ratio <= VOLUME_DRY),
+    )
+
+
 def _atr_now(weekly: pd.DataFrame) -> float:
     a = float(atr(weekly).iloc[-1])
     if np.isnan(a):
@@ -277,7 +323,18 @@ class LevelsCard:
     reward_risk: float  # from the entry to ``target``; inf when nothing is in the way
     risk_pct: float  # distance from the entry to the stop as a fraction of the entry
     structure: float  # [-1, 1], + bullish: trendline slopes and place in the 52-week range
-    setup: float  # [-1, 1], + good reward:risk for ``side``
+    setup: float  # [-1, 1], + good reward:risk for ``side`` (information: R:R is not a forecast)
+    # Context for the agents (docs/decisions/0022): compression, wedge, highs. Not a gate.
+    range_pctile: float  # last COIL_WEEKS weeks' range vs the past year's (0 = tightest)
+    volume_ratio: float  # their volume per session vs the past year's median (< 1 = drying up)
+    compression: float  # [-1, 1], + = compressed (range and volume parts)
+    compressed: bool  # range_pctile <= COMPRESS_PCTILE and volume_ratio <= VOLUME_DRY
+    wedge: bool  # both trendlines intact and converging, apex within WEDGE_APEX_WEEKS
+    wedge_apex_weeks: float  # weeks until the trendlines meet (NaN unless converging)
+    wedge_width_atr: float  # upper minus lower trendline next week, in ATRs (NaN without both)
+    new_high: bool  # closed above the prior 52-week high
+    from_high_52w: float  # close / prior 52-week high - 1 (> 0 on a new high)
+    context: str  # the above in one line, for the agents
 
 
 def _nearest(df: pd.DataFrame, close: float) -> tuple[pd.Series, pd.Series]:
@@ -333,6 +390,14 @@ def levels_card(weekly: pd.DataFrame, side: int = 1) -> LevelsCard:
     parts = [2 * (close - lo52) / (hi52 - lo52) - 1 if hi52 > lo52 else 0.0]
     parts += [t.slope / FULL_SLOPE for t in (upper, lower) if t is not None]
 
+    comp = compression(weekly)
+    width = apex = np.nan
+    if upper is not None and lower is not None:
+        width = float(np.log(upper.value / lower.value))
+        closing = float(np.log1p(lower.slope) - np.log1p(upper.slope))
+        apex = width / closing if closing > 0 and width > 0 else np.nan
+    wedge = bool(apex <= WEDGE_APEX_WEEKS)
+
     breakout = 0
     if atr(weekly).notna().iloc[-2]:
         p_above, p_below = _nearest(level_map(weekly.iloc[:-1]), float(weekly["close"].iloc[-2]))
@@ -341,7 +406,7 @@ def levels_card(weekly: pd.DataFrame, side: int = 1) -> LevelsCard:
         elif not p_below.empty and close < p_below.iloc[0]:
             breakout = -1
 
-    return LevelsCard(
+    card = LevelsCard(
         date=weekly.index[-1],
         side=side,
         close=close,
@@ -379,4 +444,60 @@ def levels_card(weekly: pd.DataFrame, side: int = 1) -> LevelsCard:
         risk_pct=risk / entry,
         structure=float(np.clip(parts, -1, 1).mean()),
         setup=float(np.clip(np.log(reward_risk) / np.log(FULL_RR), -1, 1)),
+        range_pctile=comp.range_pctile,
+        volume_ratio=comp.volume_ratio,
+        compression=comp.score,
+        compressed=comp.compressed,
+        wedge=wedge,
+        wedge_apex_weeks=float(apex),
+        wedge_width_atr=float(upper.value - lower.value) / a if upper and lower else np.nan,
+        new_high=close > hi52,
+        from_high_52w=close / hi52 - 1,
+        context="",
     )
+    return replace(card, context=describe(**asdict(card)))
+
+
+def _pct(x: float) -> str:
+    return f"{x:.0%}" if np.isfinite(x) else "n/a"
+
+
+def describe(**f: object) -> str:
+    """One line of chart context from levels card fields (a card dict works: missing fields
+    are skipped, booleans may be 1.0 / 0.0). Context for the agents, never a verdict."""
+
+    def num(k: str) -> float:
+        v = f.get(k)
+        try:
+            return float(v)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return np.nan
+
+    def yes(k: str) -> bool:
+        return bool(num(k) == 1)
+
+    out = []
+    rp, vr = num("range_pctile"), num("volume_ratio")
+    if np.isfinite(rp) or np.isfinite(vr):
+        state = "compressed" if yes("compressed") else "not compressed"
+        why = [f"{_pct(rp)} of the past year's {COIL_WEEKS}-week ranges were tighter"] * int(
+            np.isfinite(rp)
+        ) + [f"volume {vr:.2f}x the year's median"] * int(np.isfinite(vr))
+        out.append(f"{state} ({', '.join(why)})")
+    if yes("wedge"):
+        out.append(f"wedge: trendlines converging, apex in ~{num('wedge_apex_weeks'):.0f} weeks")
+    if num("breakout") == 1:
+        out.append("broke out above last week's resistance")
+    elif num("breakout") == -1:
+        out.append("broke down through last week's support")
+    elif (yes("compressed") or yes("wedge")) and not yes("new_high"):
+        out.append("forming: no breakout yet")
+    if yes("blue_sky"):
+        out.append("blue sky (above the 5-year high)")
+    elif yes("new_high"):
+        out.append("new 52-week high")
+    elif np.isfinite(num("from_high_52w")):
+        out.append(f"{-num('from_high_52w'):.0%} below the 52-week high")
+    if yes("coil_pending"):
+        out.append(f"breakout trigger {num('trigger'):.2f} not yet hit")
+    return "; ".join(out)

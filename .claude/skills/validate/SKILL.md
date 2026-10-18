@@ -29,6 +29,8 @@ Read `pack.json` in the printed directory. It holds, built only from the DB:
   cards for this run, as dicts. Booleans are 1.0 / 0.0.
 - `steps` and `screen_label`: each toolkit's label and failing clauses, and the combined
   screen label with its reason.
+- `chart_context`: the levels card's compression / wedge / breakout / highs fields and a
+  one-line `summary` (see "Reading the chart" below); null without a levels card.
 - `prices`: the price snapshot **as seen at the run**: `issues` (the `check_prices` table),
   `span` (what `trim_to_consistent` kept and how many sessions it dropped), `weekly` (last
   104 completed weeks: OHLCV, `adj_close`, `ma10`, `ma40`), `daily` (last 60 sessions),
@@ -45,6 +47,29 @@ only the numbers.
 
 If the pack cannot be built (the command fails), write an **ERROR** verdict with the failure
 as the reason (Step 4) and stop.
+
+### Reading the chart (ADR 0022: the chart is context, not a gate)
+
+The levels card describes *when a move may be close*; it does not say how far it goes.
+- **Compression** is measured against the stock's own past year: `range_pctile` (share of the
+  year's 4-week ranges that were tighter than the last 4 weeks; 0 = the tightest),
+  `volume_ratio` (last 4 weeks' volume per session vs the year's median; < 1 = drying up),
+  `compression` in [-1, +1] (+ = compressed) and `compressed` (`range_pctile` ≤ 0.2 and
+  `volume_ratio` ≤ 0.8, about 7% of stock-weeks in a 5-year replay).
+- **Wedge**: `wedge` = the upper and lower trendlines converging, with `wedge_apex_weeks`
+  until they meet and `wedge_width_atr` between them. A compressed wedge with `breakout` 0
+  is a *forming* set-up: something may happen soon, in either direction.
+- **Breakout and highs**: `breakout` (+1 closed above last week's nearest resistance),
+  `new_high` (above the prior 52-week high), `blue_sky` (above the 5-year high),
+  `from_high_52w` (distance to the 52-week high).
+- `coiled` / `coil_pending` / `trigger` are the **plan's** entry mechanics (a stop order
+  above a tight 4-week coil), not a compression signal.
+- `reward_risk` is the distance to the *next* level over the distance to the stop. It is
+  information, **not an estimate of the move**: the next resistance is not where a +15-30%
+  move stops. Never downgrade for a low `reward_risk` alone; no band uses it.
+- The levels band is light: ACT = compressed or a new high, WATCH otherwise, PASS only on a
+  close below the 5-year low. Judge whether the picture matches the words, not whether the
+  set-up is "good enough": that is the research agent's call.
 
 ## Step 2: The checklist
 
@@ -68,10 +93,11 @@ settle it.
    a one-off (an acquisition, a disposal gain), or currency-mismatched (card `currency` vs the
    listing currency in `prices.currency`)?
 7. `toolkit_agreement`: do the toolkits agree with each other? Strong RS with a falling trend,
-   a tight coil with a huge target, growth with collapsing quality, each needs a sentence.
-8. `picture_agrees`: does `chart.png` agree with the numbers? A "stage 2 uptrend" that looks
-   like a range, a "support" the price has sliced through, a "coil" that is a gap, a trendline
-   drawn through two points, a target with no visible level at it: each is a `concern`.
+   growth with collapsing quality, each needs a sentence.
+8. `picture_agrees`: does `chart.png` agree with the numbers and with `chart_context.summary`?
+   A "stage 2 uptrend" that looks like a range, a "support" the price has sliced through, a
+   "compressed" range that is really one quiet week after a gap, a "wedge" drawn through two
+   points, a "breakout" that is a single spike bar: each is a `concern`.
 
 Then, per toolkit, `checks["technical"]`, `checks["levels"]`, `checks["relative_strength"]`,
 `checks["fundamentals"]`: **`warranted`** or **`not warranted`**, with the reason.

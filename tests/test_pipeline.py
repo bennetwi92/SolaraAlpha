@@ -141,13 +141,12 @@ def test_technical_bands(monkeypatch: pytest.MonkeyPatch, fields: dict, label: s
 @pytest.mark.parametrize(
     ("fields", "label"),
     [
-        (dict(structure=0.1, reward_risk=2.0, coil_pending=False), "ACT"),
-        (dict(structure=0.1, reward_risk=math.inf, coil_pending=False), "ACT"),  # blue sky
-        (dict(structure=0.0, reward_risk=3.0, coil_pending=False), "WATCH"),
-        (dict(structure=0.5, reward_risk=1.5, coil_pending=False), "WATCH"),
-        (dict(structure=0.5, reward_risk=1.0, coil_pending=True), "WATCH"),
-        (dict(structure=0.5, reward_risk=1.4, coil_pending=False), "PASS"),
-        (dict(structure=0.5, reward_risk=math.nan, coil_pending=False), "PASS"),
+        # context, not a gate (#194): compressed or a new high is ACT, reward_risk never counts
+        (dict(compressed=True, new_high=False, new_low=False, reward_risk=0.3), "ACT"),
+        (dict(compressed=False, new_high=True, new_low=False, reward_risk=math.inf), "ACT"),
+        (dict(compressed=False, new_high=False, new_low=False, reward_risk=5.0), "WATCH"),
+        (dict(compressed=False, new_high=False, new_low=False, reward_risk=math.nan), "WATCH"),
+        (dict(compressed=False, new_high=False, new_low=True, reward_risk=3.0), "PASS"),
     ],
 )
 def test_levels_bands(monkeypatch: pytest.MonkeyPatch, fields: dict, label: str) -> None:
@@ -327,7 +326,7 @@ def test_real_toolkits_share_one_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
     assert fetches == ["TEST.L"]
     assert x.fetched("daily") is not None and x.fetched("fund") is None
     assert tech.status in ("act", "watch", "pass") and set(tech.cards) == {"technical", "position"}
-    assert lev.status in ("act", "watch", "pass") and "reward_risk" in lev.reason
+    assert lev.status in ("act", "watch", "pass") and "compressed" in lev.reason
 
 
 def _step(toolkit: str, label: str, reason: str = "", **fields: object) -> Step:
