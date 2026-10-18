@@ -11,6 +11,7 @@ should be confirmed against a primary source (the company's own announcements) b
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
 
 import pandas as pd
 
@@ -47,5 +48,8 @@ def parse_rss(xml: str) -> pd.DataFrame:
             title = title.removesuffix(f" - {source}")
         rows.append((item.findtext("pubDate"), source, title.strip(), item.findtext("link")))
     df = pd.DataFrame(rows, columns=COLUMNS)
-    df["published"] = pd.to_datetime(df["published"], utc=True, format="mixed")
+    # RFC 2822 dates ("Fri, 16 Oct 2026 07:00:00 GMT"): pandas no longer parses "GMT" itself.
+    df["published"] = pd.to_datetime(
+        pd.Series([parsedate_to_datetime(d) if d else None for d in df["published"]]), utc=True
+    )
     return df.sort_values("published", ignore_index=True)

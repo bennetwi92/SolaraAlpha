@@ -1,0 +1,80 @@
+[
+ {
+  "id": "block_content:afe540a2-2a0c-46af-8497-407dc4c7fd71",
+  "type": "ftse-index-table",
+  "content": [
+   {
+    "name": "ftseindexconstituents",
+    "type": "DATATYPE",
+    "value": {
+     "content": [
+      {
+       "description": "GREATLAND RESOURCES LIMITED ORD NPV (DI)",
+       "tidm": "GGP",
+       "currency": "GBX",
+       "fiftyTwoWeeksMin": 320.0,
+       "fiftyTwoWeeksMax": 800.0,
+       "midPrice": 518.5,
+       "issuercode": "GRTRSE",
+       "issuername": "GREATLAND RESOURCES LIMITED",
+       "marketcapitalization": 3413269065,
+       "netchangesign": "+1",
+       "netchange": 13.0,
+       "percentualchange": 2.561576354679803,
+       "subSearchTags": null,
+       "lastprice": 520.5
+      },
+      {
+       "description": "JET2 PLC ORD 1.25P",
+       "tidm": "JET2",
+       "currency": "GBX",
+       "fiftyTwoWeeksMin": 980.0,
+       "fiftyTwoWeeksMax": 1612,
+       "midPrice": 1433,
+       "issuercode": "DANP",
+       "issuername": "JET2 PLC",
+       "marketcapitalization": 2619058447,
+       "netchangesign": "+1",
+       "netchange": 1,
+       "percentualchange": 0.07092198581560284,
+       "subSearchTags": null,
+       "lastprice": 1411
+      },
+      {
+       "description": "YU GROUP PLC ORD 0.5P",
+       "tidm": "YU.",
+       "currency": "GBX",
+       "fiftyTwoWeeksMin": 178.5,
+       "fiftyTwoWeeksMax": 353.752,
+       "midPrice": 325,
+       "issuercode": "GRGFM",
+       "issuername": "YU GROUP PLC",
+       "marketcapitalization": 545856674,
+       "netchangesign": "+1",
+       "netchange": 9,
+       "percentualchange": 2.857142857142857,
+       "subSearchTags": null,
+       "lastprice": 324
+      }
+     ],
+     "last": false,
+     "totalElements": 3,
+     "totalPages": 5,
+     "numberOfElements": 20,
+     "first": true,
+     "sort": [
+      {
+       "direction": "DESC",
+       "property": "marketcapitalization",
+       "ignoreCase": false,
+       "nullHandling": "NATIVE",
+       "ascending": false
+      }
+     ],
+     "size": 20,
+     "number": 0
+    }
+   }
+  ]
+ }
+]

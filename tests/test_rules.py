@@ -16,6 +16,7 @@ def test_default_file_loads_as_placeholders() -> None:
     assert isinstance(r.capital, float) and r.capital > 0
     assert r.horizon_weeks == (2, 16)
     assert r.long_only is True
+    assert (r.shortlist_size, r.shortlist_catalysts) == (7, 3) and r.min_adv_gbp > 0
     assert r.warning is not None and "placeholder" in r.warning
 
 
@@ -52,6 +53,9 @@ def test_override_file(tmp_path: Path) -> None:
         ("capital", '"lots"'),
         ("long_only", "1"),
         ("entry_validity_days", "0"),
+        ("shortlist_size", "0"),
+        ("shortlist_catalysts", "-1"),
+        ("min_adv_gbp", "-5.0"),
     ],
 )
 def test_validation_names_the_field(tmp_path: Path, key: str, value: str) -> None:

@@ -7,15 +7,15 @@ daily monitor can act on, and the definition of "what we're looking for" written
 (story map §4 A1, S1.3–S1.5, S1.7).
 
 **In one line:** a stage-2 uptrend with positive momentum, priced near support rather than
-stretched above it, outperforming its peers, with earnings growing or being revised up, and at
-least 2:1 to the next resistance (or nothing overhead).
+stretched above it, outperforming its peers, with earnings growing or being revised up.
+(Superseded as the definition by ADR 0022; the 2:1-to-resistance clause is gone, #194.)
 
 | Question | Toolkit / fields | ACT | WATCH |
 |---|---|---|---|
 | In an uptrend? Stage 2: price above a rising 40w MA, 10w above 40w | technical `trend` | ≥ 0.25 | 0 to 0.25 |
 | Momentum behind it? | technical `momentum` | > 0 | -0.25 to 0 |
 | Not overextended? Near the 10w MA, RSI with room, histogram turning up | technical `entry` | `entry` ≥ 0 (`risk_pct` dropped as a gate: see the 2026-10-18 amendment) | `entry` < 0 (extended: wait for a pullback) |
-| Structure and room to run? | levels `structure`, `reward_risk`, `blue_sky`, `coil_pending` | `structure` > 0 and R:R ≥ 2 (blue sky = ∞ counts) | R:R ≥ 1.5, or coiled with the trigger above the close (wait for the break) |
+| Compressed or at highs? (context, ADR 0004 amendment #194) | levels `compressed`, `new_high`, `new_low` | `compressed` or `new_high` | not a new 5-year low |
 | Leading its market, industry and peers? | relative_strength `rs`, `rs_high`, `peer_top_half` | `rs` > 0 | `rs` ≥ -0.25 with `rs_high` or a top-half `peer_rank` |
 | Potential for growth, at a sane price, not broken? | fundamentals `growth`, `quality`, `eps_revision` | `growth` > 0, `quality` > -0.5, `eps_revision` ≥ 0 or unavailable | `quality` > -0.5 and revisions rising |
 
@@ -27,8 +27,8 @@ least 2:1 to the next resistance (or nothing overhead).
   ```
   technical          act:   trend >= 0.25 | momentum > 0 | entry >= 0
                      watch: trend >= 0 | momentum >= -0.25
-  levels             act:   structure > 0 | reward_risk >= 2
-                     watch: reward_risk >= 1.5 or coil_pending == true
+  levels             act:   compressed == true or new_high == true
+                     watch: new_low == false
   relative_strength  act:   rs > 0
                      watch: rs >= -0.25 | rs_high == true or peer_top_half == true
   fundamentals       act:   growth > 0 | quality > -0.5 | eps_revision >= 0 or eps_revision is nan
@@ -36,7 +36,8 @@ least 2:1 to the next resistance (or nothing overhead).
   events             (none: always ACT)
   ```
   `|` separates clauses; within a clause `or` joins conditions. Derived card fields:
-  `LevelsCard.coil_pending` = coiled and trigger above the close;
+  `LevelsCard.coil_pending` = coiled and trigger above the close (`reward_risk` stays on the
+  card as information; no clause uses it, #194);
   `RelativeStrength.peer_top_half` = `peer_rank <= ceil((peer_count + 1) / 2)`.
 - **Clause grammar** (`pipeline.Clause`, `Condition`): `field op value` as before, plus
   `field is nan`; conditions joined by ` or `. NaN or missing values still fail ordinary
@@ -115,3 +116,50 @@ stocks; risk is handled by sizing (`plan.py` sizes from the stop distance), not 
 them. A 5-year replay (every 8th week, 50 stocks) passed it in 1.7% of weeks and 3.5% of uptrend
 weeks (median uptrend `risk_pct` 0.22). Dropped from the technical ACT band; the field stays on
 the card for sizing and reports.
+
+## Amendment (#192): a ranked shortlist instead of all-ACT gating
+
+ADR 0022: the screen is a ranked wide net with few hard rules that sends the 5–10 best-ranked
+names a week to the agents. All-ACT gating gave 1 ACT in 1,228 stock-weeks, so the bands no
+longer gate; they stay as **information** (each toolkit's label and failing clauses in the
+`labels.reason`, `watch_on` for the daily job).
+
+- **Floor** (the only hard rules, `pipeline.floor`): no screening toolkit ERROR, a liquidity
+  card with `adv_gbp_20 >= min_adv_gbp`, and a combined score. Volatility is never a gate.
+- **Score and rank**: `portfolio.fit.rank_score` (mean of technical `trend`, levels `setup`,
+  relative_strength `rs`, fundamentals `growth`, NaN ignored; equal weights, a placeholder)
+  over every ticker past the floor, ranked by `pipeline.rank_act` (1 = best, ties by ticker).
+- **Shortlist** (`pipeline.screen(steps, size, catalysts, catalyst_cap, min_adv_gbp)`): the top
+  `shortlist_size` (default 10) as `rank N`; tickers in `catalysts` (ticker -> one-line reason,
+  from #193) past the floor but outside the top N join as `catalyst: <reason>`, best-ranked
+  first, up to `shortlist_catalysts` (default 5) more. All three in `config/portfolio.toml`.
+- **Screen label**: shortlisted = **ACT** (the agents can only downgrade); past the floor but
+  not shortlisted = the band label (`screen_label`) capped at WATCH; below the floor = PASS;
+  ERROR stays. The reason starts with `shortlist rank 3`, `rank 14, not shortlisted` or
+  `floor: ...`, then each toolkit's band.
+- **Storage**: `labels.rank` on every screen row past the floor (was ACT rows only) and a new
+  nullable `labels.shortlist` (TEXT, the why), added by `store.connect()` like `watch_on`.
+- **Stages**: fundamentals runs on every ticker without an ERROR (the score needs `growth`);
+  events runs on the shortlist (`Stage.on_shortlist`).
+- **Readers agree**: `store.shortlist`, the validate queue (`record.py queue`, capped by
+  `max_agent_tickers`, rank order), `planner.final_labels` and the weekly pack's "Shortlist"
+  section (why + final label) all read the screen ACT rows in rank order (catalyst picks rank
+  after the top N, so the cap trims them first). Once the agents have worked a run, a
+  shortlisted ticker they never reached is neither researched nor planned on the screen's ACT
+  alone (`plan_run` reports it as "not reviewed by the agents").
+
+Backtest proxy (the 5-year replay, every 8th week, 50 stocks, 8-week blocks; survivorship and
+small-sample caveats): the top 10 by the current `rank_score` did *worse* than the rest (8-week
+mean -1.5% vs +2.1%, excess -2.8% vs +0.9%, +15% hit rate 11% vs 16%). Trend and RS were the
+weakest fields; `growth` and `setup` were about neutral. The weights stay placeholders for the
+owner (open question on #192; RS is #195), and the agents, not the score, decide.
+
+Owner decisions (2026-10-18, on #192 / #195): the score is the mean of technical `trend`, levels
+`compression` (#194) and fundamentals `growth`. `setup` is out because reward:risk is not an
+estimate we rank on (0022), and `rs` is out because relative strength is context for the agents
+(docs/research/0001). The shortlist is **7 ranked + up to 3 on a catalyst** (`shortlist_size =
+7`, `shortlist_catalysts = 3`), so the 10 names fit `max_agent_tickers = 10` and catalyst picks
+are never trimmed. A liquidity ERROR (e.g. a EUR-priced stock, FX not supported yet) now makes
+the screen label ERROR instead of being dropped silently. `scan.py` exits 1 only when every ticker errored
+(as the agents do, ADR 0019); a per-ticker ERROR is saved, reported and notified, so one stock
+cannot fail the weekly run and skip the agents (#189).

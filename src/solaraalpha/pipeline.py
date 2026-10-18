@@ -1,24 +1,32 @@
-"""The weekly pipeline: every stock through the toolkits, one stage at a time, to a label.
+"""The weekly pipeline: every stock through the toolkits, one stage at a time, to a shortlist.
 
 Each toolkit judges its own verdict card against two **bands** (``solaraalpha.toolkits``):
 ``act`` clauses and ``watch`` clauses. Its label is **ACT** if every ``act`` clause holds, else
 **WATCH** if every ``watch`` clause holds, else **PASS**; a toolkit that raises is **ERROR**. A
 toolkit with no clauses (``events``) is ACT whenever it runs. Labels **combine** as "a stock is
 only as good as its weakest toolkit": ERROR if any errored, else PASS if any is PASS, else WATCH
-if any is WATCH, else ACT (:func:`combine`).
+if any is WATCH, else ACT (:func:`combine`, :func:`screen_label` over technical, levels,
+relative_strength and fundamentals). Since #192 the bands are **information**, not the gate:
+what reaches the agents is the ranked shortlist (ADR 0022; ADR 0014, amendment #192).
 
 A stage runs each of its toolkits on every ticker whose *running* label (the combination of
-everything judged so far) is in the stage's ``runs_on``; the others get ``skip`` steps::
+everything judged so far) is in the stage's ``runs_on``, or, for an ``on_shortlist`` stage, on
+the shortlisted tickers; the others get ``skip`` steps::
 
     screen        technical + levels + relative_strength    every ticker in the watchlist
-                  (+ liquidity: no bands, information only)
-    fundamentals  fundamentals                              running label ACT or WATCH
-    events        events                                    running label ACT (input to research)
+                  (+ liquidity: no bands; the floor, sizing)
+    fundamentals  fundamentals                              every ticker without an ERROR
+    events        events                                    the shortlist (input to research)
 
-so a WATCH stock still gets a full four-toolkit label. The **screen label** of a ticker is
-:func:`combine` over technical, levels, relative_strength and fundamentals
-(:func:`screen_label`); events is not a gate. Running stage by stage (not stock by stock) puts
-each stage's results for all stocks side by side before the next starts.
+The **shortlist** (:func:`screen`): a minimal sanity floor (no screening toolkit ERROR, a
+liquidity card with ``adv_gbp_20 >= min_adv_gbp``, a combined score), then the tickers past it
+ranked by :func:`solaraalpha.portfolio.fit.rank_score` (:func:`rank_act`). The top
+``shortlist_size`` are shortlisted ("rank N"); tickers with a catalyst (``catalysts``: ticker ->
+one-line reason) join outside the top N, up to ``shortlist_catalysts`` more ("catalyst:
+<reason>"). Shortlisted tickers get the screen label ACT (the agents can only downgrade it);
+the others keep their band label capped at WATCH; floor failures are PASS. Volatility is never
+a gate. Running stage by stage (not stock by stock) puts each stage's results for all stocks
+side by side before the next starts.
 
 Clause grammar: a clause is one or more conditions joined by `` or ``; a condition is
 ``<field> <op> <value>`` (op one of ``>= <= > < == !=``; value a number, ``true`` / ``false``, or
@@ -139,12 +147,14 @@ class Stage:
     name: str
     toolkits: tuple[str, ...]
     runs_on: frozenset[str] = ALL_LABELS  # running labels a ticker must hold to run the stage
+    on_shortlist: bool = False  # run on the shortlist (:func:`screen`) instead of ``runs_on``
 
 
+NOT_ERROR = frozenset({"ACT", "WATCH", "PASS"})
 WEEKLY: tuple[Stage, ...] = (
     Stage("screen", ("technical", "levels", "relative_strength", "liquidity")),
-    Stage("fundamentals", ("fundamentals",), frozenset({"ACT", "WATCH"})),
-    Stage("events", ("events",), frozenset({"ACT"})),
+    Stage("fundamentals", ("fundamentals",), NOT_ERROR),
+    Stage("events", ("events",), on_shortlist=True),
 )
 
 
@@ -191,7 +201,7 @@ def stale_watchlist(snapshot: pd.Timestamp | None, today: pd.Timestamp) -> str |
     if now.normalize() > due:
         return (
             f"watchlist snapshot {snap:%Y-%m-%d} predates the {end_of_review:%B %Y} FTSE review:"
-            " refresh config/watchlist.toml from the FTSE AIM UK 50 constituents"
+            " refresh config/watchlist.toml (scripts/universe.py --write)"
         )
     return None
 
@@ -232,8 +242,14 @@ def combine(labels: list[str]) -> str:
 
 def screen_label(steps: list[Step]) -> tuple[str, str]:
     """The ticker's screen label and reason: :func:`combine` over the :data:`SCREEN_TOOLKITS`
-    that ran (skipped ones are left out), e.g. ``technical WATCH: failed entry >= 0 (entry=-0.41)``."""
-    judged = [s for s in steps if s.toolkit in SCREEN_TOOLKITS and s.status != "skip"]
+    that ran (skipped ones are left out), e.g. ``technical WATCH: failed entry >= 0 (entry=-0.41)``.
+    Liquidity has no bands but sizing needs it, so a liquidity ERROR makes the label ERROR."""
+    judged = [
+        s
+        for s in steps
+        if (s.toolkit in SCREEN_TOOLKITS or (s.toolkit == "liquidity" and s.label == "ERROR"))
+        and s.status != "skip"
+    ]
     label = combine([s.label for s in judged]) if judged else "ERROR"
     reason = "; ".join(
         f"{s.toolkit} {s.label}" + (f": {s.reason}" if s.label != "ACT" else "") for s in judged
@@ -254,7 +270,8 @@ def _field(cards: Cards, model: str, field: str) -> Any:
 def watch_on(steps: list[Step]) -> list[dict[str, Any]] | None:
     """What each WATCH toolkit is waiting for, in machine form (None when no toolkit is WATCH):
     technical extended → ``pullback`` to the 10-week MA ``level``; levels coiled → ``break`` of
-    ``trigger``; levels thin → ``reward_risk``; relative strength → ``rs``; fundamentals →
+    ``trigger``; levels otherwise → ``compression`` (not yet compressed or at a high);
+    relative strength → ``rs``; fundamentals →
     ``revisions`` (``eps_revision``). Anything else keeps the toolkit's reason text."""
     out: list[dict[str, Any]] = []
     for s in steps:
@@ -271,7 +288,7 @@ def watch_on(steps: list[Step]) -> list[dict[str, Any]] | None:
         elif s.toolkit == "levels" and _field(c, "levels", "coil_pending"):
             item |= {"kind": "break", "trigger": _field(c, "levels", "trigger")}
         elif s.toolkit == "levels":
-            item |= {"kind": "reward_risk", "reward_risk": _field(c, "levels", "reward_risk")}
+            item |= {"kind": "compression", "compression": _field(c, "levels", "compression")}
         elif s.toolkit == "relative_strength":
             item |= {"kind": "rs", "rs": _field(c, "relative_strength", "rs")}
         elif s.toolkit == "fundamentals":
@@ -294,6 +311,91 @@ def rank_act(cards_by_ticker: Mapping[str, Cards]) -> dict[str, int]:
     return {t: i for i, (_, _, t) in enumerate(sorted(scored), 1)}
 
 
+@dataclass(frozen=True)
+class Screened:
+    """One ticker's screen outcome: the ``labels`` row the scan saves."""
+
+    label: str  # ACT = shortlisted; else the band label capped at WATCH; PASS = below the floor
+    reason: str
+    rank: int | None = None  # combined-score rank among the tickers past the floor (1 = best)
+    shortlist: str | None = None  # why it is shortlisted: "rank N" / "catalyst: <reason>"
+
+
+def cards_of(steps: list[Step]) -> Cards:
+    """Every card the ticker's steps produced, by model."""
+    return {model: card for s in steps for model, card in s.cards.items()}
+
+
+def floor(steps: list[Step], min_adv_gbp: float) -> str | None:
+    """Why the ticker fails the sanity floor (None: it passes): a screening toolkit errored, no
+    liquidity card, ``adv_gbp_20 < min_adv_gbp``, or no combined score at all."""
+    from solaraalpha.portfolio.fit import rank_score
+
+    if screen_label(steps)[0] == "ERROR":
+        return "a screening toolkit errored"
+    cards = cards_of(steps)
+    adv = _field(cards, "liquidity", "adv_gbp_20")
+    if adv is None:
+        return "no liquidity (adv_gbp_20)"
+    if adv < min_adv_gbp:
+        return f"adv_gbp_20 {adv:,.0f} < min_adv_gbp {min_adv_gbp:,.0f}"
+    if math.isnan(rank_score(cards)):
+        return "no combined score"
+    return None
+
+
+def screen(
+    steps: Mapping[str, list[Step]],
+    size: int | None = None,
+    catalysts: Mapping[str, str] | None = None,
+    catalyst_cap: int | None = None,
+    min_adv_gbp: float | None = None,
+) -> dict[str, Screened]:
+    """Rank the screened tickers into the shortlist (ADR 0022; ADR 0014, amendment #192).
+
+    Tickers past the :func:`floor` are ranked by ``rank_score`` (:func:`rank_act`); the top
+    ``size`` are shortlisted as ``rank N``. A ticker in ``catalysts`` (ticker -> one-line
+    reason) past the floor but outside the top ``size`` joins as ``catalyst: <reason>``,
+    best-ranked first, at most ``catalyst_cap`` of them; a top-N ticker with a catalyst carries
+    both reasons. Shortlisted -> ACT; past the floor but not shortlisted -> its band label
+    (:func:`screen_label`) capped at WATCH; below the floor -> PASS; ERROR stays ERROR.
+    ``None`` arguments default to ``config/portfolio.toml`` (``shortlist_size``,
+    ``shortlist_catalysts``, ``min_adv_gbp``)."""
+    if size is None or catalyst_cap is None or min_adv_gbp is None:
+        from solaraalpha.portfolio.rules import load_rules
+
+        rules = load_rules()
+        size = rules.shortlist_size if size is None else size
+        catalyst_cap = rules.shortlist_catalysts if catalyst_cap is None else catalyst_cap
+        min_adv_gbp = rules.min_adv_gbp if min_adv_gbp is None else min_adv_gbp
+    catalysts = catalysts or {}
+    bands = {t: screen_label(s) for t, s in steps.items()}
+    below = {t: floor(s, min_adv_gbp) for t, s in steps.items()}
+    ranks = rank_act({t: cards_of(s) for t, s in steps.items() if below[t] is None})
+    picks = {t: f"rank {r}" for t, r in ranks.items() if r <= size}
+    extra = 0
+    for t in sorted((t for t in catalysts if t in ranks), key=lambda t: ranks[t]):
+        why = f"catalyst: {catalysts[t]}"
+        if t in picks:
+            picks[t] += f"; {why}"
+        elif extra < catalyst_cap:
+            picks[t], extra = why, extra + 1
+    out: dict[str, Screened] = {}
+    for t in steps:
+        label, reason = bands[t]
+        note = f" (catalyst: {catalysts[t]})" if t in catalysts and t not in picks else ""
+        if label == "ERROR":
+            out[t] = Screened(label, reason + note)
+        elif below[t] is not None:
+            out[t] = Screened("PASS", f"floor: {below[t]}{note}; {reason}")
+        elif t in picks:
+            out[t] = Screened("ACT", f"shortlist {picks[t]}; {reason}", ranks[t], picks[t])
+        else:
+            capped = "WATCH" if label == "ACT" else label
+            out[t] = Screened(capped, f"rank {ranks[t]}, not shortlisted{note}; {reason}", ranks[t])
+    return out
+
+
 def run_toolkit(
     toolkit: str, x: Inputs, params: dict[str, Any] | None = None, stage: str = ""
 ) -> Step:
@@ -309,17 +411,37 @@ def run_toolkit(
     return step
 
 
-def run_pipeline(inputs: list[Inputs], stages: tuple[Stage, ...] = WEEKLY) -> dict[str, list[Step]]:
+def run_pipeline(
+    inputs: list[Inputs],
+    stages: tuple[Stage, ...] = WEEKLY,
+    catalysts: Mapping[str, str] | None = None,
+    **shortlist: Any,
+) -> dict[str, list[Step]]:
     """Run ``stages`` in order over every ticker; a stage runs on a ticker only while its running
-    label (the combination of every toolkit judged so far) is in the stage's ``runs_on``."""
+    label (the combination of every toolkit judged so far) is in the stage's ``runs_on`` or,
+    for an ``on_shortlist`` stage, while it is on :func:`screen`'s shortlist of the steps so
+    far (``catalysts`` and the ``size`` / ``catalyst_cap`` / ``min_adv_gbp`` keywords go to
+    :func:`screen`)."""
     steps: dict[str, list[Step]] = {x.ticker: [] for x in inputs}
     running: dict[str, str] = {x.ticker: "ACT" for x in inputs}  # nothing judged yet
     for stage in stages:
-        alive = [x for x in inputs if running[x.ticker] in stage.runs_on]
+        picked: set[str] = set()
+        if stage.on_shortlist:
+            got = screen(steps, catalysts=catalysts, **shortlist)
+            picked = {t for t, s in got.items() if s.shortlist}
+
+        def runs(t: str, stage: Stage = stage, picked: set[str] = picked) -> bool:
+            return t in picked if stage.on_shortlist else running[t] in stage.runs_on
+
+        alive = [x for x in inputs if runs(x.ticker)]
         log.info("stage %s: %d of %d tickers", stage.name, len(alive), len(inputs))
         for x in inputs:
-            if running[x.ticker] not in stage.runs_on:
-                why = f"running label {running[x.ticker]}"
+            if not runs(x.ticker):
+                why = (
+                    "not shortlisted"
+                    if stage.on_shortlist
+                    else f"running label {running[x.ticker]}"
+                )
                 steps[x.ticker] += [Step(stage.name, k, "skip", why) for k in stage.toolkits]
                 continue
             new = [run_toolkit(k, x, stage=stage.name) for k in stage.toolkits]

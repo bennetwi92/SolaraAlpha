@@ -112,8 +112,11 @@ def get(id: str) -> Toolkit:
 
 # Bands are fixed long-side screens from the story map §4 A1 (docs/decisions/0014): "a stage-2
 # uptrend with positive momentum, priced near support rather than stretched above it,
-# outperforming its peers, with earnings growing or being revised up, and at least 2:1 to the
-# next resistance (or nothing overhead)". Placeholders until backtested.
+# outperforming its peers, with earnings growing or being revised up". The 2:1-to-resistance
+# clause and the risk_pct cap are gone (ADR 0022: R:R is not an estimate we gate on, and
+# volatility is wanted). Placeholders until backtested. Since #192 (ADR 0022)
+# they are information, not the gate: the screen ranks every stock past a sanity floor into the
+# shortlist (pipeline.screen), and a band label only shows what each toolkit sees.
 
 
 @toolkit(
@@ -132,13 +135,13 @@ def _technical(
 
 
 @toolkit(
-    "levels",
-    act=("structure > 0", "reward_risk >= 2"),  # inf (blue sky) counts
-    watch=("reward_risk >= 1.5 or coil_pending == true",),
+    "levels",  # context, not a gate (0022): reward_risk is on the card but in no clause
+    act=("compressed == true or new_high == true",),  # blue sky is a new high too
+    watch=("new_low == false",),  # PASS only on a close below the 5-year low
 )
 def _levels(x: Inputs, side: int = 1) -> Cards:
-    """Support / resistance, trendlines, 52w and 5y highs, coil; stop, target, reward:risk
-    (from the breakout trigger when coiled)."""
+    """Compression, wedge, breakout and highs as context; support / resistance, trendlines,
+    coil; stop, target, reward:risk (information) for the plan."""
     return {"levels": levels_card(x.weekly, side)}
 
 

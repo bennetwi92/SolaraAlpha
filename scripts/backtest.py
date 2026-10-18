@@ -7,7 +7,7 @@ computed from the bars up to that week (fundamentals via known() lags; benchmark
 same way), labelled with the current bands; then forward 4 / 8 / 16-week returns (excess vs the
 market index) and a sweep changing one ACT threshold at a time. Writes a markdown report with
 the survivorship caveat and a *suggested* band table to data/processed/backtest/report.md (or
---out); the bands in code are not changed. --step N replays every Nth week when 50 stocks x 5
+--out); the bands in code are not changed. --step N replays every Nth week when 100 stocks x 5
 years is too slow. Caches nothing but the report. See ADR 0014, issue #138.
 """
 

@@ -114,6 +114,9 @@ def test_forward_and_sweep_find_a_known_edge() -> None:
             "levels.structure": 0.5,
             "levels.reward_risk": 2.5,
             "levels.coil_pending": False,
+            "levels.compressed": True,
+            "levels.new_high": False,
+            "levels.new_low": False,
             "relative_strength.rs": 0.2,
             "relative_strength.rs_high": True,
             "relative_strength.peer_top_half": True,
@@ -163,7 +166,6 @@ def test_forward_and_sweep_find_a_known_edge() -> None:
     )
     assert set(GRID) == {
         ("technical", "trend"),
-        ("levels", "reward_risk"),
         ("relative_strength", "rs"),
     }
     text = report(replayed.assign(label="ACT", label_technical="ACT"), sw, ["S.L"], 5)

@@ -79,11 +79,13 @@ EMPTY = holdings()
 def test_rank_score_ignores_nan_and_missing() -> None:
     cards = {
         "technical": {"trend": 0.5},
-        "levels": {"setup": math.nan},
-        "relative_strength": {"rs": 0.1},
+        "levels": {"compression": math.nan},
+        "fundamentals": {"growth": 0.1},
+        "relative_strength": {"rs": 0.9},  # context, not in the score
     }
     assert rank_score(cards) == 0.3
     assert math.isnan(rank_score({}))
+    assert math.isnan(rank_score({"levels": {"setup": 1.0}}))  # an old card without the field
 
 
 def test_slot_exhaustion_rejects_the_lowest_ranked() -> None:

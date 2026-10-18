@@ -286,17 +286,19 @@ def render_pack(pack: Pack) -> str:
     lines += [f"- {c.ticker}: {c.reasons.get(c.stage, '')}" for c in pack.watch] or ["none"]
     lines.append("")
 
-    ranked = [c for c in pack.plan.candidates if c.label == "ACT"]
-    if ranked:
-        lines += [
-            "## ACT by rank",
-            "",
-            *(
-                f"{i}. {c.ticker}" + (f" (screen rank {c.rank})" if c.rank else "")
-                for i, c in enumerate(ranked, 1)
-            ),
-            "",
-        ]
+    cands = pack.plan.candidates
+    # The screen's shortlist (#192), best rank first; runs before it: the ACT tickers.
+    short = sorted(
+        [c for c in cands if c.shortlist] or [c for c in cands if c.label == "ACT"],
+        key=lambda c: (c.rank is None, c.rank or 0, c.ticker),
+    )
+    lines += ["## Shortlist", ""]
+    lines += [
+        f"{i}. {c.ticker}: {c.shortlist or (f'screen rank {c.rank}' if c.rank else 'screen ACT')}"
+        f" → **{c.label}** ({c.stage})"
+        for i, c in enumerate(short, 1)
+    ] or ["none"]
+    lines.append("")
 
     lines += ["## Open positions", ""]
     if pack.open_positions:
@@ -385,6 +387,7 @@ def pack_dict(pack: Pack) -> dict[str, Any]:
         "new": [p["ticker"] for p in pack.new_positions],
         "rejected": [(p.ticker, why) for p, why in pack.plan.report.rejected],
         "watch": [c.ticker for c in pack.watch],
+        "shortlist": {c.ticker: c.shortlist for c in pack.plan.candidates if c.shortlist},
         "errors": [c.ticker for c in pack.errors],
         "equity": asdict(pack.plan.equity) if pack.plan.equity else None,
         "heat": pack.heat,

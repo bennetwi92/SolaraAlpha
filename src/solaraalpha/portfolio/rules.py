@@ -44,6 +44,9 @@ class Rules:
     circuit_breaker: bool  # stop new entries in a drawdown (#143); off until the owner confirms
     max_drawdown_new_entries: float  # equity this far below its high stops new entries
     benchmark: str  # Yahoo ticker the equity curve is compared with
+    shortlist_size: int  # top-ranked tickers the screen sends to the agents (#192)
+    shortlist_catalysts: int  # at most this many more join the shortlist on a catalyst
+    min_adv_gbp: float  # the screen's liquidity floor: median daily traded value, GBP
 
     @property
     def warning(self) -> str | None:
@@ -79,6 +82,9 @@ _TYPES = {
     "circuit_breaker": bool,
     "max_drawdown_new_entries": float,
     "benchmark": str,
+    "shortlist_size": int,
+    "shortlist_catalysts": int,
+    "min_adv_gbp": float,
 }
 EVENT_POLICIES = ("flag", "hold", "trim", "exit")
 _FRACTIONS = ("max_position_pct", "max_sector_pct", "max_heat", "max_adv_pct", "cash_buffer")
@@ -145,6 +151,12 @@ def _validate(r: Rules) -> None:
     for name in ("entry_validity_days", "event_flag_days", "max_agent_tickers"):
         if getattr(r, name) < 1:
             raise ValueError(f"{name}: must be >= 1, got {getattr(r, name)}")
+    if r.shortlist_size < 1:
+        raise ValueError(f"shortlist_size: must be >= 1, got {r.shortlist_size}")
+    if r.shortlist_catalysts < 0:
+        raise ValueError(f"shortlist_catalysts: must be >= 0, got {r.shortlist_catalysts}")
+    if r.min_adv_gbp < 0:
+        raise ValueError(f"min_adv_gbp: must be >= 0, got {r.min_adv_gbp}")
     if r.entry_limit_buffer < 0:
         raise ValueError(f"entry_limit_buffer: must be >= 0, got {r.entry_limit_buffer}")
     if r.trail_atr <= 0:

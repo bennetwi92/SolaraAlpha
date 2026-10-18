@@ -335,8 +335,9 @@ def error_verdict(ticker: str, run_id: int, stage: str, reason: str) -> Verdict:
 
 def queue(conn: Conn, run_id: int, stage: str, cap: int) -> list[str]:
     """What the unattended agents should work in ``run_id`` for ``stage``, best first, at most
-    ``cap`` items: ``validate`` → the screen-ACT tickers; ``research`` → tickers whose final
-    label is ACT; ``monitor`` → position ids with an agent trigger in that daily run;
+    ``cap`` items: ``validate`` → the screen-ACT tickers (the week's shortlist, #192);
+    ``research`` → tickers whose final label is ACT (once the validator has worked the run,
+    only those it kept: one it never reached is not researched); ``monitor`` → position ids with an agent trigger in that daily run;
     ``postmortem`` → position ids closed since the daily run before ``run_id`` (ever, when
     there is none) with no post-mortem card yet. Tickers are ordered by ``rank_score`` over
     the run's cards (ties by ticker); those already recorded for the stage are left out."""
@@ -374,7 +375,11 @@ def queue(conn: Conn, run_id: int, stage: str, cap: int) -> list[str]:
         tickers = [str(t) for t in df["ticker"]]
         ranks = {str(t): r for t, r in zip(df["ticker"], df["rank"], strict=True) if pd.notna(r)}
     elif stage == "research":
-        cands = [c for c in final_labels(conn, run_id) if c.label == "ACT"]
+        labels = final_labels(conn, run_id)
+        # once the validator has worked the run, a shortlisted ticker it never reached (past
+        # the cap) is not researched on the screen's ACT alone (#192), as plan_run does
+        reviewed = any(c.stage != "screen" for c in labels)
+        cands = [c for c in labels if c.label == "ACT" and not (reviewed and c.stage == "screen")]
         tickers = [c.ticker for c in cands]
         ranks = {c.ticker: c.rank for c in cands if c.rank is not None}
     else:

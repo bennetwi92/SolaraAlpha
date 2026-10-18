@@ -6,8 +6,11 @@ uv run python scripts/scan.py JET2.L --toolkit technical [--param entry_date=202
 uv run python scripts/scan.py --list                   # stages, toolkits and their bands
 
 Every toolkit labels its stock ACT / WATCH / PASS (ERROR if it raised) from its act / watch
-bands, and the stock's screen label combines technical, levels, relative strength and
-fundamentals (ERROR > PASS > WATCH > ACT); see solaraalpha.pipeline and docs/decisions/0014.
+bands (information). The screen then ranks every stock past a sanity floor (no ERROR, liquidity
+>= min_adv_gbp) by the combined score and shortlists the top shortlist_size (config/
+portfolio.toml), plus up to shortlist_catalysts more with a catalyst: shortlisted stocks get the
+screen label ACT and go to the agents, the rest keep their band label capped at WATCH, floor
+failures PASS. See solaraalpha.pipeline, docs/decisions/0014 (amendment #192) and 0022.
 After the pipeline, every **open position** in the book is reviewed (portfolio.review): all
 toolkits re-run with the position's entry, the stop ratcheted (a raised stop is drafted as an
 approved order with --save), deterioration since entry and the horizon rule judged into a
@@ -27,14 +30,19 @@ from typing import Any
 
 import pandas as pd
 
+from solaraalpha.catalysts import fresh_catalysts
 from solaraalpha.pipeline import (
+    ALL_LABELS,
+    NOT_ERROR,
     SCREEN_TOOLKITS,
     WEEKLY,
+    Screened,
     Step,
+    cards_of,
     rank_act,
     run_pipeline,
     run_toolkit,
-    screen_label,
+    screen,
     stale_watchlist,
     watch_on,
     watchlist,
@@ -58,36 +66,26 @@ def _value(raw: str) -> Any:
     return raw
 
 
-def _cards(steps: list[Step]) -> dict[str, Any]:
-    return {model: card for s in steps for model, card in s.cards.items()}
-
-
-def _save(
-    run_id: int,
-    x: Inputs,
-    steps: list[Step],
-    label: tuple[str, str] | None,
-    rank: int | None = None,
-) -> None:
-    cards = _cards(steps)
+def _save(run_id: int, x: Inputs, steps: list[Step], got: Screened | None) -> None:
     rows = [(s.stage, s.toolkit, s.status, s.reason) for s in steps]
     daily, fund = x.fetched("daily"), x.fetched("fund")
-    save_ticker(run_id, x.ticker, cards, daily, fund, steps=rows, others=x.others)
-    if label is not None:
+    save_ticker(run_id, x.ticker, cards_of(steps), daily, fund, steps=rows, others=x.others)
+    if got is not None:
         save_label(
             run_id,
             x.ticker,
             "screen",
-            label[0],
-            label[1],
-            watch_on=watch_on(steps) if label[0] == "WATCH" else None,
-            rank=rank if label[0] == "ACT" else None,
+            got.label,
+            got.reason,
+            watch_on=watch_on(steps) if got.label == "WATCH" else None,
+            rank=got.rank,
+            shortlist=got.shortlist,
         )
 
 
 def _report(
     results: dict[str, list[Step]],
-    labels: dict[str, tuple[str, str]],
+    labels: dict[str, Screened],
     reviewed: list[Reviewed] | None = None,
 ) -> str:
     cols = [s.toolkit for s in next(iter(results.values()))]
@@ -98,16 +96,16 @@ def _report(
     lines += ["| ticker | " + " | ".join(cols) + " | label |", "|---" * (len(cols) + 2) + "|"]
     for ticker, steps in results.items():
         marks = " | ".join(MARK[s.status] for s in steps)
-        lines.append(f"| {ticker} | {marks} | **{labels[ticker][0]}** |")
-    by = {
-        lab: [t for t, (got, _) in labels.items() if got == lab]
-        for lab in ("ACT", "WATCH", "ERROR")
-    }
-    ranks = rank_act({t: _cards(results[t]) for t in by["ACT"]})
-    act = [t for t, _ in sorted(ranks.items(), key=lambda kv: kv[1])]
-    lines += ["", f"**ACT (ranked):** {', '.join(act) or 'none'}", ""]
-    lines += ["**WATCH (why):**"]
-    lines += [f"- {t}: {labels[t][1]}" for t in by["WATCH"]] or ["- none"]
+        lines.append(f"| {ticker} | {marks} | **{labels[ticker].label}** |")
+    picks = sorted(
+        (t for t, got in labels.items() if got.label == "ACT"),
+        key=lambda t: (labels[t].rank is None, labels[t].rank or 0, t),
+    )
+    lines += ["", f"**Shortlist ({len(picks)}, to the agents):**"]
+    lines += [f"- {t}: {labels[t].shortlist or 'ACT'}" for t in picks] or ["- none"]
+    lines += ["", "**WATCH (why):**"]
+    watch = [f"- {t}: {got.reason}" for t, got in labels.items() if got.label == "WATCH"]
+    lines += watch or ["- none"]
     lines += ["", "**ERROR:**"]
     errors = [
         f"- {t} `{s.toolkit}`: {s.reason}"
@@ -128,10 +126,23 @@ def _report(
 def _list() -> None:
     print("Weekly pipeline (a stage runs on tickers whose running label is in runs_on):")
     for i, st in enumerate(WEEKLY, 1):
-        on = "all" if len(st.runs_on) == 4 else "/".join(sorted(st.runs_on, reverse=True))
+        if st.on_shortlist:
+            on = "the shortlist"
+        elif st.runs_on == ALL_LABELS:
+            on = "all"
+        elif st.runs_on == NOT_ERROR:
+            on = "all but ERROR"
+        else:
+            on = "/".join(sorted(st.runs_on, reverse=True))
         print(f"  {i}. {st.name:<14} {' + '.join(st.toolkits):<42} runs on {on}")
-    print(f"\nScreen label = combine({', '.join(SCREEN_TOOLKITS)}); ERROR > PASS > WATCH > ACT.")
-    print("\nToolkits (bands are placeholders, docs/decisions/0014):")
+    rules = load_rules()
+    print(
+        f"\nShortlist: past the floor (no ERROR, adv_gbp_20 >= {rules.min_adv_gbp:,.0f}), ranked by"
+        f" rank_score; top {rules.shortlist_size} + up to {rules.shortlist_catalysts} on a"
+        " catalyst -> screen ACT (to the agents); the rest keep their band label, capped at WATCH."
+    )
+    print(f"Band label = combine({', '.join(SCREEN_TOOLKITS)}); ERROR > PASS > WATCH > ACT.")
+    print("\nToolkits (bands are information and placeholders, docs/decisions/0014):")
     for t in REGISTRY.values():
         print(f"  {t.id:<18} {t.doc}")
         print(f"  {'':<18} act:   {' | '.join(t.act) or '(always, once run)'}")
@@ -157,22 +168,24 @@ def main(argv: list[str] | None = None) -> None:
 
     inputs = [Inputs(t) for t in args.tickers or watchlist()]
     run_id = start_run("scan", vars(args)) if args.save else None
+    catalysts: dict[str, str] | None = None  # ticker -> one-line reason (#193)
     if args.toolkit:
         params = {k: _value(v) for k, v in (kv.split("=", 1) for kv in args.param)}
         results = {x.ticker: [run_toolkit(args.toolkit, x, params)] for x in inputs}
-        labels = {t: (steps[0].label, steps[0].reason) for t, steps in results.items()}
+        ranks = rank_act({t: cards_of(s) for t, s in results.items() if s[0].label == "ACT"})
+        labels = {t: Screened(s[0].label, s[0].reason, ranks.get(t)) for t, s in results.items()}
     else:
-        results = run_pipeline(inputs)
-        labels = {t: screen_label(steps) for t, steps in results.items()}
+        catalysts = fresh_catalysts([x.ticker for x in inputs])
+        results = run_pipeline(inputs, catalysts=catalysts)
+        labels = screen(results, catalysts=catalysts)
 
-    ranks = rank_act({t: _cards(results[t]) for t, lab in labels.items() if lab[0] == "ACT"})
     for x in inputs:
-        steps = results[x.ticker]
+        steps, got = results[x.ticker], labels[x.ticker]
         marks = "  ".join(f"{s.toolkit}:{MARK[s.status]}" for s in steps)
-        rk = f" #{ranks[x.ticker]}" if x.ticker in ranks else ""
-        print(f"{x.ticker:<10} {labels[x.ticker][0] + rk:<6} {marks}")
+        rk = f" #{got.rank}" if got.rank is not None else ""
+        print(f"{x.ticker:<10} {got.label + rk:<6} {marks}")
         if run_id is not None:
-            _save(run_id, x, steps, None if args.toolkit else labels[x.ticker], ranks.get(x.ticker))
+            _save(run_id, x, steps, None if args.toolkit else got)
     reviewed: list[Reviewed] | None = None
     if not args.toolkit:
         conn = book.connect()
@@ -193,9 +206,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.report:
         with args.report.open("a") as f:
             f.write(report + "\n")
-    errored = any(s.status == "error" for steps in results.values() for s in steps)
-    errored |= any(s.status == "error" for it in reviewed or [] for s in it.steps)
-    if errored:
+    # Fail only when every ticker errored (as the agents do, ADR 0019): a per-ticker ERROR is
+    # saved, reported and notified, and failing the run on it would skip the agents (#189).
+    failed = [t for t, steps in results.items() if any(s.status == "error" for s in steps)]
+    if results and len(failed) == len(results):
         sys.exit(1)
 
 

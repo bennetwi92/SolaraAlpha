@@ -203,7 +203,7 @@ def test_weekly_message_keeps_the_headline_sections(
         "## Stale orders",
     ):
         assert section in text, section
-    for dropped in ("## Rejected by fit", "## Watch list", "## ACT by rank"):
+    for dropped in ("## Rejected by fit", "## Watch list", "## Shortlist"):
         assert dropped not in text, dropped
     assert text.rstrip().endswith(
         "Full pack and pipeline report: https://github.com/o/r/actions/runs/5"

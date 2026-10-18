@@ -20,10 +20,11 @@ from solaraalpha.portfolio.plan import TradePlan
 from solaraalpha.portfolio.risk import Equity, sector_of
 from solaraalpha.portfolio.rules import Rules
 
+# ADR 0022: reward:risk (levels setup) is not an estimate we rank on and relative strength is
+# context for the agents (docs/research/0001), so the score is trend, compression and growth.
 RANK_FIELDS = (
     ("technical", "trend"),
-    ("levels", "setup"),
-    ("relative_strength", "rs"),
+    ("levels", "compression"),
     ("fundamentals", "growth"),
 )
 CORRELATION_WEEKS = 26
@@ -41,14 +42,14 @@ class FitReport:
 
 
 def rank_score(cards: Mapping[str, Any]) -> float:
-    """Placeholder rank: mean of technical ``trend``, levels ``setup``, relative_strength ``rs``
-    and fundamentals ``growth`` over the cards present, ignoring NaN (NaN if none)."""
+    """Placeholder rank: mean of technical ``trend``, levels ``compression`` and fundamentals
+    ``growth`` over the cards present, ignoring NaN (NaN if none)."""
     vals = []
     for model, field in RANK_FIELDS:
         card = cards.get(model)
         if card is None:
             continue
-        v = card[field] if isinstance(card, Mapping) else getattr(card, field, None)
+        v = card.get(field) if isinstance(card, Mapping) else getattr(card, field, None)
         if v is not None and not (isinstance(v, float) and math.isnan(v)):
             vals.append(float(v))
     return sum(vals) / len(vals) if vals else math.nan
