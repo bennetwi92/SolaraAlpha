@@ -2,6 +2,7 @@
 # macro (one shared note per sector group, #140) -> research -> plan.py -> weekly_pack.py) and after the daily check (monitor, postmortem of
 # positions closed since the previous daily run), or by hand.
 #
+# Skipped when the triggering workflow did not succeed (a crashed scan leaves a partial run).
 # INERT UNTIL THE OWNER ADDS A CLAUDE SECRET: the gate job skips everything unless
 # CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY is set, and SOLARA_TURSO_URL / SOLARA_TURSO_TOKEN
 # are set (the agents read the run from the hosted DB and write back to it). No spend happens
@@ -58,7 +59,10 @@ jobs:
           SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
           SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
         run: |
-          if { [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -z "$ANTHROPIC_API_KEY" ]; } || [ -z "$SOLARA_TURSO_URL" ] || [ -z "$SOLARA_TURSO_TOKEN" ]; then
+          if [ "${{ github.event_name }}" = "workflow_run" ] && [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
+            echo "agents skipped: ${{ github.event.workflow_run.name }} did not succeed (${{ github.event.workflow_run.conclusion }})" >> "$GITHUB_STEP_SUMMARY"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          elif { [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -z "$ANTHROPIC_API_KEY" ]; } || [ -z "$SOLARA_TURSO_URL" ] || [ -z "$SOLARA_TURSO_TOKEN" ]; then
             echo "agents skipped: secrets not configured (need CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY, and SOLARA_TURSO_URL / SOLARA_TURSO_TOKEN)" >> "$GITHUB_STEP_SUMMARY"
             echo "go=false" >> "$GITHUB_OUTPUT"
           else
