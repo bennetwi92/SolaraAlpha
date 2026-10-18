@@ -52,21 +52,19 @@ def test_scan_labels_report_and_save(
     stubs: None, fake_turso: FakeTurso, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     report, run_file = tmp_path / "report.md", tmp_path / "run_id"
-    with pytest.raises(SystemExit) as e:
-        scan.main(
-            [
-                "UP.L",
-                "MID.L",
-                "DOWN.L",
-                "ERR.L",
-                "--save",
-                "--report",
-                str(report),
-                "--run-id-file",
-                str(run_file),
-            ]
-        )
-    assert e.value.code == 1  # events errored for ERR.L
+    scan.main(
+        [
+            "UP.L",
+            "MID.L",
+            "DOWN.L",
+            "ERR.L",
+            "--save",
+            "--report",
+            str(report),
+            "--run-id-file",
+            str(run_file),
+        ]
+    )  # ERR.L errored (events): reported, not fatal
     out = capsys.readouterr().out
     assert "UP.L       ACT " in out and "MID.L      WATCH" in out and "DOWN.L     PASS" in out
     assert "saved run 1" in out and run_file.read_text() == "1\n"
@@ -101,6 +99,12 @@ def test_scan_one_toolkit_prints_label(stubs: None, capsys: pytest.CaptureFixtur
     scan.main(["MID.L", "--toolkit", "technical"])
     out = capsys.readouterr().out
     assert "MID.L      WATCH  technical:WATCH" in out
+
+
+def test_scan_fails_only_when_every_ticker_errored(stubs: None, fake_turso: FakeTurso) -> None:
+    with pytest.raises(SystemExit) as e:
+        scan.main(["ERR.L"])
+    assert e.value.code == 1
 
 
 def test_scan_list_shows_bands(capsys: pytest.CaptureFixture[str]) -> None:

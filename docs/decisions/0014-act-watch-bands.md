@@ -160,4 +160,6 @@ estimate we rank on (0022), and `rs` is out because relative strength is context
 (docs/research/0001). The shortlist is **7 ranked + up to 3 on a catalyst** (`shortlist_size =
 7`, `shortlist_catalysts = 3`), so the 10 names fit `max_agent_tickers = 10` and catalyst picks
 are never trimmed. A liquidity ERROR (e.g. a EUR-priced stock, FX not supported yet) now makes
-the screen label ERROR instead of being dropped silently.
+the screen label ERROR instead of being dropped silently. `scan.py` exits 1 only when every ticker errored
+(as the agents do, ADR 0019); a per-ticker ERROR is saved, reported and notified, so one stock
+cannot fail the weekly run and skip the agents (#189).

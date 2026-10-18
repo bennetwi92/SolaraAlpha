@@ -206,9 +206,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.report:
         with args.report.open("a") as f:
             f.write(report + "\n")
-    errored = any(s.status == "error" for steps in results.values() for s in steps)
-    errored |= any(s.status == "error" for it in reviewed or [] for s in it.steps)
-    if errored:
+    # Fail only when every ticker errored (as the agents do, ADR 0019): a per-ticker ERROR is
+    # saved, reported and notified, and failing the run on it would skip the agents (#189).
+    failed = [t for t, steps in results.items() if any(s.status == "error" for s in steps)]
+    if results and len(failed) == len(results):
         sys.exit(1)
 
 
