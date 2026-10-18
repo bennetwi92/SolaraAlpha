@@ -17,7 +17,10 @@ have been chosen yet beyond what's listed below — **never assume any**. Ask wh
 depends on that choice.
 
 Current state:
-- **Strategy: long trades seeking bursty profits over ~2-16 weeks** (held longer while the stock
+- **What we are looking for is defined in docs/decisions/0022** (the owner's paragraph: catalyst-led
+  AIM trading, volatility wanted, screen = ranked wide net to the agents). Check toolkits, bands
+  and agent prompts against it.
+- **Strategy: long trades seeking bursty profits (+15–30%) over ~1-10 weeks** (held longer while the stock
   keeps climbing). Models are judged by usefulness over that horizon.
 - **Trading frequency is weekly** unless the owner says otherwise. Weekly bars end Friday
   (`to_weekly`), and only completed weeks are used.
