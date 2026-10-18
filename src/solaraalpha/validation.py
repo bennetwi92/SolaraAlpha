@@ -21,6 +21,7 @@ from solaraalpha import store
 from solaraalpha.analysis.charts import weekly_chart
 from solaraalpha.analysis.events import material
 from solaraalpha.analysis.fundamentals import known
+from solaraalpha.analysis.levels import describe
 from solaraalpha.analysis.technical import FAST_MA, SLOW_MA, sma
 from solaraalpha.config import settings
 from solaraalpha.data.announcements import fetch_announcements, resolve_issuer
@@ -70,11 +71,41 @@ def build_pack(conn: Conn, ticker: str, run_id: int) -> dict[str, Any]:
         "cards": cards,
         "steps": _records(steps),
         "screen_label": _records(label)[0] if not label.empty else None,
+        "chart_context": chart_context(cards.get("levels")),
         "prices": prices_section(conn, ticker, started),
         "fundamentals": fundamentals_section(conn, ticker, started, str(date)[:10]),
         "filings": filings_section(ticker, started),
     }
     return pack
+
+
+CONTEXT_FIELDS = (
+    "compressed",
+    "compression",
+    "range_pctile",
+    "volume_ratio",
+    "wedge",
+    "wedge_apex_weeks",
+    "wedge_width_atr",
+    "coil_pending",
+    "trigger",
+    "breakout",
+    "new_high",
+    "blue_sky",
+    "from_high_52w",
+    "reward_risk",
+)
+
+
+def chart_context(levels: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """The levels card's compression / wedge / breakout / highs fields and their one-line
+    ``summary``: context for the agents, not a gate (ADR 0022). ``reward_risk`` is to the next
+    level only, not an estimate of the move. None without a levels card; fields an older card
+    lacks are left out."""
+    if not levels:
+        return None
+    out = {k: levels[k] for k in CONTEXT_FIELDS if k in levels}
+    return out | {"summary": describe(**levels)}
 
 
 def weekly_frame(conn: Conn, ticker: str, as_seen: str) -> pd.DataFrame:

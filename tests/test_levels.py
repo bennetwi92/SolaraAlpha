@@ -5,7 +5,16 @@ import pandas as pd
 import pytest
 
 from solaraalpha.analysis import levels
-from solaraalpha.analysis.levels import coil, level_map, levels_card, pivots, trendline, zones
+from solaraalpha.analysis.levels import (
+    coil,
+    compression,
+    describe,
+    level_map,
+    levels_card,
+    pivots,
+    trendline,
+    zones,
+)
 
 
 def _weekly(close: np.ndarray, start: str = "2020-01-03") -> pd.DataFrame:
@@ -86,6 +95,7 @@ def test_blue_sky_breakout_long_vs_short() -> None:
     df = _weekly(close)
     long = levels_card(df)
     assert long.blue_sky and long.close > long.high_5y
+    assert long.new_high and long.from_high_52w > 0 and "blue sky" in long.context
     assert np.isnan(long.target) and long.reward_risk == np.inf and long.setup == 1
     short = levels_card(df, side=-1)
     assert short.stop > short.close > short.target
@@ -101,7 +111,7 @@ def test_breakout_flag() -> None:
     assert card.breakout == -1 and card.new_low
 
 
-def _triangle(top: float = 109.5, floor: float = 100.0) -> pd.DataFrame:
+def _triangle(top: float = 109.5, floor: float = 100.0, volume: float = 1e6) -> pd.DataFrame:
     """A trading range 90-110 that ends squeezing into an ascending triangle under ``top``."""
     df = _weekly(_range(n=72))
     tail = pd.DataFrame(
@@ -111,7 +121,7 @@ def _triangle(top: float = 109.5, floor: float = 100.0) -> pd.DataFrame:
             "low": [floor, floor + 2, floor + 3.5, floor + 5],
             "close": [106.0, 107.0, 108.0, 108.5],
             "adj_close": [106.0, 107.0, 108.0, 108.5],
-            "volume": 1e6,
+            "volume": volume,
         },
         index=pd.date_range(df.index[-1] + pd.Timedelta(weeks=1), periods=4, freq="W-FRI"),
     )
@@ -173,3 +183,56 @@ def test_errors() -> None:
         levels_card(_weekly(_range(n=10)))
     with pytest.raises(ValueError):
         levels_card(_weekly(_range()), side=0)
+
+
+def test_compression_is_against_the_stocks_own_year() -> None:
+    quiet = compression(_triangle(volume=5e5))  # the year's tightest weeks, on half the volume
+    assert quiet.range_pctile == 0 and quiet.volume_ratio == pytest.approx(0.5)
+    assert quiet.compressed and quiet.score == pytest.approx(1.0)
+    busy = compression(_triangle())  # as tight, but volume as usual: not drying up
+    assert busy.range_pctile == 0 and busy.volume_ratio == pytest.approx(1.0)
+    assert not busy.compressed and busy.score == pytest.approx(0.5)
+    wide = compression(_weekly(_range(n=76)))  # mid-swing in a wide range
+    assert wide.range_pctile > levels.COMPRESS_PCTILE and not wide.compressed
+    short = compression(_weekly(_range(n=20)))  # under half a year to compare with
+    assert np.isnan(short.range_pctile) and np.isnan(short.volume_ratio) and not short.compressed
+    # point-in-time: what comes after a week doesn't change that week's reading
+    df = _triangle(volume=5e5)
+    after = _weekly(np.full(6, 150.0), start=str((df.index[-1] + pd.Timedelta(weeks=1)).date()))
+    assert compression(pd.concat([df, after]).iloc[: len(df)]) == quiet
+    card = levels_card(df)
+    assert card.compressed and card.compression == quiet.score
+    assert card.context.startswith("compressed (0% of the past year's 4-week ranges")
+    assert "forming: no breakout yet" in card.context
+
+
+def test_wedge_from_converging_trendlines() -> None:
+    t = np.arange(90)
+    amp = np.linspace(0.3, 0.04, 90)  # swings shrink: lower highs, higher lows
+    card = levels_card(_weekly(100 * (1 + amp * np.sin(2 * np.pi * t / 10))))
+    assert card.upper_slope < 0 < card.lower_slope
+    assert card.wedge and 0 < card.wedge_apex_weeks <= levels.WEDGE_APEX_WEEKS
+    assert card.wedge_width_atr > 0 and "wedge: trendlines converging" in card.context
+    t = np.arange(120)  # a parallel rising channel is not a wedge
+    channel = 100 * np.exp(0.01 * t) * (1 + 0.05 * np.sin(2 * np.pi * t / 12))
+    assert not levels_card(_weekly(channel)).wedge
+
+
+def test_describe_reads_stored_cards() -> None:
+    # cards come back from the DB with booleans as 1.0 / 0.0; older cards lack the new fields
+    old = {"breakout": 1, "blue_sky": 0.0, "coil_pending": 1.0, "trigger": 1520.0}
+    assert describe(**old) == (
+        "broke out above last week's resistance; breakout trigger 1520.00 not yet hit"
+    )
+    assert (
+        describe(compressed=0.0, volume_ratio=1.5)
+        == "not compressed (volume 1.50x the year's median)"
+    )
+    new = {"compressed": 1.0, "range_pctile": 0.08, "volume_ratio": 0.62, "wedge": 1.0}
+    text = describe(**new, wedge_apex_weeks=11.8, new_high=0.0, from_high_52w=-0.12)
+    assert text == (
+        "compressed (8% of the past year's 4-week ranges were tighter, volume 0.62x the year's"
+        " median); wedge: trendlines converging, apex in ~12 weeks; forming: no breakout yet;"
+        " 12% below the 52-week high"
+    )
+    assert describe() == ""

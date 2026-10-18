@@ -171,6 +171,7 @@ def test_pack_keys_independence_and_as_seen(
         {"stage": "screen", "toolkit": "technical", "status": "act", "reason": "trend=0.50"}
     ]
     assert pack["screen_label"]["label"] == "ACT"
+    assert pack["chart_context"] is None  # no levels card in this run
     # prices limited to what was seen by the run start
     prices = pack["prices"]
     assert prices["span"]["fetched_to"] == "2026-10-09" and prices["currency"] == "GBp"
@@ -196,6 +197,18 @@ def test_pack_keys_independence_and_as_seen(
     assert [f["id"] for f in pack["filings"]["items"]] == [
         "NI-1"
     ]  # NI-2 routine, NI-3 after the run
+
+
+def test_chart_context_from_the_levels_card() -> None:
+    card = {"compressed": 1.0, "range_pctile": 0.08, "volume_ratio": 0.62, "wedge": 1.0}
+    card |= {"wedge_apex_weeks": 11.8, "reward_risk": 1.03, "support": 1393.0}
+    ctx = validation.chart_context(card)
+    assert ctx is not None and "support" not in ctx and ctx["reward_risk"] == 1.03
+    assert ctx["summary"].startswith("compressed (8% of the past year's 4-week ranges")
+    old = validation.chart_context({"breakout": 1, "reward_risk": 2.5})  # a card before #194
+    assert old is not None and old["summary"].startswith("broke out")
+    assert old == {"breakout": 1, "reward_risk": 2.5, "summary": old["summary"]}
+    assert validation.chart_context(None) is None
 
 
 def test_all_and_unavailable_filings(

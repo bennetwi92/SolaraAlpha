@@ -53,3 +53,35 @@ from a truncated series.
 - Parameters are textbook-ish defaults, not fitted; backtest before relying on them.
 - Round numbers, volume-at-price and moving-average levels aren't included (the 10w/40w MAs are
   in the technical model).
+
+## Amendment (#194, 2026-10-18): compression and breakout as context, not a gate
+
+ADR 0022: the chart is context. A 5-year replay (every 8th week, 50 stocks) showed the coil test
+(4-week span ≤ 1.5 ATR) in 36% of weeks, too often to mean compression, and `reward_risk >= 2`
+in 5% of weeks (median uptrend R:R 0.34): the next resistance is not where a +15-30% move
+stops. The card gains context fields, measured against the stock's **own past year** so they
+stay generic and need no per-stock tuning:
+
+| Field | Rule |
+|---|---|
+| `range_pctile` | log high/low range of the last 4 weeks; share of the prior 52 weeks' 4-week ranges that were tighter (0 = tightest of the year); NaN under 26 weeks to compare |
+| `volume_ratio` | mean volume per session of the last 4 weeks / median of the 52 weeks before them (< 1 = drying up) |
+| `compression` | [-1, +1], + = compressed: mean of `1 - 2 range_pctile` and `-log2(volume_ratio)` clipped (half the usual volume = +1) |
+| `compressed` | `range_pctile` ≤ 0.2 and `volume_ratio` ≤ 0.8 (`COMPRESS_PCTILE`, `VOLUME_DRY`) |
+| `wedge` | both trendlines intact and converging, meeting within 26 weeks (`WEDGE_APEX_WEEKS`); `wedge_apex_weeks`, `wedge_width_atr` |
+| `new_high`, `from_high_52w` | close above the prior 52-week high; close / that high - 1 |
+| `context` | the above (plus breakout, blue sky, a pending trigger) in one line for the agents |
+
+All use only the frame given (point-in-time). In the same replay `compressed` fired in 6.9% of
+stock-weeks, `wedge` 14.4%, `new_high` 2.6%, `new_low` 1.2%.
+
+**Bands** (`toolkits.py`): no clause uses `reward_risk` (it stays on the card, with `setup`,
+as information). `act: compressed == true or new_high == true`; `watch: new_low == false`, so
+PASS only on a close below the 5-year low. Replayed: ACT 9.4%, WATCH 89.4%, PASS 1.2% (was ACT
+2.3%, WATCH 40.6%, PASS 57.2%). `breakout` (+1 fired in 17% of weeks, often through a nearby
+minor level) is context, not an ACT condition.
+
+`coiled`, `coil_pending` and `trigger` keep their rule: they are the plan's entry mechanics (a
+stop order above a tight coil), not the compression signal. The validator's pack carries the
+fields as `chart_context`; `/validate` and `/research` read them as timing context. Thresholds
+are placeholders like the rest.

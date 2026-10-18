@@ -104,6 +104,18 @@ No entry: say "no value model" in section 8 and leave `value` out of `scores`. W
 The value model is one input to section 8, not the verdict: a cheap stock with no catalyst is
 still WATCH or PASS.
 
+## Step 3c: The chart as context
+
+`uv run python scripts/validate_pack.py <TICKER> --run <N>` (DB only) writes `pack.json` with
+`chart_context` (the levels card's compression, wedge, breakout and highs, with a one-line
+`summary`) and `chart.png`. ADR 0022: the chart is **context, not a gate**. Compression (a
+narrowing range against the stock's own year, volume drying up, a wedge with its apex weeks
+away) says a move **may be close**, in either direction; a breakout or a new high says one has
+started. Use it for timing in section 9 ("forming wedge, not broken out: the plan's level to
+enter at or below" or "wait for the break") and say it in a sentence; the catalyst decides the
+trade. `reward_risk` on the card is the distance to the *next* level only, **not an estimate
+of the move**: never quote it as upside or a target, and never downgrade on it alone.
+
 ## Step 4: The note (9 sections)
 
 Each section gets a score in [-1, +1] (+ = favourable for a long over 2-16 weeks), a
@@ -182,6 +194,7 @@ be done, record an **ERROR** verdict with the reason.
   your inference visibly separate.
 - No look-ahead in the record: label anything published after the card date.
 - Stay in your lane: technicals, levels and fundamentals have toolkits and a validator; do not
-  re-derive them. Reference the cards only to write machine kill criteria.
+  re-derive them. Reference the cards only for the chart context (Step 3c) and to write
+  machine kill criteria.
 - If a source failed, carry on with the rest and say what is missing. Never fabricate a
   section.
