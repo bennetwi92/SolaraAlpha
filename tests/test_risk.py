@@ -131,7 +131,8 @@ def test_each_breach_rule_fires() -> None:
 
 def test_sector_of_defaults_to_unknown() -> None:
     assert risk.sector_of("JET2.L") == "Travel & Leisure"
-    assert risk.sector_of("ABDP.L") == "unknown"
+    assert risk.sector_of("ABDP.L") == "Automobiles & Parts"
+    assert risk.sector_of("NOPE.L") == "unknown"
 
 
 def test_portfolio_script_offline(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
