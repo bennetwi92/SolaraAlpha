@@ -1,60 +1,110 @@
 # Stocks the weekly pipeline runs (scripts/scan.py, .github/workflows/scan.yml).
 #
-# Universe: FTSE AIM UK 50 constituents as listed on the London Stock Exchange website on
-# 2026-10-16 (londonstockexchange.com/indices/ftse-aim-uk-50-index/constituents/table).
-# Hand-maintained snapshot, not point-in-time: refresh after each quarterly FTSE review
-# (Mar / Jun / Sep / Dec). Yahoo ticker = TIDM + ".L". `snapshot` is the copy date: scan.py
-# warns once a review month has passed since it (solaraalpha.pipeline.stale_watchlist).
-snapshot = 2026-10-16
+# Universe: FTSE AIM 100 constituents as listed on the London Stock Exchange website on
+# 2026-10-18 (londonstockexchange.com/indices/ftse-aim-100-index/constituents/table; refresh with
+# scripts/universe.py). Hand-run snapshot, not point-in-time: refresh after each quarterly FTSE
+# review (Mar / Jun / Sep / Dec). Yahoo ticker = TIDM + ".L". `snapshot` is the copy date:
+# scan.py warns once a review month has passed since it (solaraalpha.pipeline.stale_watchlist).
+snapshot = 2026-10-18
 tickers = [
+    "AAZ.L",     # Anglo Asian Mining
     "ABDP.L",    # AB Dynamics
+    "ADVT.L",    # AdvancedAdvT
     "AET.L",     # Afentra
     "AMS.L",     # Advanced Medical Solutions Group
+    "AOM.L",     # ActiveOps
     "ARBB.L",    # Arbuthnot Banking Group
+    "AVCT.L",    # Avacta Group
+    "AVG.L",     # Avingtrans
     "AXS.L",     # Accsys Technologies
     "BIG.L",     # Big Technologies
+    "BOKU.L",    # Boku
+    "BPM.L",     # B.P. Marsh & Partners
     "BRCK.L",    # BRCK Group
     "BTG.L",     # BTG Consulting
-    "CAM.L",     # Camellia
+    "BUR.L",     # Burford Capital
     "CAML.L",    # Central Asia Metals
+    "CER.L",     # Cerillion
     "CHRT.L",    # Cohort
+    "CMCL.L",    # Caledonia Mining
+    "CNC.L",     # Concurrent Technologies
     "CRW.L",     # Craneware
+    "DEBS.L",    # Boohoo Group
     "DOTD.L",    # Dotdigital Group
-    "EKF.L",     # EKF Diagnostics Holdings
+    "ECO.L",     # Eco (Atlantic) Oil & Gas
+    "EEE.L",     # Empire Metals
     "EVPL.L",    # Everplay Group
     "FDEV.L",    # Frontier Developments
     "FEVR.L",    # Fever-Tree Drinks
     "FNTL.L",    # Fintel
+    "FNX.L",     # Fonix
     "FRAN.L",    # Franchise Brands
+    "FRP.L",     # FRP Advisory Group
+    "FTC.L",     # Filtronic
+    "GFM.L",     # Griffin Mining
+    "GGP.L",     # Greatland Resources
     "GHH.L",     # Gooch & Housego
     "GMET.L",    # Guardian Metal Resources
+    "GRP.L",     # Greencoat Renewables
     "HPOW.L",    # H-Power
     "HSP.L",     # Hargreaves Services
-    "IPX.L",     # Impax Asset Management Group
+    "HUW.L",     # Helios Underwriting
     "IQE.L",     # IQE
     "ITM.L",     # ITM Power
+    "JDG.L",     # Judges Scientific
     "JET2.L",    # Jet2
     "JHD.L",     # James Halstead
+    "JSE.L",     # Jadestone Energy
     "KEFI.L",    # KEFI Gold and Copper
+    "KEYS.L",    # Keystone Law Group
     "KGH.L",     # Knights Group Holdings
+    "KIST.L",    # Kistos Holdings
+    "KP2.L",     # Kore Potash
+    "LTHM.L",    # Latham (James)
+    "MHA.L",     # MHA
     "MIDW.L",    # Midwich Group
+    "MKA.L",     # Mkango Magnetic Materials
     "MPE.L",     # M.P. Evans Group
+    "MSI.L",     # M.S. International
+    "MTL.L",     # Metals Exploration
+    "NET.L",     # Netcall
     "NFG.L",     # Next 15 Group
     "NICL.L",    # Nichols
     "NIOX.L",    # NIOX Group
+    "OPT.L",     # Optima Health
     "PANR.L",    # Pantheon Resources
     "POLR.L",    # Polar Capital Holdings
+    "PPHC.L",    # Public Policy Holding Company
+    "PTAL.L",    # PetroTal
     "RCN.L",     # Redcentric
+    "RFX.L",     # Ramsdens Holdings
     "RKH.L",     # Rockhopper Exploration
     "RNWH.L",    # Renew Holdings
+    "RST.L",     # Restore
     "RWS.L",     # RWS Holdings
     "SAA.L",     # M&C Saatchi
+    "SAG.L",     # Science Group
+    "SAV.L",     # Savannah Resources
+    "SEE.L",     # Seeing Machines
+    "SLP.L",     # Sylvania Platinum
     "SQZ.L",     # Serica Energy
+    "SRB.L",     # Serabi Gold
     "SRC.L",     # SigmaRoc
+    "SRT.L",     # SRT Marine Systems
+    "SUP.L",     # Supreme
+    "SVML.L",    # Sovereign Metals
     "TAM.L",     # Tatton Asset Management
     "TFW.L",     # Thorpe (F.W.)
-    "TRB.L",     # Tribal Group
+    "THX.L",     # Thor Explorations
+    "TPFG.L",    # The Property Franchise Group
+    "TSTL.L",    # Tristel
+    "TUN.L",     # Tungsten West
+    "TUNE.L",    # Focusrite
+    "UPR.L",     # Uniphar
     "VIC.L",     # Victorian Plumbing Group
     "VTU.L",     # Vertu Motors
+    "W7L.L",     # Warpaint London
+    "YCA.L",     # Yellow Cake
     "YOU.L",     # YouGov
+    "YU.L",      # Yu Group
 ]
