@@ -14,7 +14,7 @@ least 2:1 to the next resistance (or nothing overhead).
 |---|---|---|---|
 | In an uptrend? Stage 2: price above a rising 40w MA, 10w above 40w | technical `trend` | ≥ 0.25 | 0 to 0.25 |
 | Momentum behind it? | technical `momentum` | > 0 | -0.25 to 0 |
-| Not overextended? Near the 10w MA, RSI with room, histogram turning up | technical `entry`, `risk_pct` | `entry` ≥ 0 and risk to the stop ≤ 15% | `entry` < 0 (extended: wait for a pullback) |
+| Not overextended? Near the 10w MA, RSI with room, histogram turning up | technical `entry` | `entry` ≥ 0 (`risk_pct` dropped as a gate: see the 2026-10-18 amendment) | `entry` < 0 (extended: wait for a pullback) |
 | Structure and room to run? | levels `structure`, `reward_risk`, `blue_sky`, `coil_pending` | `structure` > 0 and R:R ≥ 2 (blue sky = ∞ counts) | R:R ≥ 1.5, or coiled with the trigger above the close (wait for the break) |
 | Leading its market, industry and peers? | relative_strength `rs`, `rs_high`, `peer_top_half` | `rs` > 0 | `rs` ≥ -0.25 with `rs_high` or a top-half `peer_rank` |
 | Potential for growth, at a sane price, not broken? | fundamentals `growth`, `quality`, `eps_revision` | `growth` > 0, `quality` > -0.5, `eps_revision` ≥ 0 or unavailable | `quality` > -0.5 and revisions rising |
@@ -25,7 +25,7 @@ least 2:1 to the next resistance (or nothing overhead).
   else PASS; ERROR if it raised. A toolkit with no clauses (`events`) is ACT whenever it runs:
   it is the input to research, not a gate. As coded:
   ```
-  technical          act:   trend >= 0.25 | momentum > 0 | entry >= 0 | risk_pct <= 0.15
+  technical          act:   trend >= 0.25 | momentum > 0 | entry >= 0
                      watch: trend >= 0 | momentum >= -0.25
   levels             act:   structure > 0 | reward_risk >= 2
                      watch: reward_risk >= 1.5 or coil_pending == true
@@ -106,3 +106,12 @@ table (best mean 8-week return with at least 30 ACT weeks). The universe is toda
 so the report carries the survivorship caveat and the bands in code are never changed by it:
 the owner reads the report and edits `toolkits.py` if convinced. `scripts/backtest.py` fetches
 fresh and caches nothing but the report.
+
+## Amendment (2026-10-18): `risk_pct` is not a gate
+
+`risk_pct` is `3 x weekly ATR / close`, so `risk_pct <= 0.15` was a low-volatility filter
+(weekly ATR <= 5% of price). The strategy is trading for capital efficiency and wants volatile
+stocks; risk is handled by sizing (`plan.py` sizes from the stop distance), not by excluding
+them. A 5-year replay (every 8th week, 50 stocks) passed it in 1.7% of weeks and 3.5% of uptrend
+weeks (median uptrend `risk_pct` 0.22). Dropped from the technical ACT band; the field stays on
+the card for sizing and reports.

@@ -129,7 +129,7 @@ def _band(
         (dict(trend=0.0, momentum=-0.25, entry=0.5, risk_pct=0.1), "WATCH"),
         (dict(trend=-0.01, momentum=0.2, entry=0.5, risk_pct=0.1), "PASS"),
         (dict(trend=0.3, momentum=-0.3, entry=0.5, risk_pct=0.1), "PASS"),
-        (dict(trend=0.3, momentum=0.2, entry=0.5, risk_pct=0.16), "WATCH"),  # too far to the stop
+        (dict(trend=0.3, momentum=0.2, entry=0.5, risk_pct=0.4), "ACT"),  # volatile is fine
     ],
 )
 def test_technical_bands(monkeypatch: pytest.MonkeyPatch, fields: dict, label: str) -> None:

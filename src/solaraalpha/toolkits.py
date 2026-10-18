@@ -118,7 +118,7 @@ def get(id: str) -> Toolkit:
 
 @toolkit(
     "technical",
-    act=("trend >= 0.25", "momentum > 0", "entry >= 0", "risk_pct <= 0.15"),
+    act=("trend >= 0.25", "momentum > 0", "entry >= 0"),
     watch=("trend >= 0", "momentum >= -0.25"),
 )
 def _technical(
