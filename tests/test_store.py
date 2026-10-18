@@ -132,6 +132,16 @@ def test_price_snapshot_stores_only_changes(db: Path | None, daily: pd.DataFrame
     assert store.load_prices("JET2.L", as_seen="2026-09-30", path=db).empty
 
 
+def test_price_snapshot_keeps_last_of_duplicate_dates(db: Path | None, daily: pd.DataFrame) -> None:
+    last = daily.iloc[[-1]].copy()
+    last["close"] += 1.0
+    doubled = pd.concat([daily, last])
+    doubled.attrs = daily.attrs
+    store.save_run("stock_prices", {}, "JET2.L", daily=doubled, path=db)
+    assert _count(db, "prices") == len(daily)
+    assert store.load_prices("JET2.L", path=db)["close"].iloc[-1] == last["close"].iloc[0]
+
+
 def test_fundamentals_snapshot(db: Path | None) -> None:
     fund = pd.DataFrame(
         {

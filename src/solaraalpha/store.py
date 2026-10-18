@@ -534,6 +534,9 @@ def _days(s: pd.Series | pd.Index) -> list[str]:
 
 
 def _price_rows(ticker: str, daily: pd.DataFrame) -> pd.DataFrame:
+    # A fetch can repeat a date (Yahoo FX adds a live bar on the last session's date): keep the
+    # last, as clean_prices does, so the snapshot has one row per date.
+    daily = daily[~daily.index.duplicated(keep="last")]
     rows = daily.reset_index().assign(ticker=ticker, currency=daily.attrs.get("currency"))
     rows["date"] = _days(rows["date"])
     return rows
