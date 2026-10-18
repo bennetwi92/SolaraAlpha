@@ -32,3 +32,6 @@ event_trim_fraction = 0.5  # PLACEHOLDER fraction of the shares a `trim` policy 
 circuit_breaker = false    # off until the owner turns it on (#143, §6 Q1)
 max_drawdown_new_entries = 0.10  # PLACEHOLDER equity this far below its high stops new entries while the breaker is on
 benchmark = "^FTAS"        # equity-curve comparison (Yahoo ticker). ^FTAI = FTSE AIM All-Share is also served
+shortlist_size = 10        # PLACEHOLDER top-ranked tickers the screen sends to the agents a week (ADR 0022, #192)
+shortlist_catalysts = 5    # PLACEHOLDER at most this many more join the shortlist on a catalyst (outside the top N)
+min_adv_gbp = 25000.0      # PLACEHOLDER the screen's liquidity floor: 20-session median daily traded value, GBP

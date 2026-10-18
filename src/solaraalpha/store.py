@@ -12,8 +12,9 @@ deleted, so every number can be traced to the run (time, git commit, arguments) 
   :mod:`solaraalpha.pipeline`. ``status`` is the toolkit's label in lowercase (``act`` / ``watch``
   / ``pass`` / ``error`` / ``skip``). Rows from runs before labels existed (#111) hold ``pass`` /
   ``fail``, where ``pass`` meant "moved on to the next stage".
-* ``labels`` — one label per (run, ticker, stage): ``screen`` from the pipeline (the combination
-  of the four screening toolkits, with each toolkit's label and failing clauses in ``reason``),
+* ``labels`` — one label per (run, ticker, stage): ``screen`` from the pipeline (ACT = on the
+  week's shortlist, with ``rank`` and why in ``shortlist``; each toolkit's band label and failing
+  clauses in ``reason``),
   ``validate`` / ``research`` / ``events`` from the agents (``actor`` ``agent:<name>``, with a
   confidence) — see :mod:`solaraalpha.agents`.
 * ``triggers`` — the daily job's checks that fired (per daily run, ticker, kind), with the
@@ -186,8 +187,10 @@ def connect(path: Path | None = None) -> Conn:
 
 
 # Columns added to ``labels`` after its creation: ``watch_on`` (JSON list, WATCH rows: what each
-# WATCH toolkit is waiting for) and ``rank`` (ACT rows: 1 = best by rank_score).
-LABEL_COLUMNS_ADDED = (("watch_on", "TEXT"), ("rank", "INTEGER"))
+# WATCH toolkit is waiting for), ``rank`` (screen rows past the floor: 1 = best by rank_score;
+# ACT rows only before #192) and ``shortlist`` (screen ACT rows: why the ticker is on the
+# shortlist, "rank N" / "catalyst: <reason>", #192).
+LABEL_COLUMNS_ADDED = (("watch_on", "TEXT"), ("rank", "INTEGER"), ("shortlist", "TEXT"))
 
 
 def save_run(
@@ -282,10 +285,12 @@ def save_label(
     conn: Conn | None = None,
     watch_on: list[dict[str, Any]] | None = None,
     rank: int | None = None,
+    shortlist: str | None = None,
 ) -> None:
     """Record ``ticker``'s label for ``stage`` in ``run_id`` (one per run, ticker and stage).
     ``watch_on`` (WATCH rows) is what each WATCH toolkit waits for, stored as JSON; ``rank``
-    (ACT rows) orders the shortlist, 1 = best."""
+    (screen rows past the floor) orders the shortlist, 1 = best; ``shortlist`` (screen ACT
+    rows) says why the ticker is on it (``rank N`` / ``catalyst: <reason>``)."""
     if label not in ("ACT", "WATCH", "PASS", "ERROR"):
         raise ValueError(f"label must be ACT / WATCH / PASS / ERROR, got {label!r}")
     own = conn is None
@@ -294,7 +299,7 @@ def save_label(
         with conn:
             conn.execute(
                 "INSERT INTO labels (run_id, ticker, stage, label, confidence, reason, actor,"
-                " watch_on, rank) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " watch_on, rank, shortlist) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     ticker,
@@ -305,6 +310,7 @@ def save_label(
                     actor,
                     json.dumps(watch_on) if watch_on is not None else None,
                     rank,
+                    shortlist,
                 ),
             )
     finally:

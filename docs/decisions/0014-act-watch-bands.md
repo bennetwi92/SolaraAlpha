@@ -115,3 +115,40 @@ stocks; risk is handled by sizing (`plan.py` sizes from the stop distance), not 
 them. A 5-year replay (every 8th week, 50 stocks) passed it in 1.7% of weeks and 3.5% of uptrend
 weeks (median uptrend `risk_pct` 0.22). Dropped from the technical ACT band; the field stays on
 the card for sizing and reports.
+
+## Amendment (#192): a ranked shortlist instead of all-ACT gating
+
+ADR 0022: the screen is a ranked wide net with few hard rules that sends the 5–10 best-ranked
+names a week to the agents. All-ACT gating gave 1 ACT in 1,228 stock-weeks, so the bands no
+longer gate; they stay as **information** (each toolkit's label and failing clauses in the
+`labels.reason`, `watch_on` for the daily job).
+
+- **Floor** (the only hard rules, `pipeline.floor`): no screening toolkit ERROR, a liquidity
+  card with `adv_gbp_20 >= min_adv_gbp`, and a combined score. Volatility is never a gate.
+- **Score and rank**: `portfolio.fit.rank_score` (mean of technical `trend`, levels `setup`,
+  relative_strength `rs`, fundamentals `growth`, NaN ignored; equal weights, a placeholder)
+  over every ticker past the floor, ranked by `pipeline.rank_act` (1 = best, ties by ticker).
+- **Shortlist** (`pipeline.screen(steps, size, catalysts, catalyst_cap, min_adv_gbp)`): the top
+  `shortlist_size` (default 10) as `rank N`; tickers in `catalysts` (ticker -> one-line reason,
+  from #193) past the floor but outside the top N join as `catalyst: <reason>`, best-ranked
+  first, up to `shortlist_catalysts` (default 5) more. All three in `config/portfolio.toml`.
+- **Screen label**: shortlisted = **ACT** (the agents can only downgrade); past the floor but
+  not shortlisted = the band label (`screen_label`) capped at WATCH; below the floor = PASS;
+  ERROR stays. The reason starts with `shortlist rank 3`, `rank 14, not shortlisted` or
+  `floor: ...`, then each toolkit's band.
+- **Storage**: `labels.rank` on every screen row past the floor (was ACT rows only) and a new
+  nullable `labels.shortlist` (TEXT, the why), added by `store.connect()` like `watch_on`.
+- **Stages**: fundamentals runs on every ticker without an ERROR (the score needs `growth`);
+  events runs on the shortlist (`Stage.on_shortlist`).
+- **Readers agree**: `store.shortlist`, the validate queue (`record.py queue`, capped by
+  `max_agent_tickers`, rank order), `planner.final_labels` and the weekly pack's "Shortlist"
+  section (why + final label) all read the screen ACT rows in rank order (catalyst picks rank
+  after the top N, so the cap trims them first). Once the agents have worked a run, a
+  shortlisted ticker they never reached is neither researched nor planned on the screen's ACT
+  alone (`plan_run` reports it as "not reviewed by the agents").
+
+Backtest proxy (the 5-year replay, every 8th week, 50 stocks, 8-week blocks; survivorship and
+small-sample caveats): the top 10 by the current `rank_score` did *worse* than the rest (8-week
+mean -1.5% vs +2.1%, excess -2.8% vs +0.9%, +15% hit rate 11% vs 16%). Trend and RS were the
+weakest fields; `growth` and `setup` were about neutral. The weights stay placeholders for the
+owner (open question on #192; RS is #195), and the agents, not the score, decide.

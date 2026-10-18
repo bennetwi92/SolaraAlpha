@@ -273,8 +273,24 @@ def test_labels_watch_on_and_rank(db: Path | None) -> None:
     conn = store.connect(db)
     cols = [r[1] for r in conn.execute("PRAGMA table_info(labels)")]
     assert cols.count("watch_on") == 1 and cols.count("rank") == 1
+    assert cols.count("shortlist") == 1
     conn.close()
     assert store.shortlist(run_id, path=db) == ["A.L", "B.L", "C.L", "U.L"]
+
+
+def test_labels_shortlist_reason(db: Path | None) -> None:
+    run_id = store.start_run("scan", {}, path=db)
+    store.save_label(run_id, "A.L", "screen", "ACT", "", path=db, rank=1, shortlist="rank 1")
+    store.save_label(
+        run_id, "K.L", "screen", "ACT", "", path=db, rank=14, shortlist="catalyst: contract win"
+    )
+    store.save_label(run_id, "W.L", "screen", "WATCH", "rank 2, not shortlisted", path=db, rank=2)
+    got = store.load_labels(run_id=run_id, path=db).set_index("ticker")
+    assert got.loc["A.L", "shortlist"] == "rank 1"
+    assert got.loc["K.L", "shortlist"] == "catalyst: contract win"
+    assert pd.isna(got.loc["W.L", "shortlist"]) and got.loc["W.L", "rank"] == 2
+    # the shortlist is the screen ACT rows by rank; a ranked WATCH row is not on it
+    assert store.shortlist(run_id, path=db) == ["A.L", "K.L"]
 
 
 def test_labels_migration_from_the_old_layout(tmp_path: Path) -> None:
@@ -294,7 +310,7 @@ def test_labels_migration_from_the_old_layout(tmp_path: Path) -> None:
     raw.close()
     conn = store.connect(db)
     cols = [r[1] for r in conn.execute("PRAGMA table_info(labels)")]
-    assert cols[-2:] == ["watch_on", "rank"]
+    assert cols[-3:] == ["watch_on", "rank", "shortlist"]
     conn.close()
     got = store.load_labels(run_id=1, path=db)
     assert got["ticker"].tolist() == ["OLD.L"] and got["watch_on"].tolist() == [None]

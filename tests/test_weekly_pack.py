@@ -197,3 +197,53 @@ def test_circuit_breaker_line_and_rejections(
     )
     assert "circuit breaker: drawdown 15% > 10%" in text  # under "Rejected by fit"
     conn.close()
+
+
+def test_shortlist_agrees_across_queue_planner_store_and_pack(db_backend: Path | None) -> None:
+    """The screen's ACT rows are the shortlist (#192): store.shortlist, the validate queue,
+    final_labels and the pack read the same names in the same (rank) order; the cap trims it."""
+    from solaraalpha import agents
+    from solaraalpha.portfolio.planner import final_labels
+
+    run = store.start_run("scan", {}, path=db_backend)
+    for t, label, rank, why in (
+        ("B.L", "ACT", 1, "rank 1"),
+        ("K.L", "ACT", 12, "catalyst: contract win"),
+        ("A.L", "ACT", 2, "rank 2"),
+        ("W.L", "WATCH", 3, None),
+        ("P.L", "PASS", None, None),
+    ):
+        store.save_label(run, t, "screen", label, "r", path=db_backend, rank=rank, shortlist=why)
+    want = ["B.L", "A.L", "K.L"]
+    assert store.shortlist(run, path=db_backend) == want
+    conn = book.connect(db_backend)
+    try:
+        assert agents.queue(conn, run, "validate", 10) == want
+        assert agents.queue(conn, run, "validate", 2) == want[:2]  # max_agent_tickers caps spend
+        cands = final_labels(conn, run)
+        assert [c.ticker for c in cands if c.label == "ACT"] == want
+        assert {c.ticker: c.shortlist for c in cands if c.shortlist} == {
+            "B.L": "rank 1",
+            "A.L": "rank 2",
+            "K.L": "catalyst: contract win",
+        }
+        text = render_pack(build_pack(conn, run))
+        assert (
+            "## Shortlist\n\n1. B.L: rank 1 → **ACT** (screen)\n2. A.L: rank 2 → **ACT** (screen)\n"
+            "3. K.L: catalyst: contract win → **ACT** (screen)\n" in text
+        )
+    finally:
+        conn.close()
+    # the validator keeps B.L, downgrades A.L and never reaches K.L (the cap): only B.L goes on
+    # to research, and K.L is reported, not planned on the screen's ACT alone
+    store.save_label(run, "B.L", "validate", "ACT", "ok", 0.8, "agent:validate", path=db_backend)
+    store.save_label(run, "A.L", "validate", "PASS", "no", 0.8, "agent:validate", path=db_backend)
+    conn = book.connect(db_backend)
+    try:
+        assert agents.queue(conn, run, "research", 10) == ["B.L"]
+        text = render_pack(build_pack(conn, run))
+        assert "2. A.L: rank 2 → **PASS** (validate)" in text
+        assert "- K.L: no plan (not reviewed by the agents (beyond max_agent_tickers))" in text
+        assert "- B.L: no plan (no levels / technical card in the run)" in text
+    finally:
+        conn.close()

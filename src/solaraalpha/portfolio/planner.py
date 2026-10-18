@@ -47,7 +47,8 @@ class Candidate:
     label: str
     stage: str  # the stage that decided the final label
     reasons: dict[str, str]  # stage -> reason, every stage present
-    rank: int | None = None  # screen rank of an ACT ticker (1 = best), #125
+    rank: int | None = None  # screen rank (1 = best), #125; every ticker past the floor, #192
+    shortlist: str | None = None  # why it was shortlisted ("rank N" / "catalyst: ..."), #192
 
 
 @dataclass
@@ -66,16 +67,24 @@ class PlanRun:
 
 def final_labels(conn: Conn, run_id: int) -> list[Candidate]:
     """Every ticker's final label in ``run_id``: the latest stage present, research > validate
-    > screen. ACT tickers first in screen-rank order (unranked last), then by ticker."""
+    > screen. ACT tickers first in screen-rank order (unranked last), then by ticker. ``shortlist``
+    is the screen row's why (the screen ACT tickers are the week's shortlist, #192)."""
     df = store.query(
-        "SELECT ticker, stage, label, reason, rank FROM labels WHERE run_id = ?", conn, [run_id]
+        "SELECT ticker, stage, label, reason, rank, shortlist FROM labels WHERE run_id = ?",
+        conn,
+        [run_id],
     )
     out = []
     for ticker, g in df.groupby("ticker"):
         by = {str(r["stage"]): (str(r["label"]), str(r["reason"])) for r in g.to_dict("records")}
         stage = next(s for s in STAGE_ORDER if s in by)
-        ranks = g.loc[g["stage"] == "screen", "rank"]
-        rank = int(ranks.iloc[0]) if len(ranks) and pd.notna(ranks.iloc[0]) else None
+        scr = g.loc[g["stage"] == "screen"]
+        rank = int(scr["rank"].iloc[0]) if len(scr) and pd.notna(scr["rank"].iloc[0]) else None
+        why = (
+            str(scr["shortlist"].iloc[0])
+            if len(scr) and pd.notna(scr["shortlist"].iloc[0])
+            else None
+        )
         out.append(
             Candidate(
                 str(ticker),
@@ -83,6 +92,7 @@ def final_labels(conn: Conn, run_id: int) -> list[Candidate]:
                 stage,
                 {s: by[s][1] for s in STAGE_ORDER if s in by},
                 rank,
+                why,
             )
         )
     return sorted(out, key=lambda c: (c.label != "ACT", c.rank is None, c.rank or 0, c.ticker))
@@ -141,8 +151,9 @@ def pending_positions(conn: Conn) -> pd.DataFrame:
 
 
 def plan_run(conn: Conn, run_id: int, rules: Rules | None = None, dry_run: bool = False) -> PlanRun:
-    """Plan, size and fit-check the run's ACT tickers; write the accepted plans to the book
-    unless ``dry_run``."""
+    """Plan, size and fit-check the run's final-ACT tickers; write the accepted plans to the
+    book unless ``dry_run``. Once any agent label exists in the run, a ticker whose final
+    label is still the screen's (the agents never reached it) is reported, not planned."""
     rules = rules or load_rules()
     started = str(store.run_info(run_id, conn=conn)["started_at"])
     candidates = final_labels(conn, run_id)
@@ -174,11 +185,17 @@ def plan_run(conn: Conn, run_id: int, rules: Rules | None = None, dry_run: bool 
     returns: dict[str, pd.Series] = {}
     cards_by: dict[str, dict[str, dict[str, Any]]] = {}
     skipped: list[str] = []
+    # Once the agents have worked the run, a shortlisted ticker they never reached (past
+    # max_agent_tickers) is not planned on the screen's ACT alone (#192).
+    reviewed = any(c.stage != "screen" for c in candidates)
     for c in candidates:
         if c.label != "ACT":
             continue
         if c.ticker in done:
             skipped.append(c.ticker)
+            continue
+        if reviewed and c.stage == "screen":
+            errors.append((c.ticker, "not reviewed by the agents (beyond max_agent_tickers)"))
             continue
         cards = store.load_cards(run_id, c.ticker, conn=conn)
         cards_by[c.ticker] = cards

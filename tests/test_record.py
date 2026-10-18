@@ -365,9 +365,10 @@ def test_error_queue_latest_run_and_outcome(
     record.main(["queue", "--run", str(run_id), "--stage", "validate", *args])
     assert capsys.readouterr().out.split() == ["C.L", "A.L"]
 
-    # research queue: final label ACT (B.L is ERROR after validate, so out), ranked
+    # research queue: final label ACT (B.L is ERROR after validate, so out), ranked; once the
+    # validator has worked the run, names it has not reached (C.L, A.L) are not researched
     record.main(["queue", "--run", str(run_id), "--stage", "research", *args])
-    assert capsys.readouterr().out.split() == ["C.L", "A.L"]
+    assert capsys.readouterr().out.split() == []
 
     # outcome: exit 1 only when every item errored
     with pytest.raises(SystemExit) as e:
@@ -381,6 +382,8 @@ def test_error_queue_latest_run_and_outcome(
     )
     record.main(["verdict", _write(tmp_path, v), *args])
     capsys.readouterr()
+    record.main(["queue", "--run", str(run_id), "--stage", "research", *args])
+    assert capsys.readouterr().out.split() == ["A.L"]  # the one the validator kept
     record.main(
         ["outcome", "--run", str(run_id), "--stage", "validate", *args]
     )  # 3 recorded, 2 errors: ok

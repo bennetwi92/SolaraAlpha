@@ -16,9 +16,11 @@ from solaraalpha.pipeline import (
     Step,
     band,
     combine,
+    floor,
     rank_act,
     run_pipeline,
     run_toolkit,
+    screen,
     screen_label,
     watch_on,
     watchlist,
@@ -277,8 +279,10 @@ def test_screen_label(fake: list[tuple[str, str]], monkeypatch: pytest.MonkeyPat
     assert reason.startswith("technical WATCH: failed score > 0.0 (score=-0.30); levels WATCH")
     assert screen_label(got["DOWN.L"])[0] == "PASS"
     assert [s.status for s in got["MID.L"]] == ["watch", "watch", "watch", "act", "watch", "skip"]
-    assert [s.status for s in got["DOWN.L"]] == ["pass", "pass", "pass", "act", "skip", "skip"]
-    assert got["UP.L"][-1].status == "error"  # events raised, screen label unaffected
+    # fundamentals runs on every ticker without an ERROR (#192), PASS included
+    assert [s.status for s in got["DOWN.L"]] == ["pass", "pass", "pass", "act", "pass", "skip"]
+    # events runs on the shortlist only; no adv_gbp_20 in these cards: nothing passes the floor
+    assert got["UP.L"][-1].status == "skip" and got["UP.L"][-1].reason == "not shortlisted"
     assert screen_label(got["UP.L"])[0] == "ACT"
     assert screen_label([]) == ("ERROR", "no toolkit ran")
 
@@ -382,3 +386,93 @@ def test_rank_act_is_deterministic() -> None:
     assert rank_act(cards) == {"C.L": 1, "A.L": 2, "B.L": 3, "D.L": 4, "Z.L": 5}
     assert rank_act(dict(reversed(list(cards.items())))) == rank_act(cards)
     assert rank_act({}) == {}
+
+
+def _ticker(trend: float, label: str = "ACT", adv: float | None = 1e6) -> list[Step]:
+    steps = [_step("technical", label, f"technical {label.lower()}", trend=trend)]
+    if adv is not None:
+        steps.append(_step("liquidity", "ACT", "ran", adv_gbp_20=adv))
+    return steps
+
+
+def test_screen_ranks_a_floor_into_a_shortlist_with_catalysts() -> None:
+    steps = {
+        "A.L": _ticker(0.9),
+        "B.L": _ticker(0.5, "PASS"),  # a band PASS still ranks: bands are information
+        "C.L": _ticker(0.3),  # all-ACT bands, but outside the top 2: WATCH
+        "D.L": _ticker(0.1, "WATCH"),  # outside the top 2, joins on a catalyst
+        "E.L": _ticker(0.0),  # a catalyst too, but past the catalyst cap
+        "I.L": _ticker(0.95, adv=1_000.0),  # best score, too thin to trade: below the floor
+        "N.L": _ticker(0.8, adv=None),  # no liquidity card
+        "X.L": [Step("screen", "technical", "error", "RuntimeError: no data")],
+    }
+    catalysts = {"A.L": "results beat", "D.L": "contract win", "E.L": "new CEO", "I.L": "bid"}
+    got = screen(steps, size=2, catalysts=catalysts, catalyst_cap=1, min_adv_gbp=25_000)
+    short = {t: s.shortlist for t, s in got.items() if s.shortlist}
+    assert short == {
+        "A.L": "rank 1; catalyst: results beat",
+        "B.L": "rank 2",
+        "D.L": "catalyst: contract win",
+    }
+    assert all(got[t].label == "ACT" for t in short)
+    assert {t: s.rank for t, s in got.items()} == {
+        "A.L": 1,
+        "B.L": 2,
+        "C.L": 3,
+        "D.L": 4,
+        "E.L": 5,
+        "I.L": None,
+        "N.L": None,
+        "X.L": None,
+    }
+    assert got["B.L"].reason == "shortlist rank 2; technical PASS: technical pass"
+    assert (got["C.L"].label, got["C.L"].reason) == (
+        "WATCH",
+        "rank 3, not shortlisted; technical ACT",
+    )
+    assert got["E.L"].label == "WATCH" and "(catalyst: new CEO)" in got["E.L"].reason
+    assert got["I.L"].label == "PASS"
+    assert got["I.L"].reason.startswith(
+        "floor: adv_gbp_20 1,000 < min_adv_gbp 25,000 (catalyst: bid)"
+    )
+    assert got["N.L"].label == "PASS" and got["N.L"].reason.startswith("floor: no liquidity")
+    assert got["X.L"].label == "ERROR" and got["X.L"].shortlist is None
+    # deterministic, and the defaults come from config/portfolio.toml
+    assert screen(dict(reversed(list(steps.items()))), 2, catalysts, 1, 25_000) == got
+    assert len([s for s in screen(steps).values() if s.shortlist]) == 5  # top 10 > 5 ranked
+    assert floor(steps["A.L"], 25_000) is None
+
+
+def test_pipeline_runs_shortlist_stages_on_the_shortlist(
+    fake: list[tuple[str, str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    @dataclass(frozen=True)
+    class Tech:
+        date: pd.Timestamp
+        score: float
+        trend: float
+
+    @dataclass(frozen=True)
+    class Liq:
+        date: pd.Timestamp
+        adv_gbp_20: float
+
+    trend = {"UP.L": 0.5, "MID.L": -0.3, "DOWN.L": -0.9}
+
+    def tech(x: Inputs) -> dict:
+        return {"technical": Tech(DATE, trend[x.ticker], trend[x.ticker])}
+
+    def liq(x: Inputs) -> dict:
+        return {"liquidity": Liq(DATE, 1e6)}
+
+    monkeypatch.setitem(REGISTRY, "technical", Toolkit("technical", tech, ("score > 0",), (), "t"))
+    monkeypatch.setitem(REGISTRY, "liquidity", Toolkit("liquidity", liq, (), (), "l"))
+    stages = (Stage("screen", ("technical", "liquidity")), Stage("late", ("a",), on_shortlist=True))
+    inputs = [Inputs("UP.L"), Inputs("MID.L"), Inputs("DOWN.L")]
+    got = run_pipeline(inputs, stages, size=1, catalyst_cap=1, min_adv_gbp=0.0)
+    assert [s.status for s in got["UP.L"]] == ["act", "act", "act"]  # rank 1: shortlisted
+    assert got["MID.L"][-1].status == "skip" and got["MID.L"][-1].reason == "not shortlisted"
+    # a catalyst brings DOWN.L (band PASS, rank 3) onto the shortlist
+    got = run_pipeline(inputs, stages, {"DOWN.L": "bid"}, size=1, catalyst_cap=1, min_adv_gbp=0.0)
+    assert got["DOWN.L"][-1].status == "pass"  # stub a: DOWN.L scores -0.9 -> PASS, but it ran
+    assert got["MID.L"][-1].status == "skip"
