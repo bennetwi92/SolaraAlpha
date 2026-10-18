@@ -1,7 +1,7 @@
 # Stocks the weekly pipeline runs (scripts/scan.py, .github/workflows/scan.yml).
 #
-# Universe: FTSE AIM 100 constituents as listed on the London Stock Exchange website on
-# 2026-10-18 (londonstockexchange.com/indices/ftse-aim-100-index/constituents/table; refresh with
+# Universe: FTSE AIM 100 plus FTSE AIM UK 50 constituents as listed on the London Stock Exchange
+# website on 2026-10-18 (londonstockexchange.com/indices/<index>/constituents/table; refresh with
 # scripts/universe.py). Hand-run snapshot, not point-in-time: refresh after each quarterly FTSE
 # review (Mar / Jun / Sep / Dec). Yahoo ticker = TIDM + ".L". `snapshot` is the copy date:
 # scan.py warns once a review month has passed since it (solaraalpha.pipeline.stale_watchlist).
@@ -23,6 +23,7 @@ tickers = [
     "BRCK.L",    # BRCK Group
     "BTG.L",     # BTG Consulting
     "BUR.L",     # Burford Capital
+    "CAM.L",     # Camellia
     "CAML.L",    # Central Asia Metals
     "CER.L",     # Cerillion
     "CHRT.L",    # Cohort
@@ -33,6 +34,7 @@ tickers = [
     "DOTD.L",    # Dotdigital Group
     "ECO.L",     # Eco (Atlantic) Oil & Gas
     "EEE.L",     # Empire Metals
+    "EKF.L",     # EKF Diagnostics Holdings
     "EVPL.L",    # Everplay Group
     "FDEV.L",    # Frontier Developments
     "FEVR.L",    # Fever-Tree Drinks
@@ -49,6 +51,7 @@ tickers = [
     "HPOW.L",    # H-Power
     "HSP.L",     # Hargreaves Services
     "HUW.L",     # Helios Underwriting
+    "IPX.L",     # Impax Asset Management Group
     "IQE.L",     # IQE
     "ITM.L",     # ITM Power
     "JDG.L",     # Judges Scientific
@@ -97,6 +100,7 @@ tickers = [
     "TFW.L",     # Thorpe (F.W.)
     "THX.L",     # Thor Explorations
     "TPFG.L",    # The Property Franchise Group
+    "TRB.L",     # Tribal Group
     "TSTL.L",    # Tristel
     "TUN.L",     # Tungsten West
     "TUNE.L",    # Focusrite

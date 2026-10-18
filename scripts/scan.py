@@ -30,6 +30,7 @@ from typing import Any
 
 import pandas as pd
 
+from solaraalpha.catalysts import fresh_catalysts
 from solaraalpha.pipeline import (
     ALL_LABELS,
     NOT_ERROR,
@@ -167,13 +168,14 @@ def main(argv: list[str] | None = None) -> None:
 
     inputs = [Inputs(t) for t in args.tickers or watchlist()]
     run_id = start_run("scan", vars(args)) if args.save else None
-    catalysts: dict[str, str] | None = None  # ticker -> one-line reason (#193 wires it in)
+    catalysts: dict[str, str] | None = None  # ticker -> one-line reason (#193)
     if args.toolkit:
         params = {k: _value(v) for k, v in (kv.split("=", 1) for kv in args.param)}
         results = {x.ticker: [run_toolkit(args.toolkit, x, params)] for x in inputs}
         ranks = rank_act({t: cards_of(s) for t, s in results.items() if s[0].label == "ACT"})
         labels = {t: Screened(s[0].label, s[0].reason, ranks.get(t)) for t, s in results.items()}
     else:
+        catalysts = fresh_catalysts([x.ticker for x in inputs])
         results = run_pipeline(inputs, catalysts=catalysts)
         labels = screen(results, catalysts=catalysts)
 

@@ -112,8 +112,9 @@ def get(id: str) -> Toolkit:
 
 # Bands are fixed long-side screens from the story map §4 A1 (docs/decisions/0014): "a stage-2
 # uptrend with positive momentum, priced near support rather than stretched above it,
-# outperforming its peers, with earnings growing or being revised up, and at least 2:1 to the
-# next resistance (or nothing overhead)". Placeholders until backtested. Since #192 (ADR 0022)
+# outperforming its peers, with earnings growing or being revised up". The 2:1-to-resistance
+# clause and the risk_pct cap are gone (ADR 0022: R:R is not an estimate we gate on, and
+# volatility is wanted). Placeholders until backtested. Since #192 (ADR 0022)
 # they are information, not the gate: the screen ranks every stock past a sanity floor into the
 # shortlist (pipeline.screen), and a band label only shows what each toolkit sees.
 

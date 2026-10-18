@@ -166,7 +166,6 @@ def test_forward_and_sweep_find_a_known_edge() -> None:
     )
     assert set(GRID) == {
         ("technical", "trend"),
-        ("levels", "reward_risk"),
         ("relative_strength", "rs"),
     }
     text = report(replayed.assign(label="ACT", label_technical="ACT"), sw, ["S.L"], 5)

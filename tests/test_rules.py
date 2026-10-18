@@ -16,7 +16,7 @@ def test_default_file_loads_as_placeholders() -> None:
     assert isinstance(r.capital, float) and r.capital > 0
     assert r.horizon_weeks == (2, 16)
     assert r.long_only is True
-    assert (r.shortlist_size, r.shortlist_catalysts) == (10, 5) and r.min_adv_gbp > 0
+    assert (r.shortlist_size, r.shortlist_catalysts) == (7, 3) and r.min_adv_gbp > 0
     assert r.warning is not None and "placeholder" in r.warning
 
 

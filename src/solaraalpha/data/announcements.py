@@ -141,7 +141,7 @@ def parse_nsm(payload: dict) -> pd.DataFrame:
         for s in [hit["_source"]]
     ]
     df = pd.DataFrame(rows, columns=COLUMNS)
-    df["published"] = pd.to_datetime(df["published"], utc=True)
+    df["published"] = pd.to_datetime(df["published"], utc=True, format="ISO8601")
     return df.sort_values("published", ignore_index=True)
 
 

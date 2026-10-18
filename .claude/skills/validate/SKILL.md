@@ -104,10 +104,14 @@ Then, per toolkit, `checks["technical"]`, `checks["levels"]`, `checks["relative_
 
 ## Step 3: Decide
 
+- The screen is a ranked shortlist (ADR 0022, 0014 amendment #192): a shortlisted stock is ACT
+  even when some toolkit bands are WATCH or PASS. The bands are information. **Never downgrade
+  because a band is not ACT.** You check that the readings are true, not that the stock is
+  good; the research agent judges the catalyst.
 - Every toolkit warranted and no `concern` that changes the picture → keep the screen label.
-- A toolkit not warranted, or a `concern` that would change its label → downgrade to the
-  label the stock deserves (what would the bands say on clean data?). Say which toolkit and
-  why in `reasons`.
+- A toolkit not warranted (its reading is wrong on clean data), or a `concern` that undermines
+  the reason the stock ranked (bad data, a spike bar, a stale or broken series) → downgrade.
+  Say which toolkit and why in `reasons`.
 - Data too poor to judge → `PASS` (never ACT on data you cannot trust), or `ERROR` if the
   pack itself is unusable.
 - `confidence` in [0, 1] is how sure you are of *your* label given the evidence.

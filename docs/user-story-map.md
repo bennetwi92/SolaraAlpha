@@ -101,7 +101,7 @@ Evidence (articles, filings, events) ──linked to── candidates, plans, re
 | # | Activity | Cadence | Actor | Today |
 |---|---|---|---|---|
 | A0 | Set up universe, reference data and portfolio rules | quarterly / ad hoc | Owner | 🟡 rules are placeholders (`confirmed = false`); sectors known for JET2.L only |
-| A1 | **Screen**: technical, levels, relative strength, fundamentals → label | Sunday | Pipeline | ✅ bands are placeholders until the backtest report is read |
+| A1 | **Screen**: technical, levels, relative strength, fundamentals → ranked shortlist (7 + 3 on a catalyst, ADR 0022) | Sunday | Pipeline | ✅ #192–#194; weights and bands are placeholders |
 | A2 | **Validate**: independent agent check of the labels | Sunday | Validator | ✅ |
 | A3 | **Research**: events, news, headwinds; log evidence and impact | Sunday | Strategist | ✅ |
 | A4 | **Plan and size**: trade plan, size, portfolio fit; draft orders and positions | Sunday | Pipeline | ✅ |
@@ -136,7 +136,7 @@ Story format: *as <actor>, I want <capability> so that <outcome>*, then acceptan
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S0.1 | As the owner I want a watchlist universe so the scan knows which stocks to run. | R1 | ✅ `config/watchlist.toml` (FTSE AIM UK 50, hand snapshot) |
+| S0.1 | As the owner I want a watchlist universe so the scan knows which stocks to run. | R1 | ✅ `config/watchlist.toml` (FTSE AIM 100 + AIM UK 50, 104 stocks; `scripts/universe.py` refresh) |
 | S0.2 | As the owner I want per-stock benchmarks and peers so relative strength is meaningful. | R1 | ✅ `config/benchmarks.toml` |
 | S0.3 | As the owner I want **portfolio rules** in one config file (capital, risk per trade, max open positions, max per stock / sector, max portfolio heat, cash buffer, min liquidity) so sizing and checks are consistent and versioned. | R1 | ✅ `config/portfolio.toml`, `portfolio.rules` (placeholders, `confirmed = false`) · #105 |
 | S0.4 | As the owner I want a reminder when the watchlist snapshot is older than the last quarterly FTSE review, so the universe doesn't drift. | R2 | ✅ `snapshot` in `watchlist.toml`; `scan.py` warns after the next FTSE review month · #124 |
@@ -165,8 +165,9 @@ are proposals and need backtesting (A11).
 | **Potential for growth, at a sane price, and not broken?** | fundamentals `growth`, `quality`, `value`, `eps_revision` | `growth` > 0 and `quality` > −0.5, and `eps_revision` not negative | `growth` ≤ 0 but revisions rising |
 
 In one line: **a stage-2 uptrend with positive momentum, priced near support rather than
-stretched above it, outperforming its peers, with earnings growing or being revised up, and
-at least 2:1 to the next resistance (or nothing overhead).**
+stretched above it, outperforming its peers, with earnings growing or being revised up.**
+Superseded by **ADR 0022** (the owner's definition: catalyst-led, volatility wanted, the screen
+a ranked wide net sending 7 ranked + 3 catalyst names a week to the agents).
 
 | ID | Story | Rel | Status |
 |---|---|---|---|

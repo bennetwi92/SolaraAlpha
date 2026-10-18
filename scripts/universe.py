@@ -1,4 +1,4 @@
-"""Quarterly watchlist refresh: the FTSE AIM 100 constituents from the LSE website.
+"""Quarterly watchlist refresh: FTSE AIM 100 + FTSE AIM UK 50 constituents from the LSE website.
 
 Prints config/watchlist.toml (or writes it with --write), then to stderr: tickers added /
 removed vs the current watchlist, and new tickers without a config/benchmarks.toml entry with
@@ -23,7 +23,8 @@ from solaraalpha.data.http import DEFAULT_TIMEOUT, get_json, session
 ROOT = Path(__file__).resolve().parents[1]
 WATCHLIST = ROOT / "config" / "watchlist.toml"
 BENCHMARKS = ROOT / "config" / "benchmarks.toml"
-INDEX = "ftse-aim-100-index"
+# The universe is the union (the owner keeps AIM UK 50 names that are outside the AIM 100).
+INDEXES = ("ftse-aim-100-index", "ftse-aim-uk-50-index")
 REFRESH_URL = "https://api.londonstockexchange.com/api/v1/components/refresh"
 INSTRUMENT_URL = "https://api.londonstockexchange.com/api/gw/lse/instruments/alldata/{tidm}"
 # the constituents table on londonstockexchange.com/indices/<index>/constituents/table
@@ -83,8 +84,8 @@ ICB_SECTORS = {
 HEADER = """\
 # Stocks the weekly pipeline runs (scripts/scan.py, .github/workflows/scan.yml).
 #
-# Universe: FTSE AIM 100 constituents as listed on the London Stock Exchange website on
-# {day} (londonstockexchange.com/indices/ftse-aim-100-index/constituents/table; refresh with
+# Universe: FTSE AIM 100 plus FTSE AIM UK 50 constituents as listed on the London Stock Exchange
+# website on {day} (londonstockexchange.com/indices/<index>/constituents/table; refresh with
 # scripts/universe.py). Hand-run snapshot, not point-in-time: refresh after each quarterly FTSE
 # review (Mar / Jun / Sep / Dec). Yahoo ticker = TIDM + ".L". `snapshot` is the copy date:
 # scan.py warns once a review month has passed since it (solaraalpha.pipeline.stale_watchlist).
@@ -102,7 +103,7 @@ def parse_rows(payload: list[dict]) -> tuple[list[dict], int]:
     raise ValueError("no constituents table in the response")
 
 
-def fetch_constituents(index: str = INDEX) -> list[dict]:
+def fetch_constituents(index: str = INDEXES[0]) -> list[dict]:
     """Every constituent row (tidm, issuername, marketcapitalization, ...) of a FTSE index."""
     rows: list[dict] = []
     page, total = 0, 1
@@ -168,7 +169,7 @@ def main(argv: list[str] | None = None) -> None:
 
     old_text = WATCHLIST.read_text()
     old = set(tomllib.loads(old_text)["tickers"])
-    rows = fetch_constituents()
+    rows = list({r["tidm"]: r for i in INDEXES for r in fetch_constituents(i)}.values())
     text = render(rows, date.today(), current_names(old_text))
     tidms = {yahoo(r["tidm"]): r["tidm"] for r in rows}
     new = set(tidms)

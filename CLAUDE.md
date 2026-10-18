@@ -25,8 +25,9 @@ Current state:
 - **Trading frequency is weekly** unless the owner says otherwise. Weekly bars end Friday
   (`to_weekly`), and only completed weeks are used.
 - Working on **single-stock analysis**; first example is Jet2 (`JET2.L`, AIM-listed). The
-  pipeline universe is the **FTSE AIM UK 50** (current constituents, hand-copied snapshot in
-  `config/watchlist.toml` — refresh after each quarterly FTSE review; not point-in-time).
+  pipeline universe is the **FTSE AIM 100 plus the FTSE AIM UK 50** (104 stocks; snapshot in
+  `config/watchlist.toml`, refreshed after each quarterly FTSE review with
+  `scripts/universe.py --write`, run by hand, never in CI; not point-in-time).
 - Price data is **fetched fresh each run** (no `@parquet_cache`). With `--save` the raw fetch is
   also snapshotted into the results DB (`solaraalpha.store`) — for the record, never as a cache.
 - **Results DB**: scripts' `--save` records the run, model cards and input snapshots in an
@@ -55,13 +56,19 @@ Current state:
 - Model outputs for the scorecard are scores in **[-1, +1]** (+ = bullish / favourable).
 - Toolkits run as **one serialised weekly pipeline** (docs/decisions/0010, 0014): toolkits are
   registered by id in `solaraalpha/toolkits.py`, each with `act=` / `watch=` bands that label a
-  stock **ACT / WATCH / PASS** (ERROR if it raised); labels combine ERROR > PASS > WATCH > ACT.
-  The stages are `WEEKLY` in `solaraalpha/pipeline.py` — `screen` (technical + levels + relative
-  strength + liquidity, on every stock; liquidity has no bands and feeds sizing) → `fundamentals`
-  (on ACT and WATCH) → `events` (on ACT; it has no bands and is the input to research, not a
-  gate). The **screen label** combines the four
-  screening toolkits and is saved per stock in the `labels` table (`store.shortlist`), with
-  `watch_on` (what a WATCH stock waits for, JSON) and `rank` (ACT order, 1 = best). Stocks:
+  stock **ACT / WATCH / PASS** (ERROR if it raised); since ADR 0022 the bands are information,
+  not the gate. The stages are `WEEKLY` in `solaraalpha/pipeline.py` — `screen` (technical +
+  levels + relative strength + liquidity, on every stock; liquidity has no bands and feeds
+  sizing, but its ERROR is the stock's ERROR) → `fundamentals` (every stock without an ERROR) →
+  `events` (the shortlist). **The screen is a ranked shortlist** (`pipeline.screen`, ADR 0014
+  amendment #192): past a sanity floor (no ERROR, `min_adv_gbp`), stocks are ranked by
+  `portfolio.fit.rank_score` (mean of technical `trend`, levels `compression`, fundamentals
+  `growth`); the top `shortlist_size` (7) plus up to `shortlist_catalysts` (3) with a fresh
+  catalyst (`solaraalpha.catalysts.fresh_catalysts`: new filings, headlines, scheduled events)
+  are ACT, the rest keep their band label capped at WATCH. Saved per stock in the `labels`
+  table (`store.shortlist`) with `rank`, `shortlist` (why) and `watch_on` (JSON). Levels is
+  compression / breakout context (`compression`, `compressed`, `wedge`, `new_high`, ADR 0004
+  amendment #194); relative strength is agent context (docs/research/0001). Stocks:
   `config/watchlist.toml` (hand snapshot with a `snapshot` date; the scan warns once a quarterly
   FTSE review month has passed since it). After the pipeline the scan **reviews every open position** (all
   toolkits with the position's entry → a `review` card; the stop ratchets up and is drafted as
@@ -153,6 +160,8 @@ Current state:
 | Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
+| Fresh catalysts (filings, headlines, scheduled events) per stock | `uv run python scripts/catalysts.py [TICKERS...] [--days 7] [--horizon 10] [--no-news]` |
+| Refresh the watchlist (FTSE AIM 100 + AIM UK 50; by hand, never CI) | `uv run python scripts/universe.py [--write]` |
 | Book trades by hand (draft, approve, amend, reject, tickets, placed, fills, exits) | `uv run python scripts/book.py new JET2.L --entry 1520 --stop 1400 --qty 100` / `list` / `show ID` / `approve ID` / `amend ID --qty N --price P --stop P` / `reject ID --reason TEXT` / `tickets` / `placed ORDER_ID --ref REF` / `fill ORDER_ID --qty N --price P [--commission X]` / `unfilled ORDER_ID` / `cancel ORDER_ID` / `expire` / `exit ID --reason stop|target|thesis_broken|...` / `cash dividend TICKER GBP --at EXDATE` / `split ID --ratio 2:1` / `corporate-close ID --price P --reason takeover|delisting` / `stats [--since D]` (`--db PATH` for a local file) |
 | Draft the week's trade plans from a saved scan run (final ACT labels → plan → fit → draft positions) | `uv run python scripts/plan.py --run N [--dry-run]` |
 | Weekly pack for a run (new plans with approve/reject commands, fit rejections, watch list, open positions, money, errors) | `uv run python scripts/weekly_pack.py --run N [--out FILE] [--report FILE]` |
@@ -187,6 +196,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         weekly bars as seen at the close (post-exit weeks = hindsight) — 0016
   monitoring.py         the monitor's pack: position then (entry conditions) vs now (fresh cards),
                         thesis conditions evaluated, triggers + filing text — docs/decisions/0018
+  catalysts.py          fresh_catalysts: ticker -> one-line reason (new material filings, headlines,
+                        a scheduled event in the window); a stock with one can join the shortlist
   value_models.py       register of per-stock value models (config/value_models.toml) for research
   dashboard.py          render_dashboard: one self-contained HTML page from the DB (inline CSS,
                         base64 PNG charts, md_to_html for the pack) — #136
@@ -259,7 +270,7 @@ src/solaraalpha/        importable package — all reusable code lives here
     journal.py          trade journal: closed trades (close summary + set-up type from the plan),
                         hit rate / average R / expectancy by exit reason and set-up
 scripts/                thin CLI entry points (argparse) that call into the package
-config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM UK 50 snapshot)
+config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM 100 + AIM UK 50 snapshot)
 config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)
 config/value_models.toml  per-stock value models (skill + script) the research agent calls — #127
 config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeholders until confirmed)

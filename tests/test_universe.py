@@ -37,11 +37,12 @@ def test_tidy() -> None:
     assert universe.tidy("BOKU, INC.") == "Boku"
 
 
-def test_checked_in_watchlist_is_the_aim_100() -> None:
+def test_checked_in_watchlist_is_aim_100_plus_uk_50() -> None:
     text = universe.WATCHLIST.read_text()
     tickers = tomllib.loads(text)["tickers"]
-    assert len(tickers) == 100 and tickers == sorted(tickers) and "JET2.L" in tickers
-    assert "FTSE AIM 100" in text
+    assert len(tickers) == 104 and tickers == sorted(tickers) and "JET2.L" in tickers
+    assert "FTSE AIM 100 plus FTSE AIM UK 50" in text
+    assert {"CAM.L", "EKF.L", "IPX.L", "TRB.L"} <= set(tickers)  # UK 50 names outside the AIM 100
     with universe.BENCHMARKS.open("rb") as f:
         stocks = tomllib.load(f)["stocks"]
     assert all(stocks[t].get("sector") and stocks[t].get("industry") for t in tickers)

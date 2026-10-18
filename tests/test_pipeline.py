@@ -353,12 +353,12 @@ def test_watch_on_per_failing_toolkit() -> None:
     ]
     assert watch_on(
         [
-            _step("levels", "WATCH", "thin", coil_pending=False, trigger=None, reward_risk=1.7),
+            _step("levels", "WATCH", "loose", coil_pending=False, trigger=None, compression=0.2),
             _step("relative_strength", "WATCH", "rs", rs=-0.1),
             _step("technical", "WATCH", "failed trend >= 0.25", entry=0.3, trend=0.1, ma10=1.0),
         ]
     ) == [
-        {"toolkit": "levels", "kind": "reward_risk", "reward_risk": 1.7},
+        {"toolkit": "levels", "kind": "compression", "compression": 0.2},
         {"toolkit": "relative_strength", "kind": "rs", "rs": -0.1},
         {"toolkit": "technical", "kind": "technical", "reason": "failed trend >= 0.25"},
     ]
@@ -475,3 +475,10 @@ def test_pipeline_runs_shortlist_stages_on_the_shortlist(
     got = run_pipeline(inputs, stages, {"DOWN.L": "bid"}, size=1, catalyst_cap=1, min_adv_gbp=0.0)
     assert got["DOWN.L"][-1].status == "pass"  # stub a: DOWN.L scores -0.9 -> PASS, but it ran
     assert got["MID.L"][-1].status == "skip"
+
+
+def test_liquidity_error_makes_the_screen_label_error() -> None:
+    ok = [_step("technical", "ACT"), _step("levels", "ACT"), _step("relative_strength", "ACT")]
+    assert screen_label([*ok, _step("liquidity", "ACT")])[0] == "ACT"
+    err = Step("screen", "liquidity", "error", "NotImplementedError: FX", {})
+    assert screen_label([*ok, err])[0] == "ERROR"

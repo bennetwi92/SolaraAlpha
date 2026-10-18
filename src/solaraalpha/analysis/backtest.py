@@ -36,7 +36,6 @@ MIN_WEEKS = 60  # weeks of history before the first replayed card (warm-up for t
 MIN_N = 30  # ACT weeks a sweep cell needs before its numbers are read
 GRID: dict[tuple[str, str], tuple[float, ...]] = {
     ("technical", "trend"): (0.0, 0.1, 0.25, 0.4),
-    ("levels", "reward_risk"): (1.5, 2.0, 3.0),
     ("relative_strength", "rs"): (-0.1, 0.0, 0.1),
 }
 Fetch = Callable[[str], pd.DataFrame]
@@ -278,7 +277,7 @@ def report(
     lines = [
         "# Screen backtest (point-in-time replay)",
         "",
-        "> **Caveat.** The universe is today's watchlist (the current FTSE AIM UK 50 snapshot), so the"
+        "> **Caveat.** The universe is today's watchlist (the current FTSE AIM 100 + AIM UK 50 snapshot), so the"
         " replay has **survivorship bias**: stocks that left the index are missing and the numbers"
         " are indicative, not a performance estimate. Every band stays a placeholder until the owner"
         " decides (ADR 0014); nothing here changes the code.",

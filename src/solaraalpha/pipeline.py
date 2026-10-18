@@ -201,7 +201,7 @@ def stale_watchlist(snapshot: pd.Timestamp | None, today: pd.Timestamp) -> str |
     if now.normalize() > due:
         return (
             f"watchlist snapshot {snap:%Y-%m-%d} predates the {end_of_review:%B %Y} FTSE review:"
-            " refresh config/watchlist.toml from the FTSE AIM UK 50 constituents"
+            " refresh config/watchlist.toml (scripts/universe.py --write)"
         )
     return None
 
@@ -242,8 +242,14 @@ def combine(labels: list[str]) -> str:
 
 def screen_label(steps: list[Step]) -> tuple[str, str]:
     """The ticker's screen label and reason: :func:`combine` over the :data:`SCREEN_TOOLKITS`
-    that ran (skipped ones are left out), e.g. ``technical WATCH: failed entry >= 0 (entry=-0.41)``."""
-    judged = [s for s in steps if s.toolkit in SCREEN_TOOLKITS and s.status != "skip"]
+    that ran (skipped ones are left out), e.g. ``technical WATCH: failed entry >= 0 (entry=-0.41)``.
+    Liquidity has no bands but sizing needs it, so a liquidity ERROR makes the label ERROR."""
+    judged = [
+        s
+        for s in steps
+        if (s.toolkit in SCREEN_TOOLKITS or (s.toolkit == "liquidity" and s.label == "ERROR"))
+        and s.status != "skip"
+    ]
     label = combine([s.label for s in judged]) if judged else "ERROR"
     reason = "; ".join(
         f"{s.toolkit} {s.label}" + (f": {s.reason}" if s.label != "ACT" else "") for s in judged
@@ -264,7 +270,8 @@ def _field(cards: Cards, model: str, field: str) -> Any:
 def watch_on(steps: list[Step]) -> list[dict[str, Any]] | None:
     """What each WATCH toolkit is waiting for, in machine form (None when no toolkit is WATCH):
     technical extended → ``pullback`` to the 10-week MA ``level``; levels coiled → ``break`` of
-    ``trigger``; levels thin → ``reward_risk``; relative strength → ``rs``; fundamentals →
+    ``trigger``; levels otherwise → ``compression`` (not yet compressed or at a high);
+    relative strength → ``rs``; fundamentals →
     ``revisions`` (``eps_revision``). Anything else keeps the toolkit's reason text."""
     out: list[dict[str, Any]] = []
     for s in steps:
@@ -281,7 +288,7 @@ def watch_on(steps: list[Step]) -> list[dict[str, Any]] | None:
         elif s.toolkit == "levels" and _field(c, "levels", "coil_pending"):
             item |= {"kind": "break", "trigger": _field(c, "levels", "trigger")}
         elif s.toolkit == "levels":
-            item |= {"kind": "reward_risk", "reward_risk": _field(c, "levels", "reward_risk")}
+            item |= {"kind": "compression", "compression": _field(c, "levels", "compression")}
         elif s.toolkit == "relative_strength":
             item |= {"kind": "rs", "rs": _field(c, "relative_strength", "rs")}
         elif s.toolkit == "fundamentals":
