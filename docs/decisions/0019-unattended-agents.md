@@ -9,8 +9,8 @@ token (#92), but spend must be bounded and nothing may spend until the owner say
 
 **Decision.**
 - **Runner: GitHub Actions + `anthropics/claude-code-action@v1`**, in `.github/workflows/
-  agents.yml`, triggered by `workflow_run` on "Weekly pipeline" and "Daily check" (completed,
-  any conclusion) and by `workflow_dispatch` (`mode` weekly | daily, `run_id`). It shares the
+  agents.yml`, triggered by `workflow_run` on "Weekly pipeline" and "Daily check" (completed;
+  skipped unless the upstream succeeded, #189) and by `workflow_dispatch` (`mode` weekly | daily, `run_id`). It shares the
   `book` concurrency group with the scan and the daily job. The same runner answers #92: the
   Jet2 refresh is another `claude-code-action` job with its own prompt, PR output and
   no auto-merge; a Claude Code cloud scheduled task would need the same token and would not
