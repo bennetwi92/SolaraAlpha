@@ -141,6 +141,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}  # the action otherwise wants an OIDC token (id-token: write)
           prompt: "/validate ${{ matrix.ticker }} --run ${{ needs.gate.outputs.run }}"
           claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
       - name: Record agent usage
@@ -199,6 +200,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}  # the action otherwise wants an OIDC token (id-token: write)
           prompt: "/macro --run ${{ needs.gate.outputs.run }} for the group ${{ matrix.group }} only"
           claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
       - name: Record agent usage
@@ -258,6 +260,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}  # the action otherwise wants an OIDC token (id-token: write)
           prompt: "/research ${{ matrix.ticker }} --run ${{ needs.gate.outputs.run }}"
           claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
       - name: Record agent usage
@@ -326,6 +329,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}  # the action otherwise wants an OIDC token (id-token: write)
           prompt: "/monitor --run ${{ needs.gate.outputs.run }} --position ${{ matrix.position }}"
           claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
       - name: Record agent usage
@@ -365,6 +369,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}  # the action otherwise wants an OIDC token (id-token: write)
           prompt: "/postmortem ${{ matrix.position }}"
           claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
       - name: Record agent usage
