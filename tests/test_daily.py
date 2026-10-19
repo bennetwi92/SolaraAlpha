@@ -205,6 +205,7 @@ def world(db_backend: Path | None) -> tuple[Path | None, dict[str, pd.DataFrame]
             270.0,
             50,
             payload={"wait_for_break": True},
+            valid_until="2099-12-31",  # run_daily checks validity against the real clock
             at="2026-10-11T18:30:00+00:00",
         )
         book.approve_position(conn, pid2)
