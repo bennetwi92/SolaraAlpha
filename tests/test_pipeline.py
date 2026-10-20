@@ -428,6 +428,7 @@ def test_screen_ranks_a_floor_into_a_shortlist_with_catalysts() -> None:
         "rank 3, not shortlisted; technical ACT",
     )
     assert got["E.L"].label == "WATCH" and "(catalyst: new CEO)" in got["E.L"].reason
+
     assert got["I.L"].label == "PASS"
     assert got["I.L"].reason.startswith(
         "floor: adv_gbp_20 1,000 < min_adv_gbp 25,000 (catalyst: bid)"
@@ -480,3 +481,20 @@ def test_liquidity_error_makes_the_screen_label_error() -> None:
     assert screen_label([*ok, _step("liquidity", "ACT")])[0] == "ACT"
     err = Step("screen", "liquidity", "error", "NotImplementedError: FX", {})
     assert screen_label([*ok, err])[0] == "ERROR"
+
+
+def test_screen_fills_catalyst_slots_by_tier_then_rank() -> None:
+    steps = {t: _ticker(v) for t, v in [("A.L", 0.9), ("B.L", 0.5), ("C.L", 0.3), ("D.L", 0.1)]}
+    catalysts = {
+        "B.L": "tier 3: 1 headline, latest 2026-10-16: B",
+        "C.L": "negative: warning: RNS 2026-10-15: Result of Placing",
+        "D.L": "tier 1: RNS 2026-10-14: Trading Update",
+    }
+    got = screen(steps, size=1, catalysts=catalysts, catalyst_cap=2, min_adv_gbp=25_000)
+    short = {t: s.shortlist for t, s in got.items() if s.shortlist}
+    assert short == {  # D.L's tier 1 beats B.L's better rank; warnings-only C.L is last
+        "A.L": "rank 1",
+        "D.L": "catalyst: tier 1: RNS 2026-10-14: Trading Update",
+        "B.L": "catalyst: tier 3: 1 headline, latest 2026-10-16: B",
+    }
+    assert got["C.L"].label == "WATCH" and "(catalyst: negative: warning" in got["C.L"].reason

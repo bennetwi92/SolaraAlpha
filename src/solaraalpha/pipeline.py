@@ -22,8 +22,8 @@ The **shortlist** (:func:`screen`): a minimal sanity floor (no screening toolkit
 liquidity card with ``adv_gbp_20 >= min_adv_gbp``, a combined score), then the tickers past it
 ranked by :func:`solaraalpha.portfolio.fit.rank_score` (:func:`rank_act`). The top
 ``shortlist_size`` are shortlisted ("rank N"); tickers with a catalyst (``catalysts``: ticker ->
-one-line reason) join outside the top N, up to ``shortlist_catalysts`` more ("catalyst:
-<reason>"). Shortlisted tickers get the screen label ACT (the agents can only downgrade it);
+one-line reason, tagged with its tier) join outside the top N, best tier then best rank, up to
+``shortlist_catalysts`` more ("catalyst: tier 1: <reason>"). Shortlisted tickers get the screen label ACT (the agents can only downgrade it);
 the others keep their band label capped at WATCH; floor failures are PASS. Volatility is never
 a gate. Running stage by stage (not stock by stock) puts each stage's results for all stocks
 side by side before the next starts.
@@ -356,7 +356,8 @@ def screen(
     Tickers past the :func:`floor` are ranked by ``rank_score`` (:func:`rank_act`); the top
     ``size`` are shortlisted as ``rank N``. A ticker in ``catalysts`` (ticker -> one-line
     reason) past the floor but outside the top ``size`` joins as ``catalyst: <reason>``,
-    best-ranked first, at most ``catalyst_cap`` of them; a top-N ticker with a catalyst carries
+    best tier first (:func:`solaraalpha.catalysts.tier_of`: information, scheduled, discovery,
+    warnings only), then best-ranked, at most ``catalyst_cap`` of them; a top-N ticker with a catalyst carries
     both reasons. Shortlisted -> ACT; past the floor but not shortlisted -> its band label
     (:func:`screen_label`) capped at WATCH; below the floor -> PASS; ERROR stays ERROR.
     ``None`` arguments default to ``config/portfolio.toml`` (``shortlist_size``,
@@ -374,7 +375,12 @@ def screen(
     ranks = rank_act({t: cards_of(s) for t, s in steps.items() if below[t] is None})
     picks = {t: f"rank {r}" for t, r in ranks.items() if r <= size}
     extra = 0
-    for t in sorted((t for t in catalysts if t in ranks), key=lambda t: ranks[t]):
+    from solaraalpha.catalysts import tier_of
+
+    by_tier = sorted(
+        (t for t in catalysts if t in ranks), key=lambda t: (tier_of(catalysts[t]), ranks[t])
+    )
+    for t in by_tier:
         why = f"catalyst: {catalysts[t]}"
         if t in picks:
             picks[t] += f"; {why}"

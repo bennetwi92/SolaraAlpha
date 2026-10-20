@@ -179,3 +179,18 @@ cannot fail the weekly run and skip the agents (#189).
   So every pack the agents read carries one line, `fit.RANK_NOTE`: the rank is unvalidated, a
   wide net, not a forecast (validator pack `rank_note`, PM pack `rank_note`, weekly pack
   Shortlist section).
+
+## Amendment (#222, #214 F6): catalyst slots by tier
+
+`fresh_catalysts` flagged almost every name most weeks (any non-routine filing, any event within
+10 weeks, any headline), so the 3 catalyst slots went by rank and added little. Each catalyst is
+now tiered from its NSM type code and headline: **1 information** (results, trading updates,
+contracts, regulatory approvals, agreements / acquisitions, operational updates), **2 scheduled**
+(an expected event 2-6 weeks out, or overdue), **3 discovery** (other filings, events further
+out, headlines), **negative** (a placing or fundraise, Nomad / auditor change, delay,
+suspension, profit warning). The reason is tagged (`tier 1: ...`, warnings listed as
+`warning: ...`) and saved with the shortlist reason; `screen` fills the slots by tier, then
+rank. A stock with only warnings is still eligible, last (ADR 0022: never an exclusion).
+Director dealings are tier 3: by type code they are mostly grants and vesting; open-market
+buying needs the filing text (R6, tested first under #223). Wording against expectations is the
+same: R1, not read here.
