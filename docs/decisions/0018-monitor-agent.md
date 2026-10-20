@@ -45,3 +45,11 @@ has to be defined tightly or the agent churns, and the agent must never touch an
 something) an auditable old → new with the owner's decision, which the post-mortem (#134)
 and the agent value-added measure (#144) can read. Running it unattended is #123;
 notifications are #132; machine thesis conditions checked daily without an agent are #131.
+
+
+**Amendment (ADR 0024): every weekday, changes applied.** The monitor reviews every open
+position and pending entry each weekday, sets stops by judgement (systematic stops are
+context), and also acts on pending entries (`amend_entry`, `cancel`). An agent's revision is
+accepted by the book as it is recorded; the owner is notified with the broker action and can
+reverse it with `book.py undo REV_ID --reason`. "The monitor never changes orders" no longer
+holds: it changes them through the book's revision path, never directly.

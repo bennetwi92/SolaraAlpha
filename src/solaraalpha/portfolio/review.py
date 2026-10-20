@@ -3,9 +3,10 @@
 Each Sunday the scan runs technical (with the position's entry date and average cost, giving
 the ``position`` card), levels, relative strength and fundamentals for every open position,
 whether or not it is in the watchlist, and :func:`review` turns that into a ``ReviewCard``:
-the ratcheted stop, what has deteriorated since entry, the horizon rule and an action. The
-pipeline **proposes**: a moved stop is drafted as an approved order (ratchet only, never
-lower); an ``exit`` action is reported for the owner. See docs/decisions/0015 "Weekly review".
+the trailing (chandelier) stop, what has deteriorated since entry, the horizon rule and an
+action. Since ADR 0024 the stop is the agents' call: the trailing stop is **context** on the card
+(``new_stop``, ``stop_moved`` = it is above the live stop) for the daily monitor, never drafted
+here; an ``exit`` action is reported for the owner. See docs/decisions/0015 "Weekly review".
 """
 
 from __future__ import annotations
@@ -47,8 +48,8 @@ class ReviewCard:
     weeks_held: int
     r_multiple: float
     old_stop: float  # the live stop before the review (NaN if none)
-    new_stop: float  # max(old stop, chandelier stop): ratchet only
-    stop_moved: bool
+    new_stop: float  # max(old stop, chandelier stop): the trail suggests (ADR 0024: context)
+    stop_moved: bool  # the trail is above the live stop: the monitor may raise it
     deteriorated: str  # comma-separated fields that fell by >= DETERIORATION since entry
     past_horizon: bool  # weeks held > the horizon's upper bound
     action: str  # hold / review / exit (exit is reported, never drafted)
@@ -81,7 +82,8 @@ def review(
     """Judge an open position from the fresh ``cards`` (incl. ``position``) against the frozen
     ``entry_conditions`` (``{model: {field: value}}``).
 
-    * ``new_stop`` = max(old live stop, the ``position`` card's chandelier stop); never lower.
+    * ``new_stop`` = max(old live stop, the ``position`` card's chandelier stop): what the
+      trail suggests, context for the monitor agent who sets the stop (ADR 0024).
     * ``deteriorated``: among trend, momentum, structure, rs, growth, quality, the fields whose
       score fell by at least :data:`DETERIORATION` since entry.
     * ``action``: ``exit`` if the ``position`` card says exit, or past the horizon
@@ -130,9 +132,9 @@ def review(
         reasons.append("past the horizon, still climbing" if past else "set-up intact")
     if moved:
         reasons.append(
-            f"stop raised {old:,.1f} → {new:,.1f}"
+            f"trailing stop {new:,.1f} is above the stop {old:,.1f} (the monitor decides)"
             if not math.isnan(old)
-            else f"stop set {new:,.1f}"
+            else f"trailing stop {new:,.1f}, no stop set (the monitor decides)"
         )
     event_due, event_status, event_action = upcoming_event(cards.get("events"), date, rules)
     if event_due:
@@ -256,9 +258,8 @@ def review_positions(
     run_id: int | None = None,
 ) -> list[Reviewed]:
     """Run every review toolkit on each open position (sharing ``inputs`` by ticker when
-    given), review it and, with ``run_id``, save the cards and steps under stage ``review``,
-    draft the raised stop (approved, actor pipeline, plus ``stop_raised``) and save the
-    ``review`` card."""
+    given), review it and, with ``run_id``, save the cards and steps under stage ``review`` and
+    the ``review`` card. The trailing stop is not drafted (ADR 0024: the monitor sets stops)."""
     inputs = inputs if inputs is not None else {}
     out: list[Reviewed] = []
     for pid in [int(p) for p in book.positions(conn, status="open")["position_id"]]:
@@ -295,8 +296,6 @@ def review_positions(
             )
         if run_id is not None:
             with conn:
-                if card.stop_moved:
-                    item.stop_order_id = raise_stop(conn, state, card.new_stop, run_id)
                 if item.add is not None and not _add_pending(conn, pid):
                     item.add_revision_id = propose_add(conn, state, item.add, run_id)
                 item.event_revision_id = propose_event_action(conn, state, card, rules, run_id)
@@ -323,7 +322,8 @@ def _add_pending(conn: Conn, position_id: int) -> bool:
 
 def raise_stop(conn: Conn, state: PositionState, new_stop: float, run_id: int) -> int:
     """Replace the live stop order at ``new_stop`` (approved, actor pipeline) and record
-    ``stop_raised``. Ratchet only: raises if ``new_stop`` is not above the current stop."""
+    ``stop_raised``. Ratchet only: raises if ``new_stop`` is not above the current stop. No
+    longer called by the weekly review (ADR 0024); kept for a stop the owner sets by rule."""
     if state.stop is not None and new_stop <= state.stop:
         raise ValueError(f"never lower a stop: {new_stop} <= {state.stop}")
     od = book.orders(conn, state.position_id)
@@ -367,6 +367,8 @@ def review_report(items: list[Reviewed]) -> str:
         line = f"- {it.state.ticker} (position {c.position_id}): **{c.action}** — {c.reason}; {c.weeks_held}w, {c.r_multiple:+.2f}R"
         if it.stop_order_id:
             line += f"; new stop order {it.stop_order_id} approved (see `book.py tickets`)"
+        elif c.stop_moved:
+            line += "; trailing stop is context for the daily monitor (ADR 0024)"
         if c.action == "exit":
             line += f"; `book.py exit {c.position_id} --reason time`"
         if c.event_due:

@@ -1,12 +1,14 @@
-"""Build the monitor agent's pack for the positions a daily run flagged for review.
+"""Build the monitor agent's pack for the positions a daily run puts up for review.
 
 uv run python scripts/monitor_pack.py --run DAILY_RUN_ID [--position ID] [--db PATH] [--no-text]
 
-For each open position with an agent trigger (gap, filing) in that daily run (or the one given
-with --position), writes data/processed/monitor/<position_id>/<run_id>/pack.json: state,
-orders and plan; the entry conditions (then); fresh technical / levels / relative-strength
-cards (now) and a then -> now diff; the thesis conditions with machine ones evaluated now; the
-triggers with the filing's full text; the latest research verdict. Then `/monitor`.
+For each open position and pending entry in that daily run (every one has a daily_review, ADR
+0024; or the one given with --position), writes
+data/processed/monitor/<position_id>/<run_id>/pack.json: status (open / pending), state, orders,
+plan and the pending entry order; the entry conditions (then); fresh technical / levels /
+relative-strength cards (now) and a then -> now diff; the thesis conditions with machine ones
+evaluated now; the day's triggers with the filing's full text; the latest research verdict and
+its levels; the systematic stops (context only). Then `/monitor`.
 """
 
 from __future__ import annotations
@@ -42,7 +44,7 @@ def main(argv: list[str] | None = None) -> None:
             out = write_pack(pack)
             hits = [t["condition"] for t in pack["thesis"] if t["hit"]]
             print(
-                f"position {pid} {pack['ticker']}: {len(pack['triggers'])} trigger(s); thesis hits: {', '.join(hits) or 'none'};"
+                f"position {pid} {pack['ticker']} ({pack['status']}): {len(pack['triggers'])} trigger(s); thesis hits: {', '.join(hits) or 'none'};"
                 f" now errors: {', '.join(pack['now_errors']) or 'none'}; written to {out}"
             )
     finally:

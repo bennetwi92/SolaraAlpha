@@ -322,8 +322,8 @@ def render_pack(pack: Pack) -> str:
             if rv:
                 lines.append(
                     f"  - review ({str(rv.get('date'))[:10]}): action **{rv.get('action', '?')}**; "
-                    f"stop {_px(rv.get('old_stop'), st.currency)} → {_px(rv.get('new_stop'), st.currency)}"
-                    f"{' (moved)' if rv.get('stop_moved') else ''}; deteriorated: {rv.get('deteriorated') or 'none'}"
+                    f"stop {_px(rv.get('old_stop'), st.currency)}, trailing stop {_px(rv.get('new_stop'), st.currency)}"
+                    f"{' (above it: the monitor decides)' if rv.get('stop_moved') else ''}; deteriorated: {rv.get('deteriorated') or 'none'}"
                     f"; {rv.get('reason', '')}"
                 )
                 if rv.get("action") == "exit":

@@ -1,11 +1,15 @@
 """The daily job: prices, triggers and new filings for open positions and the watch list.
 
 Every weekday evening (``daily.yml``): fetch daily prices for the open positions, the latest
-scan's WATCH tickers and the tickers with a live entry order waiting for a break; run the
-checks in :mod:`solaraalpha.portfolio.triggers`; evaluate each open position's machine thesis
-conditions on fresh cards; look for dividends and splits the book has not recorded, and for new filings (and headlines) since the last daily run; report owner actions and agent reviews. One ticker's failure never stops
-the others. With ``save``: one ``daily`` run, a price snapshot per ticker and the triggers in
-the ``triggers`` table (the monitor agent reads them). See docs/decisions/0017.
+scan's WATCH tickers and the pending entries (draft / approved positions with an unfilled entry
+order); run the checks in :mod:`solaraalpha.portfolio.triggers`; evaluate the machine thesis
+conditions of open positions and pending entries on fresh cards; look for dividends and splits
+the book has not recorded, and for new filings (and headlines) since the last daily run; report
+owner actions and agent reviews. Every open position and pending entry gets a ``daily_review``
+trigger, so the monitor agent re-evaluates each one every weekday (ADR 0024). One ticker's
+failure never stops the others. With ``save``: one ``daily`` run, a price snapshot per ticker
+and the triggers in the ``triggers`` table (the monitor agent reads them). See
+docs/decisions/0017.
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ from solaraalpha.portfolio.triggers import (
     Trigger,
     _session,
     action_triggers,
+    daily_review,
     entry_break,
     event_due,
     filing_triggers,
@@ -144,31 +149,41 @@ def watch_checks(ticker: str, daily: pd.DataFrame, w: dict[str, Any]) -> list[Tr
     return out
 
 
-def pending_breaks(conn: Conn) -> list[dict[str, Any]]:
-    """Draft / approved entry orders on positions whose plan waits for a break."""
+def pending_entries(conn: Conn) -> list[dict[str, Any]]:
+    """Pending entries: draft / approved positions with an unfilled entry order (draft,
+    approved, placed or part filled), with ``wait_for_break`` from the plan (``trigger`` = the
+    order price; the ``entry_break`` check applies to those only)."""
     pos = book.positions(conn)
     pos = pos[pos["status"].isin(["draft", "approved"])]
     out = []
     for p in pos.to_dict("records"):
-        ev = book.position_events(conn, int(p["position_id"]))
-        payloads = [x for x in ev.loc[ev["kind"].isin(["drafted", "amended"]), "payload"]]
-        plan = payloads[-1] if payloads else {}
-        if not plan.get("wait_for_break"):
+        pid = int(p["position_id"])
+        ev = book.position_events(conn, pid)
+        drafted = [x for x in ev.loc[ev["kind"] == "drafted", "payload"]]
+        wait = bool(drafted and drafted[-1].get("wait_for_break"))
+        pe = book.pending_entry(conn, pid)
+        if pe is None:
             continue
-        od = book.orders(conn, int(p["position_id"]))
-        live = od[(od["purpose"] == "entry") & od["status"].isin(["draft", "approved"])]
-        for o in live.to_dict("records"):
-            out.append(
-                {
-                    "ticker": str(p["ticker"]),
-                    "position_id": int(p["position_id"]),
-                    "order_id": int(o["order_id"]),
-                    "trigger": float(o["price"])
-                    if o["price"] is not None and not pd.isna(o["price"])
-                    else None,
-                }
-            )
+        out.append(
+            {
+                "ticker": str(p["ticker"]),
+                "position_id": pid,
+                "order_id": pe["order_id"],
+                "order_status": pe["status"],
+                "trigger": pe["price"],
+                "wait_for_break": wait,
+            }
+        )
     return out
+
+
+def pending_breaks(conn: Conn) -> list[dict[str, Any]]:
+    """Pending entries whose plan waits for a break (not yet at the broker: draft / approved)."""
+    return [
+        p
+        for p in pending_entries(conn)
+        if p["wait_for_break"] and p["order_status"] in ("draft", "approved")
+    ]
 
 
 def _clean(daily: pd.DataFrame) -> pd.DataFrame:
@@ -198,7 +213,10 @@ def run_daily(
             (p.get("target") for p in reversed(payloads) if p.get("target") is not None), None
         )
     watch = latest_watch(conn)
-    pending = pending_breaks(conn)
+    pending = pending_entries(conn)
+    pending_states = {
+        pe["position_id"]: book.position_state(conn, pe["position_id"]) for pe in pending
+    }
 
     why: dict[str, list[str]] = {}
     for st in states.values():
@@ -231,10 +249,17 @@ def run_daily(
         if ticker in watch:
             result.triggers += watch_checks(ticker, daily, watch[ticker])
         for pb in pending:
-            if pb["ticker"] == ticker:
-                eb = entry_break(ticker, daily, pb["position_id"], pb["order_id"], pb["trigger"])
+            if pb["ticker"] != ticker:
+                continue
+            pid = pb["position_id"]
+            if pb["wait_for_break"] and pb["order_status"] in ("draft", "approved"):
+                eb = entry_break(ticker, daily, pid, pb["order_id"], pb["trigger"])
                 if eb:
                     result.triggers.append(eb)
+            result.triggers += price_triggers(ticker, daily, pid, None)  # a gap, for the agent
+            hits, issues = check_thesis(conn, pid, pending_states[pid], raw, daily)
+            result.triggers += [Trigger(**{**h.__dict__, "at": _session(daily)}) for h in hits]
+            result.errors += [(ticker, f"thesis: {i}") for i in issues]
 
     # the market regime from the benchmark index (#142): advisory, at the top of the report
     rules = load_rules()
@@ -300,9 +325,10 @@ def run_daily(
                 frozenset(str(a)[:10] for a in ev.loc[ev["kind"] == "split", "at"]),
             )
 
-    # filings and headlines for open positions
-    for ticker in {st.ticker for st in states.values()}:
-        pids = [pid for pid, st in states.items() if st.ticker == ticker]
+    # filings and headlines for open positions and pending entries
+    reviewed = {**states, **pending_states}
+    for ticker in sorted({st.ticker for st in reviewed.values()}):
+        pids = [pid for pid, st in reviewed.items() if st.ticker == ticker]
         try:
             issuer = fetch.issuer(ticker)
             ann = fetch.announcements(issuer.lei, start=since[:10])
@@ -323,6 +349,20 @@ def run_daily(
         except Exception as e:
             log.warning("%s: news unavailable (%s)", ticker, e)
             result.errors.append((ticker, f"news: {type(e).__name__}: {e}"))
+
+    # the weekday agent review of every open position and pending entry (ADR 0024)
+    today = now.strftime("%Y-%m-%d")
+    order_of = {pe["position_id"]: pe["order_id"] for pe in pending}
+    for pid, st in reviewed.items():
+        fired = [
+            t
+            for t in result.triggers
+            if t.position_id == pid or (t.kind == "news" and t.ticker == st.ticker)
+        ]
+        status = "pending" if pid in pending_states else "open"
+        result.triggers.append(
+            daily_review(st.ticker, pid, status, fired, today, order_of.get(pid))
+        )
 
     if run_id is not None:
         store.save_triggers(run_id, result.triggers, conn=conn)
@@ -480,7 +520,7 @@ def render_daily(r: DailyResult) -> str:
     lines += ([] if owner else ["none"]) + [""]
 
     lines += ["### Agent review needed", ""]
-    agent = r.of(AGENT_KINDS)
+    agent = [t for t in r.of(AGENT_KINDS) if t.kind != "daily_review"]
     for t in agent:
         d = t.detail
         if t.kind == "gap":
@@ -495,11 +535,19 @@ def render_daily(r: DailyResult) -> str:
             lines.append(
                 f"- **{t.ticker}** new filing {t.at[:16]} `{d['type_code']}` {d['headline']} (position {t.position_id}) {d['url']}"  # noqa: PD008
             )
-    if agent and r.run_id is not None:
+    lines += ([] if agent else ["none"]) + [""]
+    reviews = r.of(("daily_review",))
+    lines += ["### Daily agent review (ADR 0024)", ""]
+    lines += [
+        f"- **{t.ticker}** position {t.position_id} ({t.detail['status']})"
+        + (f": {', '.join(t.detail['fired'])}" if t.detail["fired"] else ": nothing fired")
+        for t in reviews
+    ] or ["none"]
+    if reviews and r.run_id is not None:
         lines.append(
             f"\nRun `/monitor --run {r.run_id}` (or `uv run python scripts/monitor_pack.py --run {r.run_id}`)."
         )
-    lines += ([] if agent else ["none"]) + [""]
+    lines.append("")
 
     lines += ["### Watch breaks and pullbacks", ""]
     wb = r.of(("watch_break", "watch_pullback"))

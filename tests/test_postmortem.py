@@ -122,6 +122,7 @@ def world(db_backend: Path | None) -> tuple[Path | None, int, int, int]:
             "chandelier",
             "agent:monitor",
             at="2026-07-27T18:00:00+00:00",
+            auto_apply=False,  # accepted by the owner an hour later (before ADR 0024)
         )
         book.accept_revision(conn, rid, at="2026-07-27T19:00:00+00:00")
         daily = store.start_run("daily", {}, conn=conn)

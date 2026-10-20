@@ -128,7 +128,7 @@ def test_open_position_with_review_card(scan_db: Path) -> None:
         "- **W.L** (position 1): 100 shares @ 790p, last 800p, +0.14R, stop 720p, risk £70" in text
     )
     assert (
-        "- review (2026-10-09): action **exit**; stop 720p → 735p (moved); deteriorated: momentum; past horizon"
+        "- review (2026-10-09): action **exit**; stop 720p, trailing stop 735p (above it: the monitor decides); deteriorated: momentum; past horizon"
         in text
     )
     assert "book.py exit 1 --reason time" in text

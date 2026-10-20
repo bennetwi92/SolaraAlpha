@@ -1,5 +1,6 @@
 # Daily check: prices, triggers and new filings for open positions, the watch list and pending
-# breakout entries (scripts/daily.py), weekday evenings after the London close. Writes a
+# entries (scripts/daily.py), weekday evenings after the London close; every open position and
+# pending entry gets a daily_review for the monitor agent (agents.yml, docs/decisions/0024). Writes a
 # `daily` run with the triggers to the results DB (Turso secrets, else the local file) and the
 # report to the job summary. Shares the `book` concurrency group with scan.yml so the two never
 # write at once (docs/decisions/0017). Posts to the GitHub issue labelled `inbox` only when the
