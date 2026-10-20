@@ -178,7 +178,7 @@ jobs:
 
   macro:
     needs: [gate, macro-groups]
-    if: needs.gate.outputs.go == 'true' && needs.macro-groups.outputs.groups != '[]' && !cancelled()
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'weekly' && needs.macro-groups.result == 'success' && needs.macro-groups.outputs.groups != '[]' && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -238,7 +238,7 @@ jobs:
 
   research-agents:
     needs: [gate, research]
-    if: needs.gate.outputs.go == 'true' && needs.research.outputs.tickers != '[]' && !cancelled()
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'weekly' && needs.research.result == 'success' && needs.research.outputs.tickers != '[]' && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
