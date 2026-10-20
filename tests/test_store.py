@@ -142,6 +142,18 @@ def test_price_snapshot_keeps_last_of_duplicate_dates(db: Path | None, daily: pd
     assert store.load_prices("JET2.L", path=db)["close"].iloc[-1] == last["close"].iloc[0]
 
 
+def test_price_snapshot_once_per_run(db: Path | None, daily: pd.DataFrame) -> None:
+    # a watchlist stock that is also another's peer, refetched minutes later with a moved bar
+    run_id = store.start_run("scan", {}, path=db)
+    store.save_ticker(run_id, "JET2.L", daily=daily, path=db)
+    moved = daily.copy()
+    moved.loc[moved.index[-1], "close"] += 5.0
+    moved.attrs = daily.attrs
+    store.save_ticker(run_id, "OTHER.L", others={"JET2.L": moved}, path=db)
+    assert _count(db, "prices") == len(daily)
+    assert store.load_prices("JET2.L", path=db)["close"].iloc[-1] == daily["close"].iloc[-1]
+
+
 def test_fundamentals_snapshot(db: Path | None) -> None:
     fund = pd.DataFrame(
         {
