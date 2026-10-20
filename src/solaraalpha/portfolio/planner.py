@@ -8,6 +8,12 @@ positions (no owner approval, ADR 0026) with their entry order, the full plan in
 card frozen as entry conditions and the research's kill criteria as thesis conditions. Re-running
 for the same run is a no-op for tickers that already have a position from it. The weekly pack
 reuses :func:`plan_run` in dry-run mode. See docs/decisions/0015.
+
+When the portfolio manager has recorded its verdict for the run (ADR 0027) the planner follows
+it: only the allocated tickers are planned, each sized at the PM's ``risk_pct``, fit-checked in
+the PM's order, with the positions it rotated out no longer taking a slot, heat or sector room
+(their sale proceeds count as cash), and the drafts are **approved by the PM**. Without a PM
+verdict (no agents, or the PM errored) the drafts wait for the owner as before.
 """
 
 from __future__ import annotations
@@ -20,7 +26,7 @@ from typing import Any
 import pandas as pd
 
 from solaraalpha import store
-from solaraalpha.agents import trade_levels
+from solaraalpha.agents import pm_decision, trade_levels
 from solaraalpha.data.clean import to_weekly
 from solaraalpha.log import get_logger
 from solaraalpha.pipeline import Condition
@@ -32,6 +38,7 @@ from solaraalpha.store import Conn
 
 log = get_logger(__name__)
 
+PM_ACTOR = "agent:pm"
 STAGE_ORDER = ("research", "validate", "screen")  # latest stage present decides
 ENTRY_CONDITION_MODELS = (
     "technical",
@@ -65,6 +72,9 @@ class PlanRun:
     equity: risk.Equity | None = None
     held: pd.DataFrame | None = None  # risk.holdings at the run's closes
     prices: dict[str, float] = field(default_factory=dict)  # the closes used
+    pm: dict[str, Any] | None = None  # the PM's verdict card the plans followed (ADR 0027)
+    rotating: list[int] = field(default_factory=list)  # open positions the PM is exiting
+    approved: list[int] = field(default_factory=list)  # earlier drafts the PM approved as drafted
 
 
 def final_labels(conn: Conn, run_id: int) -> list[Candidate]:
@@ -122,6 +132,12 @@ def _prices(ticker: str, as_seen: str, conn: Conn) -> pd.DataFrame | None:
     return df
 
 
+def _exiting(conn: Conn, position_id: int) -> bool:
+    """An exit order for the position is still working (drafted, approved or placed)."""
+    od = book.orders(conn, position_id)
+    return bool(((od["purpose"] == "exit") & od["status"].isin(list(book.OPEN_ORDER))).any())
+
+
 def pending_positions(conn: Conn) -> pd.DataFrame:
     """Draft / approved positions not yet open, with their planned value and risk (GBP) and
     sector, shaped like :func:`risk.holdings`."""
@@ -158,13 +174,18 @@ def plan_run(
     rules: Rules | None = None,
     dry_run: bool = False,
     replan: bool = False,
+    use_pm: bool = True,
 ) -> PlanRun:
     """Plan, size and fit-check the run's final-ACT tickers; write the accepted plans to the
     book unless ``dry_run``. Once any agent label exists in the run, a ticker whose final
     label is still the screen's (the agents never reached it) is reported, not planned.
     ``replan``: drafts from this run that were rejected or cancelled no longer count as done,
-    so those tickers are planned again (after a rules or planner change)."""
+    so those tickers are planned again (after a rules or planner change). ``use_pm``: follow
+    the PM's verdict for the run when there is one (ADR 0027); False gives the plans at the
+    rules' ``risk_per_trade`` in screen-rank order (the PM's own pack)."""
     rules = rules or load_rules()
+    pm = pm_decision(conn, run_id) if use_pm else None
+    alloc = {str(a["ticker"]): a for a in pm["allocation"]} if pm else {}
     started = str(store.run_info(run_id, conn=conn)["started_at"])
     candidates = final_labels(conn, run_id)
     existing = book.positions(conn)
@@ -191,6 +212,16 @@ def plan_run(
         if close is not None:
             prices[ticker] = float(close)
     held, equity, _ = risk.snapshot(conn, prices, as_of=started)
+    # open positions the PM rotated out (an exit order working): their room is the PM's to
+    # reuse, and the sale proceeds count as cash for sizing
+    rotating = [
+        int(r["position_id"])
+        for r in (pm["rotations"] if pm else [])
+        if book.position_status(conn, int(r["position_id"])) == "open"
+        and _exiting(conn, int(r["position_id"]))
+    ]
+    held_fit = held[~held["position_id"].isin(rotating)]
+    cash = equity.cash + float(held.loc[held["position_id"].isin(rotating), "value"].sum())
 
     plans: list[TradePlan] = []
     errors: list[tuple[str, str]] = []
@@ -209,6 +240,9 @@ def plan_run(
             continue
         if reviewed and c.stage == "screen":
             errors.append((c.ticker, "not reviewed by the agents (beyond max_agent_tickers)"))
+            continue
+        if pm and c.ticker not in alloc:
+            errors.append((c.ticker, "not funded by the PM"))
             continue
         cards = store.load_cards(run_id, c.ticker, conn=conn)
         cards_by[c.ticker] = cards
@@ -233,9 +267,11 @@ def plan_run(
                 cards["levels"],
                 cards["technical"],
                 cards.get("events"),
-                rules,
+                replace(rules, risk_per_trade=float(alloc[c.ticker]["risk_pct"]))
+                if c.ticker in alloc
+                else rules,
                 equity.equity,
-                equity.cash,
+                cash,
                 None if adv is None or math.isnan(adv) else adv,
                 currency,
                 agent=agent,
@@ -246,7 +282,8 @@ def plan_run(
         except ValueError as e:
             errors.append((c.ticker, str(e)))
             continue
-        scores[c.ticker] = rank_score(cards)
+        # the PM's order is the priority when it decided, else the screen's rank score
+        scores[c.ticker] = len(alloc) - list(alloc).index(c.ticker) if pm else rank_score(cards)
         r = _weekly_returns(c.ticker, started, conn)
         if r is not None:
             returns[c.ticker] = r
@@ -259,7 +296,7 @@ def plan_run(
 
     report = fit(
         plans,
-        held,
+        held_fit,
         pending_positions(conn),
         equity,
         rules,
@@ -277,10 +314,29 @@ def plan_run(
         equity=equity,
         held=held,
         prices=prices,
+        pm=pm,
+        rotating=rotating,
     )
     if dry_run:
         return out
+    # a draft from this run the PM funds but the owner never approved (drafted before the PM,
+    # or a re-run) is approved as drafted: the PM owns it now
+    for pid, ticker in zip(from_run["position_id"], from_run["ticker"], strict=True):
+        if ticker in alloc and book.position_status(conn, int(pid)) == "draft":
+            book.approve_position(
+                conn, int(pid), f"funded by the PM as drafted: {alloc[ticker]['reason']}", PM_ACTOR
+            )
+            out.approved.append(int(pid))
     for plan in report.accepted:
+        by = (  # the PM owns the allocation when it decided (ADR 0027)
+            {
+                "approver": PM_ACTOR,
+                "approval": f"allocated by the PM at {float(alloc[plan.ticker]['risk_pct']):.1%}"
+                f" risk: {alloc[plan.ticker]['reason']}",
+            }
+            if pm
+            else {}
+        )
         out.written[plan.ticker] = write_plan(
             conn,
             plan,
@@ -289,6 +345,7 @@ def plan_run(
             run_id,
             rules,
             started,
+            **by,
         )
     return out
 
@@ -301,9 +358,12 @@ def write_plan(
     run_id: int,
     rules: Rules,
     at: str,
+    approver: str = book.PIPELINE,
+    approval: str = "approved as planned (ADR 0026)",
 ) -> int:
     """Position + entry order + entry conditions + thesis conditions for one plan, approved as
-    it is drafted: the owner is told what to place, never asked to approve (ADR 0026)."""
+    it is drafted by ``approver`` (the pipeline, or the PM when it allocated it, ADR 0027): the
+    owner is told what to place, never asked to approve (ADR 0026)."""
     research = cards.get("research") or {}
     thesis = str(research.get("reasons") or "")
     payload = {**asdict(plan), "fit_flags": list(flags)}
@@ -324,7 +384,7 @@ def write_plan(
         rules=rules,
         valid_until=plan.valid_until.strftime("%Y-%m-%d"),
     )
-    book.approve_position(conn, pid, "approved as planned (ADR 0026)", book.PIPELINE, at)
+    book.approve_position(conn, pid, approval, approver, at)
     frozen = {m: cards[m] for m in ENTRY_CONDITION_MODELS if m in cards}
     book.add_entry_conditions(conn, pid, run_id, frozen)
     for crit in kill_criteria(research):

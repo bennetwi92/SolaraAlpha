@@ -93,7 +93,7 @@ Current state:
   vol percentile → calm / stressed / risk_off, placeholders) heads the daily report, is saved as a
   `regime` card, shows in the weekly pack and flags every plan `market risk_off` (advisory).
 - **Agents run unattended when the owner adds a Claude secret** (docs/decisions/0019):
-  `agents.yml` runs after the scan (`/validate` → `/macro` → `/research` → `plan.py` → `weekly_pack.py`)
+  `agents.yml` runs after the scan (`/validate` → `/macro` → `/research` → `/pm` → `plan.py` → `weekly_pack.py`)
   and after the daily job (`/monitor`) via `claude-code-action`, capped by
   `max_agent_tickers` and `--max-turns`; without `CLAUDE_CODE_OAUTH_TOKEN` or
   `ANTHROPIC_API_KEY` it skips and nothing is spent. A failed invocation is recorded as an
@@ -112,6 +112,14 @@ Current state:
   a card under `model = stage` and the `evidence` rows on the same run. Agents can only
   **downgrade** a label (ACT > WATCH > PASS; ERROR always allowed). `record.py prior` gives the
   previous verdicts and the filings already interpreted.
+- **The portfolio manager agent owns the allocation** (docs/decisions/0027): `/pm` runs once per
+  weekly run after research, reads the PM pack (`scripts/pm_pack.py`: candidates, the whole book,
+  money, regime, macro, correlations) and records one `pm` verdict (ticker `_BOOK`) with the
+  `allocation` (research-ACT tickers, `risk_pct` inside `risk_per_trade_range` 1-3% by
+  conviction, priority order) and `rotations` (exit an open position / cancel a pending entry,
+  applied as recorded). The planner follows it and the PM approves its plans (`agent:pm`);
+  without a PM verdict (or an ERROR) plans fall back to `risk_per_trade` in screen-rank order,
+  approved by the pipeline. The PM memo heads the weekly pack and follows the inbox steps.
 - **The research agent owns the entry and the stop** (docs/decisions/0023): a research ACT must
   carry `trade` (`entry_type` limit = at or below / stop = buy the break, `entry`, `stop` where
   the set-up is wrong, `stop_reason`, optional `valid_days`), saved as `trade_*` on its card
@@ -130,7 +138,7 @@ Current state:
   are stop market orders (ADR 0026).
 - **Portfolio rules** (capital, risk per trade, position / sector / heat limits, entry validity,
   long-only, the pre-results event policy, the drawdown circuit breaker) live in `config/portfolio.toml`, read through `portfolio.rules.load_rules`. The owner
-  set them on 2026-10-20 (`confirmed = true`: £5,000, 2% risk, 5 positions, 25% / 40% position
+  set them on 2026-10-20 (`confirmed = true`: £5,000, 2% risk (1-3% by the PM's conviction, ADR 0027), 5 positions, 25% / 40% position
   / sector caps, 10% heat, breaker on at 15%); reports warn whenever `confirmed` is false. See
   epic #104.
 
@@ -170,6 +178,8 @@ Current state:
 | Events analyst (agent; persists its note via `record.py`) | `/events JET2.L [--run N]` in Claude Code |
 | Macro analyst (agent): one shared sector / macro note per group of the run's ACT stocks | `/macro --run N` in Claude Code (`record.py queue --stage macro` lists the groups) |
 | Research analyst (agent): 9-section pre-trade note with web search, evidence logged | `/research JET2.L --run N` or `/research --run N` in Claude Code |
+| PM pack for a scan run (candidates, whole book, money, regime, macro, correlations) | `uv run python scripts/pm_pack.py --run N` |
+| Portfolio manager (agent): the week's allocation (1-3% risk by conviction), rotations, the PM memo; no owner approval | `/pm --run N` in Claude Code → `record.py verdict pm.json --actor agent:pm` |
 | Validator pack (DB only, independent of other agents) | `uv run python scripts/validate_pack.py JET2.L --run N` / `--run N --all` |
 | Validator (agent) | `/validate JET2.L --run N` or `/validate --run N` in Claude Code |
 | Monitor pack for a daily run's open positions and pending entries (then vs now, thesis, filing text, research levels, systematic stops) | `uv run python scripts/monitor_pack.py --run N [--position ID]` |
@@ -221,6 +231,9 @@ src/solaraalpha/        importable package — all reusable code lives here
                         thesis conditions evaluated, triggers + filing text — docs/decisions/0018
   catalysts.py          fresh_catalysts: ticker -> one-line reason (new material filings, headlines,
                         a scheduled event in the window); a stock with one can join the shortlist
+  pm.py                 the portfolio manager's pack: research-ACT candidates (verdict, levels, sizing
+                        across the risk band), open / pending positions, money, regime, macro,
+                        correlations, limits — docs/decisions/0027
   value_models.py       register of per-stock value models (config/value_models.toml) for research
   dashboard.py          render_dashboard: one self-contained HTML page from the DB (inline CSS,
                         base64 PNG charts, md_to_html for the pack) — #136
@@ -311,6 +324,8 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
                         delta mode on a prior note ≤ 35 days; calls the stock's value model when registered
 .claude/skills/macro/     agent skill: one shared sector / macro note per group of the week's ACT stocks
                         (stage macro, pseudo-ticker _SECTOR:<name>); research reads it — #140
+.claude/skills/pm/        agent skill: the portfolio manager: allocation (1-3% risk by conviction), rotations,
+                        the PM memo; the buck stops here — 0027
 .claude/skills/monitor/   agent skill: structural change or noise on a triggered position; proposes one action
 .claude/skills/postmortem/  agent skill: post-mortem of a closed trade from its pack; setup / execution scores
 notebooks/              exploration only; promote anything reused into src/

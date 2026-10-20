@@ -7,6 +7,8 @@ Final label per ticker = the latest stage present in `labels` for the run (resea
 (portfolio.fit) and the accepted plans written as draft positions with a draft entry order, the
 plan in the `drafted` payload, every card of the run frozen as entry conditions and the
 research's kill criteria as thesis conditions. Rejected-by-fit plans are reported, not written.
+With the PM's verdict for the run (ADR 0027) only its allocation is planned, at its risk per
+trade and in its order, and the drafts are approved by the PM (nothing for the owner to approve).
 Re-running for the same run skips tickers already drafted from it (with --replan, not those whose
 draft was rejected or cancelled: re-plan after a rules change); --dry-run writes nothing.
 Then: `book.py approve|reject ID`, `book.py tickets`.
@@ -29,6 +31,19 @@ def render(out: PlanRun, dry_run: bool) -> str:
     lines = [f"Run {out.run_id}: {len(out.candidates)} labelled tickers"]
     for c in out.candidates:
         lines.append(f"  {c.ticker:<10} {c.label:<6} decided by {c.stage}")
+    if out.pm is not None:
+        lines.append(
+            "\nPM allocation: "
+            + (
+                ", ".join(f"{a['ticker']} {float(a['risk_pct']):.1%}" for a in out.pm["allocation"])
+                or "none"
+            )
+            + (
+                f"; rotating out positions {', '.join(map(str, out.rotating))}"
+                if out.rotating
+                else ""
+            )
+        )
     if out.equity is not None:
         lines.append(
             f"\nEquity £{out.equity.equity:,.0f}  cash £{out.equity.cash:,.0f}  open positions {out.equity.positions}"
@@ -76,7 +91,13 @@ def render(out: PlanRun, dry_run: bool) -> str:
             "\nDrafted: "
             + (", ".join(f"{t} -> position {pid}" for t, pid in out.written.items()) or "none")
         )
-        if out.written:
+        if out.approved:
+            lines.append(
+                "Approved by the PM as drafted: positions " + ", ".join(map(str, out.approved))
+            )
+        if (out.written or out.approved) and out.pm is not None:
+            lines.append("Approved by the PM: place them in Trading212 (`book.py tickets`)")
+        elif out.written:
             lines.append(
                 "Next: `book.py show ID`, then `book.py approve ID` or `book.py reject ID --reason ...`"
             )

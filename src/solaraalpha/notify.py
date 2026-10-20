@@ -298,8 +298,18 @@ def weekly_message(conn: Conn, run_id: int, summary_url: str | None = None) -> s
         ),
         "",
     ]
+    pm = pack.plan.pm  # the portfolio manager's stance heads the week, its memo follows the steps
+    if pm:
+        parts += [f"Your PM: {str(pm.get('reasons') or '').split('; ')[0]}", ""]
     todo = broker.tasks(conn) + broker.cancels_since(conn, pack.started_at)
     parts += _todo(todo) or [f"Nothing to place in {BROKER}.", ""]
+    if pm:
+        parts += ["### From your PM", "", str(pm.get("note_md") or pm.get("reasons") or ""), ""]
+    elif any(c.stage != "screen" for c in pack.plan.candidates):
+        parts += [
+            "> The PM did not decide this week: plans were sized at the rules' risk per trade.",
+            "",
+        ]
 
     held = []
     for row in pack.open_positions:
