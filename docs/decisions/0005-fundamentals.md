@@ -50,3 +50,20 @@ lagged EPS. Tested by changing every not-yet-public value and checking the card 
 - Sector-relative valuation, short interest and directors' dealings aren't included (no
   reliable free source yet). Earnings dates and surprise vs consensus would be the most
   valuable additions for this horizon if a free source turns up.
+
+**Amendment (2026-10-20): results dates instead of the statutory lag.** The lag is the latest a
+company may report, so a past card saw results weeks late (Jet2's FY26 prelims came out on 8
+July 2026; the 6-month lag said 30 September) — exactly the post-results window the strategy
+trades. `stamp_published(fund, filings)` now matches each statement period to the issuer's own
+NSM results announcement: a fiscal year to the first final / preliminary results or annual
+report (`FR`, `PRE`, `ACS`) within 12 months of the period end, a half-year to the first
+half-year report (`IR`) within 6 months. Its publication time goes in a `published` column that
+`usable_from` / `known` use; a period with no match (filings unavailable, before the NSM
+history, odd type codes) keeps the statutory lag. The window runs past the deadline so a late
+reporter is matched rather than assumed published. Only past-date cards need it (`--as-of`,
+the toolkit's `as_of`, `scripts/backtest.py`); the live card uses everything fetched, so the
+weekly scan makes no extra calls. The DB snapshot does not store `published`, so the
+validator's "rows known" view still uses the lag (conservative). Companies House was assessed
+as a source for the dates and the accounts and not used: its accounts arrive weeks after the
+results RNS (Jet2: 68 days), are annual only, mostly PDF for plc groups until iXBRL filing is
+compulsory (April 2028), and miss the non-UK-incorporated part of the universe.

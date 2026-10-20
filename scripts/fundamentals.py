@@ -10,7 +10,8 @@ from dataclasses import asdict
 
 import pandas as pd
 
-from solaraalpha.analysis.fundamentals import fundamentals_card, known
+from solaraalpha.analysis.fundamentals import fundamentals_card, known, stamp_published
+from solaraalpha.data.announcements import fetch_issuer_announcements
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.fundamentals import fetch_fundamentals
 from solaraalpha.data.prices import fetch_daily
@@ -30,6 +31,11 @@ def main() -> None:
         print(f"{len(issues)} data-quality issues; run scripts/stock_prices.py to review.")
     weekly = to_weekly(trim_to_consistent(clean_prices(daily), issues))
     fund = fetch_fundamentals(args.ticker)
+    if args.as_of:  # past date: figures count from their results announcement (else the lag)
+        try:
+            fund = stamp_published(fund, fetch_issuer_announcements(args.ticker))
+        except Exception as e:
+            print(f"Filings unavailable, statutory lags used ({e})")
     shown = known(fund, args.as_of) if args.as_of else fund
     print(f"{args.ticker}: {len(fund)} fundamental observations, {len(weekly)} weeks of prices\n")
 

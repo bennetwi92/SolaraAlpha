@@ -42,8 +42,9 @@ Current state:
   scoring in `analysis/fundamentals.py` is generic, and per-stock adjustments (accounting
   quirks) are added only when a stock needs one.
 - Fundamentals are fetched fresh each run too (`fetch_fundamentals`). Statement dates are
-  **period ends, not publication dates**: anything as-of a past date goes through `known()`
-  (statutory reporting lags), never the raw frame.
+  **period ends, not publication dates**: anything as-of a past date goes through `known()`,
+  never the raw frame — after `stamp_published(fund, filings)` dates each period by its NSM
+  results announcement (statutory reporting lags where none matches; ADR 0005 amendment).
 - Events & catalysts are split: `scripts/events.py` gathers facts programmatically (filings,
   market reactions, expected events, headlines) into an event pack; interpretation is done by
   an agent via the `/events` skill (`.claude/skills/events/SKILL.md`), and the Sunday research

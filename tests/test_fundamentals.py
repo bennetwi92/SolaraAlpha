@@ -11,12 +11,16 @@ from solaraalpha.analysis.fundamentals import (
     eps_ttm,
     fundamentals_card,
     known,
+    stamp_published,
     usable_from,
     yoy,
 )
+from solaraalpha.data.announcements import COLUMNS as FILING_COLUMNS
+from solaraalpha.data.announcements import parse_nsm
 from solaraalpha.data.fundamentals import parse_timeseries
 
 FIXTURE = Path(__file__).parent / "fixtures" / "yahoo_timeseries_jet2.json"
+NSM_FIXTURE = Path(__file__).parent / "fixtures" / "nsm_jet2.json"
 SCORES = ("growth", "value", "quality")
 
 
@@ -57,6 +61,42 @@ def test_publication_lags() -> None:
     assert by["trailingPeRatio", _ts("2025-08-20")] == 0  # market observation
     k = known(fund, "2025-09-29")
     assert _ts("2025-03-31") not in set(k.loc[k["field"] == "annualNetIncome", "date"])
+
+
+def test_results_dates_replace_lags() -> None:
+    fund = stamp_published(_fund(), parse_nsm(json.loads(NSM_FIXTURE.read_text())))
+    by = fund.assign(usable=usable_from(fund)).set_index(["field", "date"])["usable"]
+    # FY26 (to 31 March 2026): preliminary results on 8 July, not the 6-month deadline (30 Sep)
+    assert by["annualNetIncome", _ts("2026-03-31")] == pd.Timestamp("2026-07-08 06:00:04Z")
+    assert by["trailingDilutedEPS", _ts("2026-03-31")] == pd.Timestamp("2026-07-08 06:00:04Z")
+    # H1 to 30 Sep 2025: half-year report on 19 November (the 3-month lag said 30 December)
+    assert by["trailingDilutedEPS", _ts("2025-09-30")] == pd.Timestamp("2025-11-19 07:00:04Z")
+    # no filing in the fixture for older periods: statutory lag; market rows: observation date
+    assert by["annualNetIncome", _ts("2025-03-31")] == _ts("2025-09-30")
+    assert by["trailingPeRatio", _ts("2025-08-20")] == _ts("2025-08-20")
+    k = known(fund, "2026-07-10")
+    assert _ts("2026-03-31") in set(k.loc[k["field"] == "annualNetIncome", "date"])
+    assert _ts("2026-03-31") not in set(known(_fund(), "2026-07-10")["date"])  # lag alone
+
+
+def test_results_dates_need_the_right_announcement() -> None:
+    fund = _synthetic([1.0, 1.2], [100, 120])  # fiscal years to 31 March 2022 and 2023
+    filings = pd.DataFrame(
+        [
+            ("2022-06-01", "TST"),  # a trading statement publishes no accounts
+            ("2022-06-20", "IR"),  # a half-year report is not the annual figures
+            ("2022-07-05", "PRE"),  # matched
+            ("2022-08-01", "ACS"),  # the annual report comes later: first wins
+            ("2024-01-15", "FR"),  # FY23 results 9.5 months late: matched, not assumed at 6
+        ],
+        columns=["published", "type_code"],
+    ).reindex(columns=FILING_COLUMNS)
+    filings["published"] = pd.to_datetime(filings["published"], utc=True)
+    out = usable_from(stamp_published(fund, filings))
+    assert set(out[fund["date"] == _ts("2022-03-31")]) == {_ts("2022-07-05")}
+    assert set(out[fund["date"] == _ts("2023-03-31")]) == {_ts("2024-01-15")}
+    empty = stamp_published(fund, pd.DataFrame(columns=FILING_COLUMNS))
+    assert usable_from(empty).equals(usable_from(fund))
 
 
 def test_no_look_ahead() -> None:

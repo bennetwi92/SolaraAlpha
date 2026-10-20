@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,6 +10,8 @@ import pandas as pd
 import pytest
 
 from solaraalpha import toolkits
+from solaraalpha.data.announcements import parse_nsm
+from solaraalpha.data.fundamentals import parse_timeseries
 from solaraalpha.pipeline import (
     Clause,
     Condition,
@@ -482,3 +485,31 @@ def test_liquidity_error_makes_the_screen_label_error() -> None:
     assert screen_label([*ok, _step("liquidity", "ACT")])[0] == "ACT"
     err = Step("screen", "liquidity", "error", "NotImplementedError: FX", {})
     assert screen_label([*ok, err])[0] == "ERROR"
+
+
+def test_fundamentals_fetches_filings_only_for_a_past_date(monkeypatch: pytest.MonkeyPatch) -> None:
+    fixtures = Path(__file__).parent / "fixtures"
+    calls: list[str] = []
+
+    def filings(ticker: str) -> pd.DataFrame:
+        calls.append(ticker)
+        return parse_nsm(json.loads((fixtures / "nsm_jet2.json").read_text()))
+
+    fund = parse_timeseries(json.loads((fixtures / "yahoo_timeseries_jet2.json").read_text()))
+    monkeypatch.setattr(toolkits, "fetch_daily", lambda t: _daily())
+    monkeypatch.setattr(toolkits, "fetch_fundamentals", lambda t: fund)
+    monkeypatch.setattr(toolkits, "fetch_issuer_announcements", filings)
+    x = Inputs("JET2.L")
+    run_toolkit("fundamentals", x)
+    assert calls == []  # live card: everything fetched is public
+    past = run_toolkit("fundamentals", x, {"as_of": "2026-07-10"})
+    assert calls == ["JET2.L"]
+    # FY26 counts from the 8 July 2026 preliminary results, not the 30 September deadline
+    assert past.cards["fundamentals"].last_period == pd.Timestamp("2026-03-31", tz="UTC")
+
+    def down(ticker: str) -> pd.DataFrame:
+        raise ConnectionError("NSM down")
+
+    monkeypatch.setattr(toolkits, "fetch_issuer_announcements", down)
+    lagged = run_toolkit("fundamentals", Inputs("JET2.L"), {"as_of": "2026-07-10"})
+    assert lagged.cards["fundamentals"].last_period == pd.Timestamp("2025-09-30", tz="UTC")

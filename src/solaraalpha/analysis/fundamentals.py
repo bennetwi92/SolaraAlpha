@@ -13,10 +13,12 @@ pillars, each scored in ``[-1, +1]`` (+ = favourable for a long):
   and share-count dilution.
 
 **No look-ahead.** Statement figures are dated at the period end but published later, so
-:func:`known` makes them usable only after a statutory reporting lag (``ANNUAL_LAG``,
-``INTERIM_LAG``). Market fields (P/E, forward P/E, market cap) are known on their observation
-date. :func:`fundamentals_card` with ``as_of`` applies those lags; without it (the live view)
-everything fetched counts, since it has all been published by now.
+:func:`known` makes them usable only once announced: from the period's results announcement
+when :func:`stamp_published` has matched one from the issuer's filings (FCA NSM), else after
+the statutory reporting lag (``ANNUAL_LAG``, ``INTERIM_LAG``). Market fields (P/E, forward
+P/E, market cap) are known on their observation date. :func:`fundamentals_card` with ``as_of``
+applies those dates; without it (the live view) everything fetched counts, since it has all
+been published by now.
 
 Unlike the technical and levels models this one is stock-specific in use (accounting quirks
 differ by company), but the scoring here is generic; per-stock adjustments are added only when
@@ -49,6 +51,12 @@ FULL_DILUTION = 0.05  # 5% more shares in a year scores -1 (5% bought back score
 # Price quoted in a minor unit: (major currency, units per major).
 MINOR_UNITS = {"GBp": ("GBP", 100), "GBX": ("GBP", 100), "ZAc": ("ZAR", 100), "ILA": ("ILS", 100)}
 MARKET_FIELDS = ("trailingPeRatio", "trailingForwardPeRatio", "trailingMarketCap")
+# NSM type codes of the announcement that publishes a period's figures, and how long after the
+# period end to look for it (past the statutory lag, so a late reporter is matched, not assumed).
+ANNUAL_RESULTS = frozenset({"FR", "PRE", "ACS"})  # final / preliminary results, annual report
+INTERIM_RESULTS = frozenset({"IR"})  # half-year (interim) report
+ANNUAL_WINDOW = pd.DateOffset(months=12)
+INTERIM_WINDOW = pd.DateOffset(months=6)
 
 
 def series(fund: pd.DataFrame, field: str) -> pd.Series:
@@ -57,15 +65,51 @@ def series(fund: pd.DataFrame, field: str) -> pd.Series:
     return pd.Series(f["value"].to_numpy(), index=pd.DatetimeIndex(f["date"]), name=field)
 
 
-def usable_from(fund: pd.DataFrame) -> pd.Series:
-    """Date from which each row may be used: observation date for market fields; period end
-    plus ``ANNUAL_LAG`` for fiscal-year figures, ``INTERIM_LAG`` for interim ones."""
+def _annual(fund: pd.DataFrame) -> pd.Series:
+    """Rows dated at a fiscal-year end (``annual*`` fields and trailing items on those dates)."""
     annual_ends = set(fund.loc[fund["field"].str.startswith("annual"), "date"])
+    return fund["field"].str.startswith("annual") | fund["date"].isin(annual_ends)
+
+
+def usable_from(fund: pd.DataFrame) -> pd.Series:
+    """Date from which each row may be used: observation date for market fields; for statement
+    figures the ``published`` date when :func:`stamp_published` found one, else period end plus
+    ``ANNUAL_LAG`` for fiscal-year figures, ``INTERIM_LAG`` for interim ones."""
     market = fund["field"].isin(MARKET_FIELDS)
-    annual = fund["field"].str.startswith("annual") | fund["date"].isin(annual_ends)
+    annual = _annual(fund)
     lagged = fund["date"].where(~annual, fund["date"] + ANNUAL_LAG)
     lagged = lagged.where(annual, fund["date"] + INTERIM_LAG)
+    if "published" in fund:
+        lagged = fund["published"].where(fund["published"].notna(), lagged)
     return fund["date"].where(market, lagged)
+
+
+def stamp_published(fund: pd.DataFrame, filings: pd.DataFrame) -> pd.DataFrame:
+    """``fund`` with a ``published`` column: when each statement period's figures were announced.
+
+    ``filings`` is the issuer's NSM frame (:func:`solaraalpha.data.announcements.
+    fetch_announcements`). A fiscal-year period is matched to the first final / preliminary
+    results or annual report (``ANNUAL_RESULTS``) published within ``ANNUAL_WINDOW`` after the
+    period end, an interim one to the first half-year report within ``INTERIM_WINDOW``. Market
+    fields and unmatched periods stay NaT, so :func:`usable_from` falls back to the lag.
+    """
+    out = fund.copy()
+    out["published"] = pd.Series(pd.NaT, index=out.index, dtype=out["date"].dtype)
+    if filings.empty:
+        return out
+    statements = ~out["field"].isin(MARKET_FIELDS)
+    annual_ends = set(out.loc[_annual(out), "date"])
+    for end in out.loc[statements, "date"].unique():
+        codes, window = (
+            (ANNUAL_RESULTS, ANNUAL_WINDOW)
+            if end in annual_ends
+            else (INTERIM_RESULTS, INTERIM_WINDOW)
+        )
+        pub = filings.loc[filings["type_code"].isin(codes), "published"]
+        pub = pub[(pub > end) & (pub <= end + window)]
+        if len(pub):
+            out.loc[statements & (out["date"] == end), "published"] = pub.min()
+    return out
 
 
 def known(fund: pd.DataFrame, as_of: str | pd.Timestamp) -> pd.DataFrame:

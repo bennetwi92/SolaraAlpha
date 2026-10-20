@@ -24,14 +24,19 @@ from typing import Any
 import pandas as pd
 
 from solaraalpha.analysis.events import build_pack
-from solaraalpha.analysis.fundamentals import FundamentalsCard, fundamentals_card
+from solaraalpha.analysis.fundamentals import FundamentalsCard, fundamentals_card, stamp_published
 from solaraalpha.analysis.levels import LevelsCard, levels_card
 from solaraalpha.analysis.liquidity import LiquidityCard, liquidity_card
 from solaraalpha.analysis.relative_strength import RelativeStrength, compare, comparisons, rs_card
 from solaraalpha.analysis.technical import Position, Scorecard, assess_position, scorecard
+from solaraalpha.data.announcements import COLUMNS as FILING_COLUMNS
+from solaraalpha.data.announcements import fetch_issuer_announcements
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.fundamentals import fetch_fundamentals
 from solaraalpha.data.prices import fetch_daily
+from solaraalpha.log import get_logger
+
+log = get_logger(__name__)
 
 Cards = dict[str, Any]
 _OTHERS: dict[str, pd.DataFrame] = {}  # other instruments' daily prices, fetched this process
@@ -63,6 +68,15 @@ class Inputs:
     @cached_property
     def fund(self) -> pd.DataFrame:
         return fetch_fundamentals(self.ticker)
+
+    @cached_property
+    def filings(self) -> pd.DataFrame:
+        """The issuer's NSM filings; empty (with a warning) if they can't be fetched."""
+        try:
+            return fetch_issuer_announcements(self.ticker)
+        except Exception as e:
+            log.warning("%s: filings unavailable (%s: %s)", self.ticker, type(e).__name__, e)
+            return pd.DataFrame(columns=FILING_COLUMNS)
 
     def other(self, ticker: str) -> pd.DataFrame:
         """Daily prices (as fetched) of another instrument this ticker is compared with."""
@@ -161,8 +175,9 @@ def _relative_strength(x: Inputs) -> Cards:
     watch=("quality > -0.5", "eps_revision > 0"),
 )
 def _fundamentals(x: Inputs, as_of: str | None = None) -> Cards:
-    """Growth / value / quality scores, point-in-time via publication lags."""
-    return {"fundamentals": fundamentals_card(x.fund, x.weekly, as_of)}
+    """Growth / value / quality scores, point-in-time via results dates (else publication lags)."""
+    fund = stamp_published(x.fund, x.filings) if as_of else x.fund  # live: all is public
+    return {"fundamentals": fundamentals_card(fund, x.weekly, as_of)}
 
 
 @toolkit("liquidity")  # no bands: information for sizing (adv_gbp_20) and the validator
