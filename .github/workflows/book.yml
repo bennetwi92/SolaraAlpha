@@ -1,13 +1,19 @@
-# Book from GitHub, without a local checkout: one scripts/book.py command against the hosted
-# results DB (Turso), e.g. `cash deposit 5000 --note "paper start"`, `approve 3`, `tickets`.
-# The book view (scripts/portfolio.py) follows in the job summary.
+# Book from GitHub, without a local checkout: one book.py command against the hosted results
+# DB (Turso), e.g. `cash deposit 5000 --note "paper start"`, `approve 3`, `tickets`; or re-plan a
+# saved run (plan.py `--run 8`, weekly_pack.py `--run 8`). The book view (scripts/portfolio.py)
+# follows in the job summary.
 name: Book
 
 on:
   workflow_dispatch:
     inputs:
+      script:
+        description: Script to run
+        type: choice
+        options: [book.py, plan.py, weekly_pack.py]
+        default: book.py
       command:
-        description: book.py arguments, e.g. cash deposit 5000 --note "paper start"
+        description: Arguments, e.g. `--run 8` for plan.py, or for book.py cash deposit 5000 --note "paper start"
         required: true
 
 concurrency:
@@ -27,17 +33,20 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: book.py
+      - name: ${{ inputs.script }}
         env:
           SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
           SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+          SCRIPT: ${{ inputs.script }}
           COMMAND: ${{ inputs.command }}
         # The input is split by shlex in Python, never interpolated into the shell.
         run: |
           uv run --no-sync python -c 'import os, runpy, shlex, sys
-          sys.argv = ["book.py", *shlex.split(os.environ["COMMAND"])]
-          runpy.run_path("scripts/book.py", run_name="__main__")' | tee book.txt
-          { echo '### book.py'; echo '```'; cat book.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          script = os.environ["SCRIPT"]
+          assert script in ("book.py", "plan.py", "weekly_pack.py"), script
+          sys.argv = [script, *shlex.split(os.environ["COMMAND"])]
+          runpy.run_path(f"scripts/{script}", run_name="__main__")' | tee out.txt
+          { echo "### $SCRIPT"; echo '```'; cat out.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Portfolio
         if: always()
         env:
