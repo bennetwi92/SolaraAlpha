@@ -60,6 +60,10 @@ class Research:
     label: str
     reasons: str
     kill_criteria: str
+    trade_entry_type: str  # the agent's trade levels (ADR 0023)
+    trade_entry: float
+    trade_stop: float
+    trade_stop_reason: str
 
 
 def _daily(close: float) -> pd.DataFrame:
@@ -108,7 +112,14 @@ def cards(close: float, coil: bool = False, research: bool = False) -> dict:
             },  # unparseable
         ]
         out["research"] = Research(
-            DATE, "ACT", "Strong winter bookings; fuel hedged.", json.dumps(kc)
+            DATE,
+            "ACT",
+            "Strong winter bookings; fuel hedged.",
+            json.dumps(kc),
+            "stop",
+            close * 1.04,
+            close * 0.92,
+            "below the base: the breakout has failed",
         )
     return out
 

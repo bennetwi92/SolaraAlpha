@@ -117,6 +117,19 @@ def test_final_label_precedence(scan_db: Path) -> None:
     conn.close()
 
 
+def test_act_without_agent_levels_is_reported_not_planned(scan_db: Path) -> None:
+    # W.L reaches ACT at the validator but has no research verdict: no trade levels (ADR 0023)
+    store.save_label(1, "W.L", "validate", "ACT", "warranted", 0.8, "agent:validate", path=scan_db)
+    store.save_label(1, "A.L", "validate", "ACT", "warranted", 0.9, "agent:validate", path=scan_db)
+    conn = book.connect(scan_db)
+    out = plan_run(conn, 1, dry_run=True)
+    conn.close()
+    assert ("W.L", "no agent levels (no research verdict with a trade)") in out.plan_errors
+    (plan,) = out.plans
+    assert plan.ticker == "A.L" and plan.stop_source == "agent"
+    assert plan.stop_reason == "below the base: the breakout has failed"
+
+
 def test_kill_criteria_parsing() -> None:
     assert kill_criteria({}) == []
     assert kill_criteria({"kill_criteria": None}) == []

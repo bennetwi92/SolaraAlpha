@@ -56,6 +56,11 @@ def render(out: PlanRun, dry_run: bool) -> str:
                 }
             )
         lines.append("  " + pd.DataFrame(rows).to_string(index=False).replace("\n", "\n  "))
+        lines += [
+            f"  {p.ticker} stop ({p.stop_source}): {p.stop_reason}"
+            for p in out.plans
+            if p.stop_reason
+        ]
     else:
         lines.append("  (none)")
     for ticker, why in out.plan_errors:

@@ -101,6 +101,11 @@ Current state:
   a card under `model = stage` and the `evidence` rows on the same run. Agents can only
   **downgrade** a label (ACT > WATCH > PASS; ERROR always allowed). `record.py prior` gives the
   previous verdicts and the filings already interpreted.
+- **The research agent owns the entry and the stop** (docs/decisions/0023): a research ACT must
+  carry `trade` (`entry_type` limit = at or below / stop = buy the break, `entry`, `stop` where
+  the set-up is wrong, `stop_reason`, optional `valid_days`), saved as `trade_*` on its card
+  (`agents.trade_levels`). The planner only sizes and fit-checks it; an ACT without agent
+  levels is reported, never drafted. The levels / technical stops are context, not rules.
 - **Relative strength** (`analysis/relative_strength.py`) compares each stock with its market
   index, industry index / ETF and peers, listed per stock in `config/benchmarks.toml` (market
   defaults by listing suffix). Method is generic; the comparison lists are per stock. See 0011.
@@ -254,12 +259,13 @@ src/solaraalpha/        importable package — all reusable code lives here
                         position_state, close_summary, to_account
     risk.py             holdings / equity / heat / exposure / breaches vs the rules; sector_of
                         (optional `sector` per stock in config/benchmarks.toml)
-    plan.py             TradePlan + make_plan: entry (breakout trigger or limit), stop, targets,
+    plan.py             TradePlan + make_plan: the agent's entry + stop (0023), targets,
                         add_plan: scale into a winner (>= 1R, breakout or pullback, #128),
                         risk-based size with caps, review dates, flags — see docs/decisions/0015
     fit.py              portfolio fit before drafting: slots, sector cap, heat (reject);
                         correlation, event clash (flag); rank_score — 0015
-    planner.py          plan_run: a saved scan run's final labels → plans → fit → draft positions
+    planner.py          plan_run: a saved scan run's final labels → plans (research trade levels
+                        required) → fit → draft positions
                         with entry conditions (frozen cards) and thesis conditions (kill criteria)
     weekly_pack.py      build_pack (run + book → data) and render_pack (→ markdown), the Sunday page
     triggers.py         daily triggers (pure): stop_close / stop_touched / target_hit / gap /

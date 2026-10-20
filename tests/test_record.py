@@ -74,6 +74,16 @@ def test_valid_verdict_writes_label_card_and_evidence(
     ]
     assert json.loads(card["evidence_ids"]) == [1, 2]
     assert card["note_md"].startswith("## Bottom line")
+    # the trade levels (ADR 0023) round-trip through the card
+    assert card["trade_entry_type"] == "stop" and card["trade_stop"] == 1390.0
+    assert agents.trade_levels(card) == agents.TradeLevels(
+        entry_type="stop",
+        entry=1560.0,
+        stop=1390.0,
+        stop_reason="below the October base: the breakout has failed",
+        valid_days=7,
+    )
+    assert agents.trade_levels(cards["technical"]) is None and agents.trade_levels(None) is None
 
     ev = store.load_evidence("JET2.L", path=db_backend)
     assert list(ev["kind"]) == ["filing", "web"] and ev.iloc[0]["nsm_id"] == "NI-000012345678"
@@ -398,3 +408,16 @@ def test_max_agent_tickers_rule() -> None:
     from solaraalpha.portfolio.rules import load_rules
 
     assert load_rules().max_agent_tickers == 10
+
+
+def test_trade_levels_required_on_a_research_act_and_validated() -> None:
+    v = _verdict(run_id=1)
+    trade = v.pop("trade")
+    with pytest.raises(ValueError, match="research ACT must give `trade`"):
+        agents.Verdict.model_validate(v)
+    agents.Verdict.model_validate({**v, "label": "WATCH"})  # only an ACT needs levels
+    agents.Verdict.model_validate({**v, "stage": "validate"})
+    with pytest.raises(ValueError, match="must be below the entry"):
+        agents.Verdict.model_validate({**v, "trade": {**trade, "stop": 1600.0}})
+    with pytest.raises(ValueError, match="stop_reason"):
+        agents.Verdict.model_validate({**v, "trade": {**trade, "stop_reason": ""}})

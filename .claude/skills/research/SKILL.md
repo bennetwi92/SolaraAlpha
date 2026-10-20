@@ -59,7 +59,7 @@ filings already logged: match on `nsm_id`.
   the event pack, and restrict web searches to that window (older pages are already in the
   prior evidence; cite them by their run, do not log them again).
 - **Always redo** section 2 (recent catalysts), section 3 (upcoming events) and section 9
-  (verdict); section 8 (thesis and kill criteria) is re-stated and re-checked against what is
+  (verdict, with fresh trade levels from this week's chart); section 8 (thesis and kill criteria) is re-stated and re-checked against what is
   new. Carried scores count in the verdict exactly as new ones.
 - In `checks`, record `"mode": "delta"`, `"prior_run": "N"` and `"carried": "scene,commercial,..."`.
 
@@ -148,6 +148,21 @@ detail.
    (`evidence_index`).
 9. **Verdict.** ACT / WATCH / PASS / ERROR, `catalyst_score` and `event_risk`, confidence, and
    a one-paragraph summary (this becomes the position's thesis).
+   **Trade levels (required on an ACT, ADR 0023).** You set the entry and the stop; the
+   planner only sizes and fit-checks them and sets no stop by rule. In `trade`:
+   - `entry_type` + `entry`: `limit` = the acceptable level to **enter at or below** (ADR
+     0022); `stop` = buy the break at a trigger (the set-up needs the move to start first).
+     Pick the level from the chart context and the catalyst's timing, not a formula.
+   - `stop`: where the **thesis or the set-up is proved wrong** (below the base a breakout
+     came from, below the low the catalyst should hold, under the wedge), never a fixed % or
+     ATR multiple. Volatility is wanted: a wide stop is fine, the size absorbs it (risk per
+     trade is fixed in money). Must be below `entry`.
+   - `stop_reason`: one sentence on why the stop sits there.
+   - `valid_days` (optional, 1-30): how long an unfilled entry stays good; omit for the rules'
+     default (7). Shorter when the catalyst is imminent.
+   The levels card (`stop`, `trigger`, `support`, the coil lines) and the technical card's ATR
+   `stop` are **context** to use or ignore. Prices are in the quote currency (pence for LSE).
+   WATCH / PASS may omit `trade`.
 
 ## Step 5: Record
 
@@ -170,11 +185,14 @@ Write `verdict.json` in the event pack's directory, per `uv run python scripts/r
                 "impact_score": 0.0, "impact_confidence": 0.0, "driver": "...", "horizon_weeks": 0,
                 "nsm_id": "NI-... or null"}],
   "note_md": "the full note, all nine sections",
-  "checks": {"mode": "full|delta", "prior_run": "N or none", "carried": "scene,commercial,...", "value_model": "jet2-value or none"}
+  "checks": {"mode": "full|delta", "prior_run": "N or none", "carried": "scene,commercial,...", "value_model": "jet2-value or none"},
+  "trade": {"entry_type": "limit|stop", "entry": 0.0, "stop": 0.0,
+            "stop_reason": "why the set-up is wrong below this", "valid_days": 7}
 }
 ```
 
-`value` is present only when a value model ran (Step 3b).
+`value` is present only when a value model ran (Step 3b). `trade` is required on an ACT
+(record.py refuses an ACT without it) and optional otherwise.
 
 `catalyst_score` ∈ [-1, +1] is your net view of the catalysts for a 2-16 week long, not an
 average; `event_risk` ∈ [0, 1] reflects scheduled events inside the horizon and their typical

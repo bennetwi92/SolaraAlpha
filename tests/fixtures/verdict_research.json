@@ -4,7 +4,10 @@
   "run_id": 1,
   "label": "ACT",
   "confidence": 0.7,
-  "reasons": ["Winter bookings ahead of last year", "fuel 80% hedged for FY27"],
+  "reasons": [
+    "Winter bookings ahead of last year",
+    "fuel 80% hedged for FY27"
+  ],
   "scores": {
     "catalyst_score": 0.4,
     "event_risk": 0.3,
@@ -18,8 +21,16 @@
     "thesis": 0.4
   },
   "kill_criteria": [
-    {"condition": "trend < 0", "kind": "machine", "evidence_index": null},
-    {"condition": "Winter capacity guidance cut below +5%", "kind": "agent", "evidence_index": 0}
+    {
+      "condition": "trend < 0",
+      "kind": "machine",
+      "evidence_index": null
+    },
+    {
+      "condition": "Winter capacity guidance cut below +5%",
+      "kind": "agent",
+      "evidence_index": 0
+    }
   ],
   "evidence": [
     {
@@ -54,5 +65,12 @@
     }
   ],
   "note_md": "## Bottom line\nWinter bookings are ahead and fuel is hedged...",
-  "checks": {}
+  "checks": {},
+  "trade": {
+    "entry_type": "stop",
+    "entry": 1560.0,
+    "stop": 1390.0,
+    "stop_reason": "below the October base: the breakout has failed",
+    "valid_days": 7
+  }
 }

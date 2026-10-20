@@ -8,6 +8,10 @@ stages, a card under ``model = stage`` in ``results`` (dated with the run's scre
 joins the other cards) and one ``evidence`` row per source. **Agents can only downgrade**: a
 ``validate`` or ``research`` label must be no better than the previous stage's label for that
 run and ticker (ACT > WATCH > PASS); ERROR is always allowed. See docs/decisions/0016.
+
+A research ACT carries the **trade levels** (:class:`TradeLevels`: entry, entry type, stop and
+why the stop sits there), saved on its card as ``trade_*`` fields; the planner sizes from them
+and never sets a stop by rule (docs/decisions/0023).
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 import pandas as pd
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from solaraalpha import store
 from solaraalpha.pipeline import SCREEN_TOOLKITS
@@ -60,6 +64,42 @@ class KillCriterion(BaseModel):
     evidence_index: int | None = None  # index into the verdict's evidence list
 
 
+class TradeLevels(BaseModel):
+    """The agent's trade: where to enter and where the set-up is wrong (ADR 0023). Prices in
+    the quote currency (pence for LSE)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    entry_type: Literal["limit", "stop"]  # limit: enter at or below; stop: buy the break
+    entry: float = Field(gt=0)  # limit price, or the breakout trigger
+    stop: float = Field(gt=0)  # below the entry: where the thesis / set-up is invalidated
+    stop_reason: str = Field(min_length=1)
+    valid_days: int | None = Field(default=None, ge=1, le=30)  # None: rules.entry_validity_days
+
+    @model_validator(mode="after")
+    def _stop_below_entry(self) -> TradeLevels:
+        if not self.stop < self.entry:
+            raise ValueError(f"stop {self.stop} must be below the entry {self.entry} (long only)")
+        return self
+
+
+TRADE_PREFIX = "trade_"  # card fields of a verdict's TradeLevels
+
+
+def trade_levels(card: dict[str, Any] | None) -> TradeLevels | None:
+    """The :class:`TradeLevels` saved on an agent's card (``load_cards`` dict), else None."""
+    if not card or card.get("trade_entry") is None:
+        return None
+    vd = card.get("trade_valid_days")
+    return TradeLevels(
+        entry_type=card["trade_entry_type"],
+        entry=float(card["trade_entry"]),
+        stop=float(card["trade_stop"]),
+        stop_reason=str(card.get("trade_stop_reason") or "-"),
+        valid_days=None if vd is None or (isinstance(vd, float) and math.isnan(vd)) else int(vd),
+    )
+
+
 class Verdict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -74,6 +114,13 @@ class Verdict(BaseModel):
     evidence: list[Evidence] = Field(default_factory=list)
     note_md: str = ""
     checks: dict[str, str] = Field(default_factory=dict)
+    trade: TradeLevels | None = None  # required on a research ACT (ADR 0023)
+
+    @model_validator(mode="after")
+    def _act_has_trade(self) -> Verdict:
+        if self.stage == "research" and self.label == "ACT" and self.trade is None:
+            raise ValueError("a research ACT must give `trade` (entry, entry_type, stop, reason)")
+        return self
 
     @field_validator("scores")
     @classmethod
@@ -193,6 +240,12 @@ def record_verdict(
             "actor": actor,
             "evidence_ids": json.dumps(ids),
         }
+        if v.trade is not None:
+            fields |= {
+                f"{TRADE_PREFIX}{k}": val
+                for k, val in v.trade.model_dump().items()
+                if val is not None
+            }
         if position_id is not None:
             fields["position_id"] = int(position_id)
         store._save_card(conn, v.run_id, v.ticker, v.stage, {"date": date, **fields})
