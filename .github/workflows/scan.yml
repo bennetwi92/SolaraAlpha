@@ -59,7 +59,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
           SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
           SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+          HAS_AGENTS: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
+          SCAN_OK: ${{ job.status == 'success' }}
         run: |
+          # with the agents configured, the weekly message goes out after they draft the plans
+          # (agents.yml plan job); here only when they will not run
+          if [ "$HAS_AGENTS" = "true" ] && [ "$SCAN_OK" = "true" ]; then
+            echo "weekly message: sent after the agents' plans (agents.yml)" >> "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
           set +e
           uv run --no-sync python scripts/notify.py --mode weekly --run "$(cat run_id.txt)" --summary-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --channel github-issue
           rc=$?
