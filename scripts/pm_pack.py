@@ -6,7 +6,7 @@ Writes data/processed/pm/<run_id>/pack.json (DB only): candidates (research verd
 levels, what each risk in the band buys after the caps), research WATCH names, open positions
 (P&L, R, stop, next event, latest monitor / review view), pending entries, money (equity, cash,
 heat, exposure, drawdown, breaker, free slots), regime, macro notes, correlations, the limits,
-and what the rules alone would fund. The /pm skill reads it (docs/decisions/0026).
+and what the rules alone would fund. The /pm skill reads it (docs/decisions/0027).
 """
 
 from __future__ import annotations

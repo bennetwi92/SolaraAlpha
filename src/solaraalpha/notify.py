@@ -1,203 +1,184 @@
-"""Owner notifications: say something only when something needs the owner (ADR 0021).
+"""Owner notifications: say something only when something needs the owner (ADR 0021, 0026).
 
-:func:`daily_message` has content only when a daily run fired an owner-action trigger, an
-agent changed a plan (applied as recorded, ADR 0024: each line says what to change at the broker,
-Trading212, and how to undo it), a plan revision was proposed and awaits the owner, or an agent
-recorded an ERROR; one line per item with the command to act on it. :func:`weekly_message` is the weekly pack's headline sections
-(new plans, open positions, portfolio, stale orders, errors) with a link to the job summary.
-Channels are one ``send(markdown)`` function each; only ``stdout`` and the GitHub ``inbox``
-issue (posted by the workflow with ``gh``) exist. Story map S7.8, S12.7.
+Plain words first. :func:`daily_message` opens with what to do in Trading212, stock by stock
+in the order to do it (:mod:`solaraalpha.portfolio.broker`: every approved order not yet placed;
+nothing waits for an approval), then what to check and report back (a stop that should have
+sold, an order past its date, a dividend), price alerts to change, what happened that needs
+nothing, the undo commands for the automatic changes, and errors. :func:`weekly_message` is the
+week's trades as the same steps, the positions held and the money in a few lines, with a link to
+the full pack. Channels are one ``send(markdown)`` function each; only ``stdout`` and the GitHub
+``inbox`` issue (posted by the workflow with ``gh``) exist. Story map S7.8, S12.7.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 from collections.abc import Callable
-from typing import Any
 
 import pandas as pd
 
 from solaraalpha import store
-from solaraalpha.portfolio import book
+from solaraalpha.portfolio import book, broker
 from solaraalpha.portfolio.triggers import OWNER_KINDS
 from solaraalpha.store import Conn, query
 
-WEEKLY_SECTIONS = ("PM memo", "New plans", "Open positions", "Stale orders", "Portfolio", "Errors")
 INBOX_LABEL = "inbox"
 INBOX_TITLE = "Solara inbox"
+BROKER = broker.BROKER
+ONE_ORDER = "Do each stock's steps in order: Trading212 holds one order per stock."
+HOW_TO_REPLY = (
+    "Tell Claude what you did in plain words (“placed 15”, “15 filled 120 at 1,541p”,"
+    " “15 didn't fill”), or run the same as `book.py` commands (Actions → Book)."
+)
 
 
-def _px(v: Any) -> str:
-    try:
-        return f"{float(v):,.1f}"
-    except (TypeError, ValueError):
-        return "-"
+def _day(iso: str) -> str:
+    return pd.Timestamp(iso).strftime("%a %-d %b %Y")
 
 
-def owner_actions(conn: Conn, run_id: int) -> list[str]:
-    """One line per owner-action trigger of the run, with the command to act on it."""
+def _live_stop(conn: Conn, position_id: int | None) -> int | None:
+    if position_id is None:
+        return None
+    od = book.orders(conn, position_id)
+    live = od[(od["purpose"] == "stop") & od["status"].isin(book.LIVE_ORDER)]
+    return int(live["order_id"].iloc[-1]) if not live.empty else None
+
+
+def owner_items(conn: Conn, run_id: int) -> tuple[list[str], list[str]]:
+    """The run's owner-action triggers as ``(checks, info)``: what to check and report back
+    (with the command), and what needs nothing (for information)."""
     trig = store.load_triggers(run_id, conn=conn)
-    lines = []
+    pos = book.positions(conn).set_index("position_id")
+    checks: list[str] = []
+    info: list[str] = []
     for t in trig.to_dict("records") if not trig.empty else []:
-        kind, d, pid, oid = str(t["kind"]), t["detail"], t["position_id"], t["order_id"]
+        kind, d = str(t["kind"]), t["detail"]
         if kind not in OWNER_KINDS:
             continue
-        pid_s = int(pid) if pd.notna(pid) else "-"
+        pid = int(t["position_id"]) if pd.notna(t["position_id"]) else None
+        oid = int(t["order_id"]) if pd.notna(t["order_id"]) else None
+        ccy = str(pos["currency"].get(pid, "GBp")) if pid is not None else "GBp"
+        tk = f"**{t['ticker']}**"
+        stop_id = _live_stop(conn, pid)
+        fill_stop = (
+            f"`fill {stop_id} --qty N --price P`"
+            if stop_id
+            else "`fill STOP_ORDER --qty N --price P`"
+        )
         if kind == "stop_close":
-            lines.append(
-                f"- **{t['ticker']}** closed {_px(d['close'])} below the stop {_px(d['stop'])} (position {pid_s}): `book.py exit {pid_s} --reason stop`, then `fill` the stop order"
+            checks.append(
+                f"{tk} closed at {broker.price(d['close'], ccy)}, below your stop {broker.price(d['stop'], ccy)}. The stop order"
+                f" should have sold it in {BROKER}: tell me the fill, {fill_stop}. If it didn't"
+                " sell, sell it now and tell me the same."
             )
         elif kind == "stop_touched":
-            lines.append(
-                f"- **{t['ticker']}** traded through the stop {_px(d['stop'])}, closed {_px(d['close'])} (position {pid_s}): check whether the broker stop filled"
+            checks.append(
+                f"{tk} traded through your stop {broker.price(d['stop'], ccy)} today (closed {broker.price(d['close'], ccy)})."
+                f" Check {BROKER}: if the stop sold, tell me {fill_stop}; if not, nothing to do."
             )
         elif kind == "target_hit":
-            lines.append(
-                f"- **{t['ticker']}** reached the target {_px(d['target'])} (position {pid_s}): `book.py exit {pid_s} --reason target` or trail"
+            info.append(
+                f"{tk} reached its target {broker.price(d['target'], ccy)}. Nothing to do: the stop and the"
+                " daily review manage the exit."
             )
         elif kind == "entry_break":
-            lines.append(
-                f"- **{t['ticker']}** closed {_px(d['close'])} above the trigger {_px(d['trigger'])}: place entry order {int(oid)} — `book.py placed {int(oid)} --ref ...`"
+            checks.append(
+                f"{tk} closed at {broker.price(d['close'], ccy)}, above {broker.price(d['trigger'], ccy)}: place your buy order"
+                f" #{oid} now, then tell me `placed {oid}`."
             )
         elif kind == "order_stale":
-            lines.append(
-                f"- **{t['ticker']}** order {int(oid)} was valid until {d['valid_until']} with no fill: `book.py fill {int(oid)} --qty N --price P`, or `book.py unfilled {int(oid)}` / `book.py expire`"
+            what = ""
+            if oid is not None:
+                od = book.orders(conn).set_index("order_id")
+                if oid in od.index:
+                    what = f" ({broker._bold(dict(od.loc[oid]), ccy)})"
+            checks.append(
+                f"{tk} order #{oid}{what} passed its end date {d['valid_until']} with no fill"
+                f" from you. If it filled, tell me `fill {oid} --qty N --price P`; if not, cancel"
+                f" it in {BROKER} and tell me `unfilled {oid}`."
             )
         elif kind == "event_due":
-            lines.append(
-                f"- **{t['ticker']}** scheduled event {d['event']} in {d['sessions']} session(s) (position {pid_s}): policy **{d['policy']}**"
+            policy = str(d["policy"])
+            then = (
+                "nothing happens automatically (set `event_policy` in config/portfolio.toml to"
+                " hold, trim or exit to decide it in advance)"
+                if policy == "flag"
+                else f"the weekly review has already arranged the {policy}"
+            )
+            info.append(
+                f"{tk} has a scheduled event on {d['event']} ({d['sessions']} trading day(s)"
+                f" away): policy **{policy}**, {then}."
             )
         elif kind == "dividend":
-            lines.append(
-                f"- **{t['ticker']}** ex-dividend {t['at']}: £{float(d['amount_gbp']):,.2f} (position {pid_s}): `book.py cash dividend {t['ticker']} {float(d['amount_gbp']):.2f} --at {t['at']}`"
+            checks.append(
+                f"{tk} goes ex-dividend {t['at']}: about £{float(d['amount_gbp']):,.2f} on your"
+                f" shares. When it lands in {BROKER}, tell me"
+                f" `cash dividend {t['ticker']} {float(d['amount_gbp']):.2f} --at {t['at']}`."
             )
         elif kind == "split":
-            lines.append(
-                f"- **{t['ticker']}** split {d['ratio']} on {t['at']} (position {pid_s}): `book.py split {pid_s} --ratio {d['ratio']} --at {t['at']}`"
+            checks.append(
+                f"{tk} splits {d['ratio']} on {t['at']}: tell me"
+                f" `split {pid} --ratio {d['ratio']} --at {t['at']}` and I'll re-size its orders."
             )
         else:
-            lines.append(
-                f"- **{t['ticker']}** {kind} (position {pid_s}): {json.dumps(d, default=str)}"
-            )
-    return lines
+            info.append(f"{tk} {kind}: {json.dumps(d, default=str)}")
+    return checks, info
 
 
-BROKER = "Trading212"
-
-
-def _price(v: Any, ccy: str) -> str:
-    try:
-        return book.fmt_price(float(v), ccy)
-    except (TypeError, ValueError):
-        return "-"
-
-
-def _change(r: dict[str, Any], ticker: str, ccy: str) -> str:
-    """What an applied revision changed and what the owner does at the broker."""
-    action, old, new = str(r["action"]), r["old"] or {}, r["new"] or {}
-    done = r["done"] or {}
-    rid = int(r["revision_id"])
-    if action == "tighten_stop":
-        oid = done.get("stop_order_id")
-        what = (
-            f"stop raised {_price(old.get('stop'), ccy)} → {_price(new.get('stop'), ccy)}"
-            f" — amend the stop order in {BROKER}, then `book.py placed {oid}`"
-        )
-    elif action == "take_partial":
-        oid = done.get("exit_order_id")
-        what = (
-            f"sell {new.get('qty')} shares ({new.get('type', 'market')}) in {BROKER} — then"
-            f" `book.py fill {oid} --qty N --price P`"
-        )
-    elif action == "exit":
-        oid = done.get("exit_order_id")
-        what = (
-            f"exit the whole position ({new.get('type', 'market')}) in {BROKER} and cancel its"
-            f" stop there — then `book.py fill {oid} --qty N --price P`"
-        )
-    elif action == "revise_target":
-        what = (
-            f"target revised {_price(old.get('target'), ccy)} → {_price(new.get('target'), ccy)}"
-            " (a review level: nothing to change at the broker)"
-        )
-    elif action == "amend_entry":
-        a = done.get("amended") or {}
-        was, now = a.get("old") or {}, a.get("new") or {}
-        parts = []
-        if was.get("price") != now.get("price"):
-            parts.append(f"entry {_price(was.get('price'), ccy)} → {_price(now.get('price'), ccy)}")
-        if was.get("stop") != now.get("stop"):
-            parts.append(f"stop {_price(was.get('stop'), ccy)} → {_price(now.get('stop'), ccy)}")
-        if was.get("qty") != now.get("qty"):
-            parts.append(f"qty {was.get('qty')} → {now.get('qty')}")
-        oid = now.get("order_id", was.get("order_id"))
-        broker = (
-            f"amend the entry order in {BROKER} (or cancel and re-place it), then `book.py placed {oid}`"
-            if done.get("was_placed")
-            else f"not placed yet: place it as amended (`book.py tickets`, order {oid})"
-        )
-        what = f"pending entry amended: {', '.join(parts) or 'no change'} — {broker}"
-    elif action == "cancel":
-        what = "pending entry cancelled — " + (
-            f"cancel the entry order in {BROKER}"
-            if done.get("was_placed")
-            else "nothing to do at the broker (it was not placed)"
-        )
-    elif action == "add":
-        oid = done.get("add_order_id")
-        what = f"add {new.get('qty')} shares at {_price(new.get('entry'), ccy)} — place order {oid} in {BROKER}"
-    else:
-        what = f"{action} {json.dumps(new, default=str)}"
-    return (
-        f"- **{ticker}** (position {int(r['position_id'])}): {what}. Why: {r['reason']}."
-        f" Undo: `book.py undo {rid} --reason ...`"
-    )
-
-
-def applied_changes(conn: Conn, since: str) -> list[str]:
-    """Plan changes an agent made at or after ``since`` (auto-applied, ADR 0024), each with the
-    broker action, and the ones the book refused (with why)."""
+def changes(conn: Conn, since: str) -> tuple[list[str], list[str], list[str]]:
+    """Automatic changes (agents, weekly review) decided at or after ``since`` as ``(alerts,
+    info, undo)``: price alerts to change, changes that need nothing at the broker (or that the
+    book refused), and one undo command per applied change. The broker steps of the applied
+    ones are tasks (:func:`broker.tasks`)."""
     rv = book.revisions(conn)
-    if rv.empty:
-        return []
-    rv = rv[
-        rv["decided_at"].notna()
-        & (rv["decided_at"].astype(str) >= since)
-        & (rv["actor"].astype(str).str.startswith(book.AGENT_PREFIX))
-    ]
+    alerts: list[str] = []
+    info: list[str] = []
+    undo: list[str] = []
     pos = book.positions(conn).set_index("position_id")
-    out = []
-    for rec in rv.to_dict("records"):
+    if not rv.empty:
+        rv = rv[
+            rv["decided_at"].notna()
+            & (rv["decided_at"].astype(str) >= since)
+            & rv["actor"].astype(str).map(book.auto_applied)
+        ]
+    for rec in rv.to_dict("records") if not rv.empty else []:
         r = {str(k): v for k, v in rec.items()}
         pid = int(r["position_id"])
-        ticker = str(pos["ticker"].get(pid, "?"))
-        ccy = str(pos["currency"].get(pid, "GBp")) if "currency" in pos else "GBp"
-        if r["status"] == "accepted":
-            out.append(_change(r, ticker, ccy))
-        elif r["status"] == "declined" and str(r["decision_reason"] or "").startswith(
-            "auto-apply refused"
-        ):
-            out.append(
-                f"- **{ticker}** (position {pid}): {r['actor']} asked for **{r['action']}**"
-                f" {json.dumps(r['new'], default=str)} but the book refused it"
-                f" ({str(r['decision_reason']).removeprefix('auto-apply refused: ')}): nothing changed"
+        tk = str(pos["ticker"].get(pid, "?"))
+        ccy = str(pos["currency"].get(pid, "GBp"))
+        who = broker._who(str(r["actor"]))
+        old, new, action = r["old"] or {}, r["new"] or {}, str(r["action"])
+        if r["status"] == "declined":
+            info.append(
+                f"**{tk}**: {who} asked for **{action.replace('_', ' ')}** but the book refused"
+                f" it ({str(r['decision_reason']).removeprefix('auto-apply refused: ')}):"
+                " nothing changed."
             )
-    return out
-
-
-def new_revisions(conn: Conn, since: str) -> list[str]:
-    """Plan revisions proposed at or after ``since`` and still undecided."""
-    rv = book.revisions(conn, status="proposed")
-    if rv.empty:
-        return []
-    rv = rv[rv["at"].astype(str) >= since]
-    pos = book.positions(conn).set_index("position_id")["ticker"]
-    return [
-        f"- **{pos.get(int(r['position_id']), '?')}** (position {int(r['position_id'])}): {r['actor']} proposes **{r['action']}** {json.dumps(r['new'], default=str)} — {r['reason']}: `book.py accept {int(r['revision_id'])}` / `book.py decline {int(r['revision_id'])} --reason ...`"
-        for r in rv.to_dict("records")
-    ]
+            continue
+        if r["status"] != "accepted":
+            continue
+        undo.append(
+            f"- {tk} {action.replace('_', ' ')} ({who}): `book.py undo {r['revision_id']} --reason ...`"
+        )
+        if action == "revise_target":
+            alerts.append(
+                f"**{tk}**: move the target alert {broker.price(old.get('target'), ccy)}"
+                f" → {broker.price(new.get('target'), ccy)} ({who}: {r['reason']})"
+            )
+        elif action == "cancel" and not (r["done"] or {}).get("was_placed"):
+            info.append(
+                f"**{tk}**: {who} cancelled the planned entry ({r['reason']}). It was never"
+                f" placed, so nothing to do in {BROKER}; delete its price alerts."
+            )
+    closed = book.all_position_events(conn, since)
+    for e in closed[closed["kind"] == "closed"].to_dict("records") if not closed.empty else []:
+        alerts.append(
+            f"**{pos['ticker'].get(int(e['position_id']), '?')}**: delete its price alerts (position closed)"
+        )
+    return alerts, info, undo
 
 
 def errors(conn: Conn, run_id: int) -> list[str]:
@@ -224,59 +205,158 @@ def errors(conn: Conn, run_id: int) -> list[str]:
     return out
 
 
+def _todo(tasks: list[broker.Task]) -> list[str]:
+    if not tasks:
+        return []
+    n = len(tasks)
+    lines = [
+        f"**{n} {'stock needs' if n == 1 else 'stocks need'} you in {BROKER}.** {ONE_ORDER}",
+        "",
+    ]
+    for i, t in enumerate(tasks, 1):
+        lines += broker.render_task(i, t)
+    return lines
+
+
+def _section(title: str, items: list[str]) -> list[str]:
+    return [f"### {title}", "", *[i if i.startswith("- ") else f"- {i}" for i in items], ""]
+
+
+def _footer(undo: list[str]) -> list[str]:
+    lines = ["---", "", HOW_TO_REPLY, ""]
+    if undo:
+        lines += [
+            "<details><summary>Undo an automatic change</summary>",
+            "",
+            *undo,
+            "",
+            "</details>",
+            "",
+        ]
+    return lines
+
+
 def daily_message(
     conn: Conn, run_id: int, only: tuple[str, ...] = ("actions", "revisions", "errors")
 ) -> str | None:
-    """Markdown for the daily inbox, or None when nothing needs the owner (or no such run)."""
+    """Markdown for the daily inbox, or None when nothing needs the owner (or no such run).
+    ``actions``: every order still to place and the day's owner triggers; ``revisions``: the
+    automatic changes since the run started (their orders, alerts, undo); ``errors``."""
     try:
         started = str(store.run_info(run_id, conn=conn)["started_at"])
     except ValueError:
         return None
-    parts: list[str] = []
-    if "actions" in only:
-        acts = owner_actions(conn, run_id)
-        if acts:
-            parts += ["### Owner actions", "", *acts, ""]
+    todo = broker.tasks(conn)
+    if "actions" not in only:
+        todo = [t for t in todo if "revisions" in only and t.at >= started]
     if "revisions" in only:
-        changes = applied_changes(conn, started)
-        if changes:
-            parts += ["### Plan changes made by the agents", "", *changes, ""]
-        revs = new_revisions(conn, started)
-        if revs:
-            parts += ["### Revision proposals", "", *revs, ""]
-    if "errors" in only:
-        errs = errors(conn, run_id)
-        if errs:
-            parts += ["### Errors", "", *errs, ""]
-    if not parts:
+        todo += broker.cancels_since(conn, started)
+    checks, info = owner_items(conn, run_id) if "actions" in only else ([], [])
+    alerts, more, undo = changes(conn, started) if "revisions" in only else ([], [], [])
+    errs = errors(conn, run_id) if "errors" in only else []
+    if not (todo or checks or info or alerts or more or errs):
         return None
-    return (
-        "\n".join([f"## Daily check — run {run_id} ({started[:16]} UTC)", "", *parts]).rstrip()
-        + "\n"
-    )
+    parts = [f"## Solara — {_day(started)}", ""]
+    parts += _todo(todo) or [f"Nothing to place in {BROKER} today.", ""]
+    if checks:
+        parts += _section("Check and tell me", checks)
+    if alerts:
+        parts += _section("Price alerts", alerts)
+    if info or more:
+        parts += _section("For information (nothing to do)", info + more)
+    if errs:
+        parts += _section("Errors", errs)
+    parts += _footer(undo)
+    return "\n".join(parts).rstrip() + "\n"
+
+
+def _money(v: float) -> str:
+    return f"£{v:,.0f}"
 
 
 def weekly_message(conn: Conn, run_id: int, summary_url: str | None = None) -> str | None:
-    """The weekly pack's headline sections for the inbox (None when the run has no pack)."""
-    from solaraalpha.portfolio.weekly_pack import build_pack, render_pack
+    """The week in the inbox (None when the run has no pack): the new trades and anything
+    else still to place, as steps; the positions held; the money; what was not traded; errors."""
+    from solaraalpha.portfolio.weekly_pack import build_pack
 
     try:
-        text = render_pack(build_pack(conn, run_id))
+        pack = build_pack(conn, run_id)
     except ValueError:
         return None
-    keep: list[str] = []
-    include = False
-    for line in text.splitlines():
-        if line.startswith("# "):
-            keep.append(line)
-            continue
-        if line.startswith("## "):
-            include = line[3:].strip() in WEEKLY_SECTIONS
-        if include:
-            keep.append(line)
+    eq = pack.plan.equity
+    assert eq is not None
+    new = [p for p in pack.new_positions if p.get("status") in ("approved", "open")]
+    parts = [f"# Solara — week of {_day(pack.started_at)}", ""]
+    if pack.rules.warning:
+        parts += [f"> {pack.rules.warning}", ""]
+    n = len(new)
+    parts += [
+        (
+            f"**{n} new {'trade' if n == 1 else 'trades'} this week.**"
+            if n
+            else "**No new trades this week.**"
+        ),
+        "",
+    ]
+    pm = pack.plan.pm  # the portfolio manager's stance heads the week, its memo follows the steps
+    if pm:
+        parts += [f"Your PM: {str(pm.get('reasons') or '').split('; ')[0]}", ""]
+    todo = broker.tasks(conn) + broker.cancels_since(conn, pack.started_at)
+    parts += _todo(todo) or [f"Nothing to place in {BROKER}.", ""]
+    if pm:
+        parts += ["### From your PM", "", str(pm.get("note_md") or pm.get("reasons") or ""), ""]
+    elif any(c.stage != "screen" for c in pack.plan.candidates):
+        parts += [
+            "> The PM did not decide this week: plans were sized at the rules' risk per trade.",
+            "",
+        ]
+
+    held = []
+    for row in pack.open_positions:
+        st: book.PositionState = row["state"]
+        r = row.get("r")
+        r_s = f"{r:+.1f}R" if isinstance(r, float) and not math.isnan(r) else "R n/a"
+        line = (
+            f"**{st.ticker}** {st.shares:,} shares · cost {broker.price(st.avg_cost, st.currency)}"
+            f" · last {broker.price(row.get('last'), st.currency)} · {r_s}"
+            f" · stop {broker.price(st.stop, st.currency)}"
+        )
+        if row.get("next_event"):
+            line += f" · next event {str(row['next_event'])[:10]}"
+        held.append(line)
+    parts += _section("Your positions", held or ["none"])
+
+    money = [
+        f"Equity {_money(eq.equity)} (cash {_money(eq.cash)}) · {eq.positions} of"
+        f" {pack.rules.max_positions} positions · you lose {pack.heat:.1%} of equity if every stop is hit"
+    ]
+    if pack.breaches:
+        money.append("**Limits broken:** " + "; ".join(pack.breaches))
+    if pack.plan.report.breaker:
+        money.append("**Circuit breaker on: no new entries** (drawdown past the limit)")
+    if pack.regime and pack.regime.get("regime") != "calm":
+        money.append(f"Market **{pack.regime.get('regime')}**: {pack.regime.get('reason', '')}")
+    parts += _section("Money", money)
+
+    skipped = [f"{p.ticker}: {why}" for p, why in pack.plan.report.rejected]
+    skipped += [f"{t}: {why}" for t, why in pack.plan.plan_errors]
+    if skipped:
+        parts += [
+            "<details><summary>Not traded this week</summary>",
+            "",
+            *[f"- {s}" for s in skipped],
+            "",
+            "</details>",
+            "",
+        ]
+    errs = [f"- {c.ticker}: {c.reasons.get(c.stage, '')}" for c in pack.errors]
+    if errs:
+        parts += ["### Errors", "", *errs, ""]
+    _, _, undo = changes(conn, pack.started_at)
+    parts += _footer(undo)
     if summary_url:
-        keep += ["", f"Full pack and pipeline report: {summary_url}"]
-    return "\n".join(keep).rstrip() + "\n"
+        parts += [f"Full pack and pipeline report: {summary_url}", ""]
+    return "\n".join(parts).rstrip() + "\n"
 
 
 def send_stdout(markdown: str) -> None:

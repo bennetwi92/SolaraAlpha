@@ -7,7 +7,7 @@ Final label per ticker = the latest stage present in `labels` for the run (resea
 (portfolio.fit) and the accepted plans written as draft positions with a draft entry order, the
 plan in the `drafted` payload, every card of the run frozen as entry conditions and the
 research's kill criteria as thesis conditions. Rejected-by-fit plans are reported, not written.
-With the PM's verdict for the run (ADR 0026) only its allocation is planned, at its risk per
+With the PM's verdict for the run (ADR 0027) only its allocation is planned, at its risk per
 trade and in its order, and the drafts are approved by the PM (nothing for the owner to approve).
 Re-running for the same run skips tickers already drafted from it (with --replan, not those whose
 draft was rejected or cancelled: re-plan after a rules change); --dry-run writes nothing.

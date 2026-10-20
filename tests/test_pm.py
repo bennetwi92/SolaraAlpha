@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from scanfix import build_scan_db
-from solaraalpha import agents, pm, store
+from solaraalpha import agents, notify, pm, store
 from solaraalpha.portfolio import book
 from solaraalpha.portfolio.planner import plan_run
 from solaraalpha.portfolio.rules import load_rules
@@ -99,7 +99,7 @@ def test_planner_follows_the_pm_and_the_pm_approves(scan_db: Path) -> None:
     conn.close()
 
 
-def test_unfunded_act_is_reported_and_error_falls_back_to_the_owner(scan_db: Path) -> None:
+def test_unfunded_act_is_reported_and_error_falls_back_to_the_pipeline(scan_db: Path) -> None:
     conn = book.connect(scan_db)
     agents.record_book(conn, _pm(allocation=[], label="PASS"))
     out = plan_run(conn, 1, dry_run=True)
@@ -113,15 +113,20 @@ def test_unfunded_act_is_reported_and_error_falls_back_to_the_owner(scan_db: Pat
     agents.record_book(conn, _pm(label="ERROR", allocation=None, reasons=["pack failed"]))
     with conn:
         out = plan_run(conn, 1)
-    assert out.pm is None and book.position_status(conn, out.written["A.L"]) == "draft"
+    pid = out.written["A.L"]
+    assert out.pm is None and book.position_status(conn, pid) == "approved"
+    ev = book.position_events(conn, pid)
+    assert ev.loc[ev["kind"] == "approved", "actor"].iloc[0] == book.PIPELINE
+    assert out.plans[0].shares == 111  # the rules' 2%
     conn.close()
 
 
 def test_pm_approves_a_waiting_draft_from_the_run(scan_db: Path) -> None:
     conn = book.connect(scan_db)
-    with conn:
-        pid = plan_run(conn, 1).written["A.L"]  # drafted before the PM decided
-    assert book.position_status(conn, pid) == "draft"
+    with conn:  # a draft from the run still waiting (planned before ADR 0026)
+        pid, _ = book.draft_position(
+            conn, "A.L", 1560.0, 1380.0, 111, "stop", opened_from_run_id=1, at="2026-10-11"
+        )
     agents.record_book(conn, _pm())
     with conn:
         out = plan_run(conn, 1)
@@ -187,7 +192,11 @@ def test_pm_pack_and_memo(
     text = render_pack(build_pack(conn, 1))
     conn.close()
     assert "## PM memo" in text and "A.L at 1.0% risk" in text and "Stance: one idea" in text
-    assert "Approved by the PM: place it in Trading212" in text
+    assert "approved by the PM (ADR 0027)" in text
+    conn = book.connect(scan_db)
+    msg = notify.weekly_message(conn, 1)
+    conn.close()
+    assert msg is not None and "Your PM: fund A.L" in msg and "### From your PM" in msg
 
 
 def test_risk_band_rule(tmp_path: Path) -> None:

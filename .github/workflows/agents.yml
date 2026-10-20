@@ -1,6 +1,6 @@
 # Unattended agent stages (docs/decisions/0019). Runs after the weekly pipeline (validate ->
 # macro (one shared note per sector group, #140) -> research -> pm (the portfolio manager: the
-# week's allocation and rotations, ADR 0026) -> plan.py -> weekly_pack.py) and after the daily check (monitor, postmortem of
+# week's allocation and rotations, ADR 0027) -> plan.py -> weekly_pack.py) and after the daily check (monitor, postmortem of
 # positions closed since the previous daily run), or by hand. The daily monitor reviews every
 # open position and pending entry each weekday (docs/decisions/0024; event-triggered first,
 # capped by max_agent_tickers) and its changes are applied by the book as they are recorded;
@@ -305,7 +305,7 @@ jobs:
           retention-days: 14
 
   pm:
-    # the portfolio manager: one invocation over the whole book (ADR 0026); its allocation and
+    # the portfolio manager: one invocation over the whole book (ADR 0027); its allocation and
     # rotations are recorded before plan.py, which follows them and needs no owner approval
     needs: [gate, research, research-agents]
     if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'weekly' && !cancelled()

@@ -1,4 +1,4 @@
-"""The portfolio manager's pack: the whole book and the week's ideas on one page (ADR 0026).
+"""The portfolio manager's pack: the whole book and the week's ideas on one page (ADR 0027).
 
 Built from the DB only, after the research stage: every research-ACT candidate (the research
 verdict, its trade levels, the plan at the rules' risk per trade and what each risk in the PM's
@@ -115,7 +115,7 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
     no_plan = dict(base.plan_errors)
     fit_rejected = {p.ticker: why for p, why in base.report.rejected}
     positions = book.positions(conn)
-    drafted = {  # this run's drafts: funding one approves it as drafted (ADR 0026)
+    drafted = {  # this run's drafts: funding one approves it as drafted (ADR 0027)
         str(r["ticker"]): {"position_id": int(r["position_id"]), "status": str(r["status"])}
         for r in positions[positions["opened_from_run_id"] == run_id].to_dict("records")
         if r["status"] not in ("rejected", "cancelled")

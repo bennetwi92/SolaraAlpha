@@ -1,7 +1,7 @@
-# 0026: A portfolio manager agent owns the book's allocation
+# 0027: A portfolio manager agent owns the book's allocation
 
-**Status:** accepted (owner, 2026-10-20). Amends 0015 (sizing, fit order, owner approval),
-0019 (the weekly agent chain) and 0023 (the planner sizes the research levels).
+**Status:** accepted (owner, 2026-10-20). Amends 0015 (sizing, fit order), 0019 (the weekly
+agent chain), 0023 (the planner sizes the research levels) and 0026 (who approves the plans).
 
 **Context.** Every agent saw one stock: the validator and research one ticker each, the
 monitor one position each. The only cross-book step was `fit`, arithmetic in screen-rank order
@@ -38,16 +38,17 @@ daily book review, then a feedback loop.
   sized at the PM's `risk_pct` (`risk_per_trade` stays the size without a PM), fit-checked in
   the PM's order; rotated-out open positions no longer take a slot, heat or sector room and
   their value counts as cash. An ACT the PM left out is reported "not funded by the PM".
-- **No owner approval**: the PM's drafts are approved by `agent:pm`, and a draft from the same
-  run still waiting for the owner is approved as drafted when the PM funds it. The owner places
-  the orders in Trading212 (no broker API) and supervises through the memo and `undo`.
+- **No owner approval** (as ADR 0026): the PM's plans are approved by `agent:pm`, and a draft
+  from the same run still waiting (from before ADR 0026) is approved as drafted when the PM
+  funds it. The owner places the orders in Trading212 from the inbox steps (no broker API) and
+  supervises through the memo, `reject` and `undo`.
 - **Fallback**: no PM verdict, or an ERROR (`record.py error _BOOK --stage pm`), and the
-  planner drafts at `risk_per_trade` in screen-rank order for the owner to approve, as before;
-  the weekly pack says so.
+  planner sizes at `risk_per_trade` in screen-rank order and the pipeline approves (ADR 0026);
+  the weekly pack and the inbox say the PM did not decide.
 - **Hard limits stay in code**: slots, sector cap, heat, cash buffer, liquidity cap and the
   circuit breaker are enforced by `fit` / `make_plan` whatever the PM writes.
-- The weekly pack and the inbox open with the **PM memo**; PM-approved plans show "place it in
-  Trading212" instead of approve / reject.
+- The weekly pack opens with the **PM memo**; the inbox opens with the PM's stance and gives the
+  memo right after the Trading212 steps.
 
 **Later (not in this change).** B: a daily book review after the monitors (all the day's
 revisions together, competing adds, regime de-risking, results clustering, agent failures; it

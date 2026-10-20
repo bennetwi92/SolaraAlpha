@@ -26,7 +26,7 @@ verdicts (with their age in days and the latest evidence `retrieved` time, for t
 skill's delta mode) and evidence and every filing already interpreted (nsm_id), so a run reuses
 earlier work instead of re-interpreting it. See docs/decisions/0016.
 
-A pm verdict (ticker _BOOK, ADR 0026) is checked against the run and the book (allocated tickers
+A pm verdict (ticker _BOOK, ADR 0027) is checked against the run and the book (allocated tickers
 final-ACT with research trade levels, risk_pct inside risk_per_trade_range, rotated positions
 open or pending) and its rotations are applied at once (open: exit at market; pending: cancel).
 """

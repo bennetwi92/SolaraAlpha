@@ -178,14 +178,18 @@ def propose_event_action(
     conn: Conn, state: PositionState, card: ReviewCard, rules: Rules, run_id: int | None
 ) -> int | None:
     """Record the pre-results decision a ``trim`` or ``exit`` policy implies as a
-    ``revision_proposed`` event (``take_partial`` for ``event_trim_fraction`` of the shares, or
-    ``exit``) the owner accepts or declines; ``flag`` and ``hold`` propose nothing. None when
-    nothing was proposed or one is already pending."""
+    revision (``take_partial`` for ``event_trim_fraction`` of the shares, or ``exit``), applied
+    as it is recorded (ADR 0026); ``flag`` and ``hold`` propose nothing. None when nothing was
+    proposed or this event already has one."""
     if card.event_action not in ("trim", "exit") or state.shares <= 0:
         return None
-    rv = book.revisions(conn, state.position_id, status="proposed")
-    if not rv.empty and (rv["trigger"].astype(str).str.startswith("event_due")).any():
-        return None
+    rv = book.revisions(conn, state.position_id)
+    rv = rv[rv["status"].isin(["proposed", "accepted"])] if not rv.empty else rv
+    if (
+        not rv.empty
+        and rv["trigger"].astype(str).str.startswith(f"event_due {card.event_due}").any()
+    ):
+        return None  # already decided for this event
     reason = f"event due {card.event_due} ({card.event_status}): policy {card.event_action}"
     trigger = f"event_due {card.event_due}" + (
         f" (review run {run_id})" if run_id is not None else ""
@@ -319,11 +323,11 @@ def review_report(items: list[Reviewed]) -> str:
         elif c.stop_moved:
             line += "; trailing stop is context for the daily monitor (ADR 0024)"
         if c.action == "exit":
-            line += f"; `book.py exit {c.position_id} --reason time`"
+            line += "; the daily monitor decides the exit (ADR 0024)"
         if c.event_due:
             line += f"; **event due {c.event_due}** ({c.event_status}): policy {c.event_action}"
             if it.event_revision_id:
-                line += f" — `book.py accept {it.event_revision_id}` / `decline`"
+                line += f" — applied (revision {it.event_revision_id}; `book.py undo` to reverse)"
         lines.append(line)
     return "\n".join(lines) + "\n"
 

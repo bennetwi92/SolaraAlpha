@@ -481,7 +481,7 @@ def render_daily(r: DailyResult) -> str:
         d = t.detail
         if t.kind == "stop_close":
             lines.append(
-                f"- **{t.ticker}** closed {_px(d['close'])} below the stop {_px(d['stop'])} (position {t.position_id}): exit — `book.py exit {t.position_id} --reason stop`, then `fill` the stop order if the broker filled it"
+                f"- **{t.ticker}** closed {_px(d['close'])} below the stop {_px(d['stop'])} (position {t.position_id}): the stop order should have sold it — record its fill (`book.py fill STOP_ORDER --qty N --price P`)"
             )
         elif t.kind == "stop_touched":
             lines.append(
@@ -489,7 +489,7 @@ def render_daily(r: DailyResult) -> str:
             )
         elif t.kind == "target_hit":
             lines.append(
-                f"- **{t.ticker}** reached the target {_px(d['target'])} (high {_px(d['high'])}) (position {t.position_id}): take profit or trail — `book.py exit {t.position_id} --reason target`"
+                f"- **{t.ticker}** reached the target {_px(d['target'])} (high {_px(d['high'])}) (position {t.position_id}): nothing to do — the stop and the daily review manage the exit"
             )
         elif t.kind == "entry_break":
             lines.append(
@@ -504,7 +504,7 @@ def render_daily(r: DailyResult) -> str:
             lines.append(
                 f"- **{t.ticker}** scheduled event {d['event']} in {d['sessions']} session(s) (position {t.position_id}): policy **{d['policy']}** — "
                 + (
-                    f"`book.py revisions` for the proposed {'trim' if d['policy'] == 'trim' else 'exit'}, else `book.py exit {t.position_id} --reason discretionary`"
+                    f"the weekly review applied the {d['policy']} (`book.py revisions`)"
                     if d["policy"] in ("trim", "exit")
                     else "decide: hold through, trim or exit (set `event_policy` in config/portfolio.toml)"
                 )

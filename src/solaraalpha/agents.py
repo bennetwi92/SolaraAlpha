@@ -17,7 +17,7 @@ The **portfolio manager** (stage ``pm``, pseudo-ticker ``_BOOK``) records one ve
 run carrying the week's ``allocation`` (which research-ACT tickers get capital, at what risk per
 trade inside ``risk_per_trade_range``, in priority order) and ``rotations`` (open positions to
 exit, pending entries to cancel, to make room); :func:`record_book` checks it against the run
-and the book and applies the rotations (docs/decisions/0026).
+and the book and applies the rotations (docs/decisions/0027).
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ from solaraalpha.store import Conn, query
 Label = Literal["ACT", "WATCH", "PASS", "ERROR"]
 Stage = Literal["validate", "research", "events", "monitor", "postmortem", "macro", "pm"]
 SECTOR_PREFIX = "_SECTOR:"  # pseudo-ticker of a shared sector / macro note (#140)
-BOOK = "_BOOK"  # pseudo-ticker of the portfolio manager's verdict (ADR 0026)
+BOOK = "_BOOK"  # pseudo-ticker of the portfolio manager's verdict (ADR 0027)
 LABEL_STAGES = ("events", "validate", "research")  # stages that write a labels row
 RANK = {"ACT": 3, "WATCH": 2, "PASS": 1}  # ERROR is outside the order
 PREVIOUS = {"validate": ("screen",), "research": ("validate", "screen")}
@@ -143,7 +143,7 @@ class Verdict(BaseModel):
     note_md: str = ""
     checks: dict[str, str] = Field(default_factory=dict)
     trade: TradeLevels | None = None  # required on a research ACT (ADR 0023)
-    allocation: list[Allocation] | None = None  # the PM's, in priority order (ADR 0026)
+    allocation: list[Allocation] | None = None  # the PM's, in priority order (ADR 0027)
     rotations: list[Rotation] = Field(default_factory=list)  # the PM's
 
     @model_validator(mode="after")

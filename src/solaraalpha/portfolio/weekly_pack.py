@@ -88,15 +88,7 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> Pack:
     for p in positions[positions["opened_from_run_id"] == run_id].to_dict("records"):
         ev = book.position_events(conn, int(p["position_id"]))
         drafted = [x for x in ev.loc[ev["kind"] == "drafted", "payload"]]
-        od = book.orders(conn, int(p["position_id"]))
-        entry = od.loc[od["purpose"] == "entry", "order_id"]
-        new.append(
-            {
-                **{str(k): v for k, v in p.items()},
-                "payload": drafted[0] if drafted else {},
-                "entry_order_id": int(entry.iloc[-1]) if len(entry) else None,
-            }
-        )
+        new.append({**{str(k): v for k, v in p.items()}, "payload": drafted[0] if drafted else {}})
 
     held = plan.held if plan.held is not None else pd.DataFrame(columns=risk.HOLDING_COLS)
     open_rows: list[dict[str, Any]] = []
@@ -256,8 +248,8 @@ def render_pack(pack: Pack) -> str:
         ]
     elif any(c.stage != "screen" for c in pack.plan.candidates):
         lines += [
-            "> **The PM did not decide this run** (no verdict, or it errored): plans were drafted"
-            " at the rules' risk per trade and wait for your approval.",
+            "> **The PM did not decide this run** (no verdict, or it errored): plans were sized"
+            " at the rules' risk per trade in screen-rank order and approved by the pipeline.",
             "",
         ]
     else:
@@ -304,26 +296,17 @@ def render_pack(pack: Pack) -> str:
                 )
             if p["thesis"]:
                 lines.append(f"- thesis: {p['thesis']}")
-            if p["status"] == "approved":
-                oid = p.get("entry_order_id")
-                lines += [
-                    "",
-                    f"- **Approved by the PM: place it in Trading212**, then `placed {oid} --ref REF`"
-                    " (Actions → Book → Run workflow); `book.py tickets` lists it",
-                    "",
-                ]
-            elif p["status"] == "draft":
-                lines += [
-                    "",
-                    f"- **Approve / reject** (Actions → Book → Run workflow): `approve {pid}` or"
-                    f' `reject {pid} --reason "..."`',
-                    "",
-                    f"    uv run python scripts/book.py approve {pid}",
-                    f'    uv run python scripts/book.py reject {pid} --reason "..."',
-                    "",
-                ]
-            else:
-                lines.append("")
+            by = (
+                "approved by the PM (ADR 0027)"
+                if pack.plan.pm
+                else "approved as planned (ADR 0026)"
+            )
+            lines += [
+                "",
+                f"- {by}: the inbox lists the steps to take in"
+                f' Trading212; to skip it: `book.py reject {pid} --reason "..."`',
+                "",
+            ]
     else:
         lines += ["none", ""]
 
@@ -373,13 +356,11 @@ def render_pack(pack: Pack) -> str:
                     f"; {rv.get('reason', '')}"
                 )
                 if rv.get("action") == "exit":
-                    lines.append(
-                        f"  - `uv run python scripts/book.py exit {st.position_id} --reason time`"
-                    )
+                    lines.append("  - exit signal: the daily monitor decides the exit (ADR 0024)")
                 if rv.get("event_due"):
                     lines.append(
                         f"  - **event due {str(rv.get('event_due'))[:10]}** ({rv.get('event_status') or 'estimated'}):"
-                        f" policy **{rv.get('event_action') or 'flag'}** (decided in advance; `book.py revisions` for a proposed trim / exit)"
+                        f" policy **{rv.get('event_action') or 'flag'}** (decided in advance; a trim / exit is applied, `book.py revisions`)"
                     )
     else:
         lines.append("none")

@@ -22,7 +22,7 @@ class Rules:
     currency: str  # account currency; only "GBP" is supported
     capital: float  # starting capital, account currency
     risk_per_trade: float  # fraction of equity lost if the stop is hit (no PM allocation)
-    risk_per_trade_range: tuple[float, float]  # the PM's band for risk per trade (ADR 0026)
+    risk_per_trade_range: tuple[float, float]  # the PM's band for risk per trade (ADR 0027)
     max_positions: int
     max_position_pct: float  # position value / equity
     max_sector_pct: float  # sector value / equity
