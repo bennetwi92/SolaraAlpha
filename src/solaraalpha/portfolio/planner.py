@@ -150,10 +150,18 @@ def pending_positions(conn: Conn) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["position_id", "ticker", "value", "risk", "sector"])
 
 
-def plan_run(conn: Conn, run_id: int, rules: Rules | None = None, dry_run: bool = False) -> PlanRun:
+def plan_run(
+    conn: Conn,
+    run_id: int,
+    rules: Rules | None = None,
+    dry_run: bool = False,
+    replan: bool = False,
+) -> PlanRun:
     """Plan, size and fit-check the run's final-ACT tickers; write the accepted plans to the
     book unless ``dry_run``. Once any agent label exists in the run, a ticker whose final
-    label is still the screen's (the agents never reached it) is reported, not planned."""
+    label is still the screen's (the agents never reached it) is reported, not planned.
+    ``replan``: drafts from this run that were rejected or cancelled no longer count as done,
+    so those tickers are planned again (after a rules or planner change)."""
     rules = rules or load_rules()
     started = str(store.run_info(run_id, conn=conn)["started_at"])
     candidates = final_labels(conn, run_id)
@@ -162,7 +170,10 @@ def plan_run(conn: Conn, run_id: int, rules: Rules | None = None, dry_run: bool 
 
     regime = latest_regime(conn)
     risk_off = bool(regime and regime.get("regime") == "risk_off")
-    done = set(existing.loc[existing["opened_from_run_id"] == run_id, "ticker"])
+    from_run = existing[existing["opened_from_run_id"] == run_id]
+    if replan:
+        from_run = from_run[~from_run["status"].isin(["rejected", "cancelled"])]
+    done = set(from_run["ticker"])
 
     # Equity and cash at the run's closes (held tickers not in the run: last stored close).
     prices: dict[str, float] = {}
