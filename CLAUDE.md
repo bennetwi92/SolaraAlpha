@@ -65,7 +65,8 @@ Current state:
   amendment #192): past a sanity floor (no ERROR, `min_adv_gbp`), stocks are ranked by
   `portfolio.fit.rank_score` (mean of technical `trend`, levels `compression`, fundamentals
   `growth`); the top `shortlist_size` (7) plus up to `shortlist_catalysts` (3) with a fresh
-  catalyst (`solaraalpha.catalysts.fresh_catalysts`: new filings, headlines, scheduled events)
+  catalyst (`solaraalpha.catalysts.fresh_catalysts`: new filings, headlines, scheduled events,
+  tiered information > scheduled > discovery > warnings only, slots by tier then rank, #222)
   are ACT, the rest keep their band label capped at WATCH. Saved per stock in the `labels`
   table (`store.shortlist`) with `rank`, `shortlist` (why) and `watch_on` (JSON). **The rank is
   unvalidated**: every pack the agents read says so (`fit.RANK_NOTE`, #210). Levels is
@@ -240,8 +241,9 @@ src/solaraalpha/        importable package — all reusable code lives here
                         weekly bars as seen at the close (post-exit weeks = hindsight) — 0016
   monitoring.py         the monitor's pack: position then (entry conditions) vs now (fresh cards),
                         thesis conditions evaluated, triggers + filing text — docs/decisions/0018
-  catalysts.py          fresh_catalysts: ticker -> one-line reason (new material filings, headlines,
-                        a scheduled event in the window); a stock with one can join the shortlist
+  catalysts.py          fresh_catalysts: ticker -> tier-tagged one-line reason (new material filings,
+                        headlines, a scheduled event in the window); a stock with one can join the
+                        shortlist, best tier first
   pm.py                 the portfolio manager's pack: research-ACT candidates (verdict, levels, sizing
                         across the risk band, financing, results-day gap cost), open / pending positions, money, regime, macro,
                         correlations, limits — docs/decisions/0027
