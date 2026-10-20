@@ -25,7 +25,9 @@ adjectives.
    AIM longs, +15–30% in 1–10 weeks, volatility wanted, the chart as context, a screen that is
    a ranked wide net, and agents that decide. Check every proposal against it. Only the owner
    changes its paragraph.
-3. ADRs 0003, 0004 (incl. amendment #194), 0011, 0014 (incl. #138, #192), 0023, 0024 and
+3. ADRs 0003, 0004 (incl. amendment #194), 0011, 0014 (incl. #138, #192), 0023, 0024, 0027
+   (the `/pm` agent allocates risk across the research ACTs, so its picks are a decision the
+   shadow book should measure too) and
    `docs/research/0001-relative-strength-forward-returns.md`.
 4. Issue #210, your proposal of 2026-10-20 (read its comments: the PM's and owner's answers
    decide what you do next). Also scan open issues and recent PRs for the PM's overhaul work
