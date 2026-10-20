@@ -172,6 +172,7 @@ def test_pm_pack_and_memo(
     assert cand["ticker"] == "A.L" and cand["research"]["trade"]["stop"] == 1380.0
     assert cand["plan_at_default_risk"]["shares"] == 111
     assert set(cand["sizing"]["at"]) == {"1.00%", "2.00%", "3.00%"}
+    assert pack["rank_note"].startswith("The screen rank is unvalidated")  # #210
     assert pack["money"]["slots_free"] == 5 and pack["limits"]["risk_per_trade_range"] == (
         0.01,
         0.03,

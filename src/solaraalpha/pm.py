@@ -23,6 +23,7 @@ from solaraalpha import store
 from solaraalpha.agents import BOOK, SECTOR_PREFIX, trade_levels
 from solaraalpha.config import settings
 from solaraalpha.portfolio import book, risk
+from solaraalpha.portfolio.fit import RANK_NOTE
 from solaraalpha.portfolio.planner import _weekly_returns, pending_positions, plan_run
 from solaraalpha.portfolio.rules import Rules, load_rules
 from solaraalpha.portfolio.weekly_pack import (
@@ -268,6 +269,7 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
         "run_id": run_id,
         "ticker": BOOK,
         "started_at": started,
+        "rank_note": RANK_NOTE,
         "limits": {k: getattr(rules, k) for k in LIMIT_KEYS},
         "money": {
             "equity": eq.equity,

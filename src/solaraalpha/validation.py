@@ -27,6 +27,7 @@ from solaraalpha.config import settings
 from solaraalpha.data.announcements import fetch_announcements, resolve_issuer
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.log import get_logger
+from solaraalpha.portfolio.fit import RANK_NOTE
 from solaraalpha.store import Conn, query
 
 log = get_logger(__name__)
@@ -71,6 +72,7 @@ def build_pack(conn: Conn, ticker: str, run_id: int) -> dict[str, Any]:
         "cards": cards,
         "steps": _records(steps),
         "screen_label": _records(label)[0] if not label.empty else None,
+        "rank_note": RANK_NOTE,
         "chart_context": chart_context(cards.get("levels")),
         "prices": prices_section(conn, ticker, started),
         "fundamentals": fundamentals_section(conn, ticker, started, str(date)[:10]),
