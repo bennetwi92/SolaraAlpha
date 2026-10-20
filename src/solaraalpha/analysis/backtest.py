@@ -20,7 +20,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from solaraalpha.analysis.fundamentals import fundamentals_card
+from solaraalpha.analysis.fundamentals import fundamentals_card, fx_ticker, reporting_currency
 from solaraalpha.analysis.levels import levels_card
 from solaraalpha.analysis.relative_strength import Comparisons, compare, rs_card
 from solaraalpha.analysis.technical import scorecard
@@ -93,6 +93,17 @@ def replay(
     weeks = [w for i, w in enumerate(idx) if lo <= w <= hi and i >= MIN_WEEKS and (i % step == 0)]
     rows = []
     others: dict[str, pd.DataFrame] = {}
+    fx = None  # accounts in another currency than the price: FX via fetch (as-of per week)
+    pair = (
+        fx_ticker(reporting_currency(fund), weekly.attrs.get("currency"))
+        if fund is not None
+        else None
+    )
+    if pair and fetch is not None:
+        try:
+            fx = fetch(pair)["close"]
+        except Exception as e:
+            log.warning("%s: no FX %s (%s); valuation NaN", ticker, pair, e)
 
     def sliced_fetch(week: pd.Timestamp) -> Fetch:
         def f(t: str) -> pd.DataFrame:
@@ -124,7 +135,7 @@ def replay(
                 log.debug("%s %s: no relative strength (%s)", ticker, week.date(), e)
         if fund is not None and not fund.empty:
             try:
-                row |= _flat("fundamentals", fundamentals_card(fund, w, as_of=week))
+                row |= _flat("fundamentals", fundamentals_card(fund, w, as_of=week, fx=fx))
             except (ValueError, IndexError, KeyError) as e:
                 log.debug("%s %s: no fundamentals (%s)", ticker, week.date(), e)
         for tk in TOOLKITS:

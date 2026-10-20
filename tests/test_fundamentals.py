@@ -10,6 +10,7 @@ import pytest
 from solaraalpha.analysis.fundamentals import (
     eps_ttm,
     fundamentals_card,
+    fx_ticker,
     known,
     usable_from,
     yoy,
@@ -88,6 +89,49 @@ def test_currency_mismatch_skips_valuation() -> None:
     card = fundamentals_card(_fund(), _weekly(currency="USD"))
     assert np.isnan(card.pe) and np.isnan(card.fcf_yield)
     assert not np.isnan(card.growth) and not np.isnan(card.quality)
+
+
+def _usd(fund: pd.DataFrame) -> pd.DataFrame:
+    return fund.assign(currency=fund["currency"].where(fund["currency"] == "", "USD"))
+
+
+def test_fx_converts_a_usd_reporter_priced_in_pence() -> None:
+    fund, weekly = _usd(_fund()), _weekly()
+    assert fx_ticker("USD", "GBp") == "GBPUSD=X" and fx_ticker("GBP", "GBp") is None
+    fx = pd.Series(1.25, index=pd.date_range("2020-01-01", "2026-10-09", freq="D", tz="UTC"))
+    usd = fundamentals_card(fund, weekly, fx=fx)
+    gbp = fundamentals_card(_fund(), weekly)
+    assert usd.pe == pytest.approx(gbp.pe * 1.25)  # price in USD = pence / 100 * 1.25
+    assert usd.market_cap == pytest.approx(gbp.market_cap * 1.25)
+    assert usd.ey_percentile == pytest.approx(gbp.ey_percentile)  # a constant rate
+    assert np.isnan(fundamentals_card(fund, weekly).pe)  # no FX: skipped, not wrong
+
+
+def test_fx_is_point_in_time() -> None:
+    fund, weekly = _usd(_fund()), _weekly()
+    idx = pd.date_range("2020-01-01", "2026-10-09", freq="D", tz="UTC")
+    fx = pd.Series(np.where(idx <= _ts("2025-06-30"), 1.25, 9.0), index=idx)
+    then = fundamentals_card(fund, weekly, "2025-06-30", fx)
+    flat = fundamentals_card(fund, weekly, "2025-06-30", pd.Series(1.25, index=idx))
+    assert repr(then) == repr(flat)  # a later rate changes nothing
+
+
+def test_growth_n_counts_the_inputs() -> None:
+    weekly = _weekly()
+    thin = fundamentals_card(_synthetic([1.0, 1.2], [100, 100]), weekly)
+    assert thin.growth_n == 2  # eps growth and revenue growth only
+    assert 1 <= fundamentals_card(_fund(), weekly).growth_n <= 5
+
+
+def test_zero_equity_and_negative_ebitda() -> None:
+    fund = _fund()
+    eq = fund["field"] == "annualStockholdersEquity"
+    last = fund.loc[eq, "date"].max()
+    fund.loc[eq & (fund["date"] == last), "value"] = 0.0
+    eb = fund["field"] == "annualEBITDA"
+    fund.loc[eb, "value"] = -1e6
+    card = fundamentals_card(fund, _weekly())  # #213: used to raise ZeroDivisionError
+    assert np.isnan(card.roe) and np.isnan(card.net_debt_ebitda)
 
 
 def test_growth_direction() -> None:
