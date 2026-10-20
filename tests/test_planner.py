@@ -37,12 +37,12 @@ def test_plan_run_drafts_one_position_and_is_idempotent(
     assert "event within 9 days" in out
     conn = book.connect(scan_db)
     pos = book.positions(conn)
-    assert list(pos["ticker"]) == ["A.L"] and pos.loc[0, "status"] == "draft"
+    assert list(pos["ticker"]) == ["A.L"] and pos.loc[0, "status"] == "approved"  # ADR 0025
     assert pos.loc[0, "opened_from_run_id"] == 1 and pos.loc[0, "horizon_weeks"] == 16
     assert pos.loc[0, "thesis"] == "Strong winter bookings; fuel hedged."
     od = book.orders(conn, 1)
     assert len(od) == 1 and od.loc[0, "type"] == "stop" and od.loc[0, "price"] == 1560.0
-    assert od.loc[0, "purpose"] == "entry" and od.loc[0, "status"] == "draft"
+    assert od.loc[0, "purpose"] == "entry" and od.loc[0, "status"] == "approved"
     assert od.loc[0, "valid_until"] == "2026-10-16"
     # risk 2% of £10k = £200; risk/share = 1560 - 1380 = 180p -> 111 shares
     assert od.loc[0, "qty"] == 111

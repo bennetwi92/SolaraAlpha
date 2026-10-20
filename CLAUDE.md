@@ -97,9 +97,15 @@ Current state:
   `max_agent_tickers` and `--max-turns`; without `CLAUDE_CODE_OAUTH_TOKEN` or
   `ANTHROPIC_API_KEY` it skips and nothing is spent. A failed invocation is recorded as an
   ERROR verdict (`record.py error`); the job fails only if every item errored.
-- **Notifications** (docs/decisions/0021): the workflows post to the GitHub issue labelled
-  `inbox` only when `scripts/notify.py` has something for the owner (owner-action triggers,
-  revision proposals, errors; the weekly pack's headlines on Sunday); silence otherwise.
+- **Notifications** (docs/decisions/0021, 0025): the workflows post to the GitHub issue labelled
+  `inbox` only when `scripts/notify.py` has something for the owner; silence otherwise. Plain
+  words: per stock, numbered Trading212 steps (`portfolio/broker.py`: every approved order not
+  yet placed, the order it replaces cancelled first, what to place once it fills, price alerts
+  for the targets, why, what to tell back), then checks to report back (stop should have sold,
+  order past its date, dividend), alert changes, information, errors, undo commands.
+- **No owner approval** (docs/decisions/0025): plans are approved as they are drafted and the
+  pipeline's revisions (adds, pre-results trims) are applied like the agents'; the owner only
+  places orders, sets alerts and reports placements and fills (`book.py reject` / `undo` override).
 - **Agents write through one door** (docs/decisions/0016): a `verdict.json` (schema:
   `record.py schema`) recorded with `scripts/record.py verdict`, which writes the `labels` row,
   a card under `model = stage` and the `evidence` rows on the same run. Agents can only
@@ -108,7 +114,7 @@ Current state:
 - **The research agent owns the entry and the stop** (docs/decisions/0023): a research ACT must
   carry `trade` (`entry_type` limit = at or below / stop = buy the break, `entry`, `stop` where
   the set-up is wrong, `stop_reason`, optional `valid_days`), saved as `trade_*` on its card
-  (`agents.trade_levels`). The planner only sizes and fit-checks it; an ACT without agent
+  (`agents.trade_levels`). The planner only sizes, fit-checks and approves it; an ACT without agent
   levels is reported, never drafted. The levels / technical stops are context, not rules.
 - **Relative strength** (`analysis/relative_strength.py`) compares each stock with its market
   index, industry index / ETF and peers, listed per stock in `config/benchmarks.toml` (market
@@ -116,7 +122,11 @@ Current state:
 - All price data must pass through `check_prices` (review the issues), `clean_prices` and
   `trim_to_consistent` before use.
 - **Broker: Trading212, Stocks & Shares ISA** — long only, no margin, no commission, AIM has no
-  stamp duty; not every AIM stock is offered there.
+  stamp duty; not every AIM stock is offered there. Market, limit, stop (market) and stop-limit
+  orders and price alerts; **one open order per stock**, so the book never holds two live orders
+  for a stock: an exit / partial / add takes the stop order off until it fills or ends, a part
+  fill on a buy cancels the rest, no target orders (targets are price alerts). Breakout entries
+  are stop market orders (ADR 0025).
 - **Portfolio rules** (capital, risk per trade, position / sector / heat limits, entry validity,
   long-only, scaling, the pre-results event policy, the drawdown circuit breaker) live in `config/portfolio.toml`, read through `portfolio.rules.load_rules`. All
   values are **placeholders** until the owner sets them and flips `confirmed = true`; reports
@@ -173,8 +183,8 @@ Current state:
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
 | Fresh catalysts (filings, headlines, scheduled events) per stock | `uv run python scripts/catalysts.py [TICKERS...] [--days 7] [--horizon 10] [--no-news]` |
 | Refresh the watchlist (FTSE AIM 100 + AIM UK 50; by hand, never CI) | `uv run python scripts/universe.py [--write]` |
-| Book trades by hand (draft, approve, amend, reject, tickets, placed, fills, exits) | `uv run python scripts/book.py new JET2.L --entry 1520 --stop 1400 --qty 100` / `list` / `show ID` / `approve ID` / `amend ID --qty N --price P --stop P` / `reject ID --reason TEXT` / `tickets` / `placed ORDER_ID --ref REF` / `fill ORDER_ID --qty N --price P [--commission X]` / `unfilled ORDER_ID` / `cancel ORDER_ID` / `expire` / `exit ID --reason stop|target|thesis_broken|...` / `cash dividend TICKER GBP --at EXDATE` / `split ID --ratio 2:1` / `corporate-close ID --price P --reason takeover|delisting` / `stats [--since D]` (`--db PATH` for a local file; from GitHub: the **Book** workflow, `gh workflow run book.yml -f command='cash deposit 5000'`; `-f script=plan.py -f command='--run 8'` re-plans a run) |
-| Draft the week's trade plans from a saved scan run (final ACT labels → plan → fit → draft positions) | `uv run python scripts/plan.py --run N [--dry-run] [--replan]` (`--replan`: again for tickers whose draft was rejected) |
+| Book trades by hand (draft, approve, amend, reject, tickets, placed, fills, exits) | `uv run python scripts/book.py new JET2.L --entry 1520 --stop 1400 --qty 100` / `list` / `show ID` / `approve ID` / `amend ID --qty N --price P --stop P` / `reject ID --reason TEXT` / `tickets` / `placed ORDER_ID [ORDER_ID ...] [--ref REF]` / `fill ORDER_ID --qty N --price P [--commission X]` / `unfilled ORDER_ID` / `cancel ORDER_ID` / `expire` / `exit ID --reason stop|target|thesis_broken|...` / `cash dividend TICKER GBP --at EXDATE` / `split ID --ratio 2:1` / `corporate-close ID --price P --reason takeover|delisting` / `stats [--since D]` (`--db PATH` for a local file; from GitHub: the **Book** workflow, `gh workflow run book.yml -f command='cash deposit 5000'`; `-f script=plan.py -f command='--run 8'` re-plans a run) |
+| Plan the week's trades from a saved scan run (final ACT labels → plan → fit → approved positions) | `uv run python scripts/plan.py --run N [--dry-run] [--replan]` (`--replan`: again for tickers whose draft was rejected) |
 | Weekly pack for a run (new plans with approve/reject commands, fit rejections, watch list, open positions, money, errors) | `uv run python scripts/weekly_pack.py --run N [--out FILE] [--report FILE]` |
 | Portfolio view: holdings, cash, equity, heat, sector exposure, breaches | `uv run python scripts/portfolio.py [--save] [--price JET2.L=1520]` (cash in: `book.py cash deposit 10000`) |
 | Equity curve, time-weighted return, drawdown, vs benchmark, correlated holdings | `uv run python scripts/portfolio.py --history` |
@@ -212,8 +222,9 @@ src/solaraalpha/        importable package — all reusable code lives here
   value_models.py       register of per-stock value models (config/value_models.toml) for research
   dashboard.py          render_dashboard: one self-contained HTML page from the DB (inline CSS,
                         base64 PNG charts, md_to_html for the pack) — #136
-  notify.py             owner notifications: daily (owner triggers, revision proposals, errors) and
-                        weekly (pack headlines) messages; channels stdout / GitHub inbox issue — 0021
+  notify.py             owner notifications: daily and weekly inbox messages in plain words (broker
+                        steps, checks, alerts, info, errors, undo); channels stdout / GitHub inbox
+                        issue — 0021, 0025
   toolkits.py           toolkit register: id -> run fn + act / watch bands; Inputs (lazy,
                         shared per-ticker data)
   pipeline.py           WEEKLY stages (runs_on), clauses, band / combine / screen_label,
@@ -269,9 +280,11 @@ src/solaraalpha/        importable package — all reusable code lives here
     fit.py              portfolio fit before drafting: slots, sector cap, heat (reject);
                         correlation, event clash (flag); rank_score — 0015
     planner.py          plan_run: a saved scan run's final labels → plans (research trade levels
-                        required) → fit → draft positions
+                        required) → fit → approved positions (ADR 0025)
                         with entry conditions (frozen cards) and thesis conditions (kill criteria)
     weekly_pack.py      build_pack (run + book → data) and render_pack (→ markdown), the Sunday page
+    broker.py           Trading212 instructions: approved orders not yet placed → per-stock numbered
+                        steps (cancel the replaced order, place, then the stop), price alerts — 0025
     triggers.py         daily triggers (pure): stop_close / stop_touched / target_hit / gap /
                         watch_break / entry_break / filing / news — see docs/decisions/0017
     daily.py            run_daily (what to check, fetch, evaluate, save the triggers) + render_daily

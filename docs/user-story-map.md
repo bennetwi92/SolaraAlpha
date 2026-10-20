@@ -60,8 +60,10 @@ Kept as written (lightly tidied); everything below expands them.
 | **Strategist agent** | Claude with web search: catalysts, news, headwinds, scored and logged | Sunday, shortlist only; daily on triggers |
 | **Monitor agent** | Claude: daily review of open positions, proposes plan revisions | daily, open positions only |
 
-Agents **propose**; only the owner changes orders or positions. Every agent output is
-written to the DB with its evidence.
+Nothing waits for the owner's approval (ADR 0024, 0025): plans are approved as they are drafted,
+and agents' and the pipeline's revisions are applied as recorded. The owner places the orders in
+Trading212 as the inbox lists them, reports placements and fills, and can undo any automatic
+change. Every agent output is written to the DB with its evidence.
 
 ### Outcome labels (every stage, every stock)
 
@@ -105,7 +107,7 @@ Evidence (articles, filings, events) ──linked to── candidates, plans, re
 | A2 | **Validate**: independent agent check of the labels | Sunday | Validator | ✅ |
 | A3 | **Research**: events, news, headwinds; log evidence and impact | Sunday | Strategist | ✅ |
 | A4 | **Plan and size**: trade plan, size, portfolio fit; draft orders and positions | Sunday | Pipeline | ✅ |
-| A5 | **Approve and place**: owner reviews the week's pack, places orders at the broker | Sun eve / Mon | Owner | ✅ pack + `book.py approve` / `placed` |
+| A5 | **Place**: owner places the orders the inbox lists (no approval, ADR 0025) | Sun eve / Mon | Owner | ✅ inbox steps + `book.py placed` |
 | A6 | **Record fills**: fill, part-fill, not filled; open positions | daily | Owner | ✅ by hand (`book.py fill`); broker reconciliation open (#141) |
 | A7 | **Monitor daily**: prices vs stops/triggers, announcements, news, volatility | daily | Pipeline + Monitor | ✅ |
 | A8 | **Review weekly**: re-run toolkits on open positions; hold / trail / add / exit | Sunday | Pipeline + Monitor | ✅ |
@@ -375,13 +377,15 @@ Nothing in this list has been assumed in the design above.
 
 1. **Capital and risk**: starting capital, risk per trade, max open positions, max per
    position / sector, max portfolio heat.
-2. **Broker and account**: which broker, account type (ISA / SIPP / GIA: affects tax and
+2. *(answered: Trading212 Stocks & Shares ISA; market, limit, stop, stop-limit; one open order
+   per stock; ADR 0025)* **Broker and account**: which broker, account type (ISA / SIPP / GIA: affects tax and
    whether shorts or CFDs are possible), can it export fills, which order types does it
    support on AIM (stop-entry orders often aren't available for AIM names)?
 3. **Label bands**: are the ACT / WATCH bands in A1 the right definition of "uptrend, not
    overextended, growth potential"? Should fundamentals be able to give ACT on its own, or
    only veto?
-4. **Agents' authority**: may the validator only downgrade (proposed), or also upgrade? Should
+4. *(answered: agents' and pipeline revisions apply without approval, ADR 0024, 0025)*
+   **Agents' authority**: may the validator only downgrade (proposed), or also upgrade? Should
    the monitor ever act without approval (e.g. cancel an unfilled entry after a profit
    warning)? Proposed: never.
 5. **Where agents run**: Actions with an API key (cost), a scheduled Claude Code session

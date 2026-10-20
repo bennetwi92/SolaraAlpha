@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import sys
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -144,7 +145,7 @@ def test_pullback_add_and_max_adds() -> None:
     assert add_plan(state(stop=1700.0), review(1.2), levels(), tech(), rules()) is None
 
 
-def test_accept_drafts_the_add_and_raises_the_stop(
+def test_add_is_applied_and_raises_the_stop(
     db_backend: Path | None, capsys: pytest.CaptureFixture[str]
 ) -> None:
     conn = book.connect(db_backend)
@@ -160,12 +161,12 @@ def test_accept_drafts_the_add_and_raises_the_stop(
         assert plan is not None
         rid = propose_add(conn, st, plan, run_id=7)
     rv = book.revisions(conn, pid)
-    assert len(rv) == 1 and rv["action"].iloc[0] == "add" and rv["status"].iloc[0] == "proposed"
+    assert len(rv) == 1 and rv["action"].iloc[0] == "add" and rv["status"].iloc[0] == "accepted"
+    assert rv["revision_id"].iloc[0] == rid and rv["decided_by"].iloc[0] == "pipeline"
     assert rv["new"].iloc[0]["qty"] == 50 and rv["new"].iloc[0]["stop"] == 1500.0
     assert rv["trigger"].iloc[0] == "review run 7"
-    with conn:
-        done = book.accept_revision(conn, rid, at="2026-10-11T18:00:00+00:00")
-    assert set(done) == {"revision_id", "action", "stop_order_id", "add_order_id"}
+    done = rv["done"].iloc[0]
+    assert set(done) == {"revision_id", "action", "stop_off", "add_order_id"}
     od = book.orders(conn, pid).set_index("order_id")
     add = od.loc[done["add_order_id"]]
     assert (
@@ -175,10 +176,10 @@ def test_accept_drafts_the_add_and_raises_the_stop(
         and add["status"] == "approved"
     )
     assert add["price"] == pytest.approx(1676.6) and add["valid_until"] == "2026-10-16"
-    stop = od.loc[done["stop_order_id"]]
-    assert stop["purpose"] == "stop" and stop["price"] == 1500.0 and stop["qty"] == 100
+    stop = od.loc[done["stop_off"]]  # one order per stock (ADR 0025): off while the add works
+    assert stop["purpose"] == "stop" and stop["price"] == 1400.0 and stop["status"] == "cancelled"
     st = book.position_state(conn, pid)
-    assert st.stop == 1500.0 and st.shares == 100
+    assert st.stop == 1500.0 and st.shares == 100  # the raised level the stop goes back on at
     ev = book.position_events(conn, pid)
     assert list(ev["kind"].iloc[-2:]) == ["stop_raised", "revision_accepted"]
     assert adds_so_far(conn, pid) == 1  # live add counts towards max_adds
@@ -192,16 +193,28 @@ def test_accept_drafts_the_add_and_raises_the_stop(
     assert len(stops) == 1 and stops["qty"].iloc[0] == 150 and stops["price"].iloc[0] == 1500.0
     assert st.avg_cost == pytest.approx((1500.0 * 100 + 1676.0 * 50) / 150)
     assert adds_so_far(conn, pid) == 1
-    # a second accepted add at a lower stop never lowers the live stop
+    # a second add at a lower stop never lowers the stop
     with conn:
         rid2 = book.propose_revision(
             conn, pid, "add", {"qty": 10, "entry": 1700.0, "stop": 1450.0}, "x", "pipeline"
         )
-        done2 = book.accept_revision(conn, rid2)
-    assert "stop_order_id" not in done2 and book.position_state(conn, pid).stop == 1500.0
-    with pytest.raises(ValueError, match="add needs a positive qty"), conn:
-        rid3 = book.propose_revision(conn, pid, "add", {"qty": 0, "entry": 1700.0}, "x", "pipeline")
-        book.accept_revision(conn, rid3)
+    done2: dict[str, Any] = dict(book.revisions(conn, pid).set_index("revision_id")["done"][rid2])
+    assert done2["stop_off"] is not None and book.position_state(conn, pid).stop == 1500.0
+    # while that add works, another is refused (one order per stock); a bad one too
+    with conn:
+        rid3 = book.propose_revision(conn, pid, "add", {"qty": 5, "entry": 1700.0}, "x", "pipeline")
+        rid4 = book.propose_revision(conn, pid, "add", {"qty": 0, "entry": 1700.0}, "x", "pipeline")
+    rv = book.revisions(conn, pid).set_index("revision_id")
+    assert rv.loc[rid3, "status"] == "declined" and "working" in str(
+        rv.loc[rid3, "decision_reason"]
+    )
+    assert rv.loc[rid4, "status"] == "declined"
+    # the add ends unfilled: its stop goes back on for every share at the level
+    with conn:
+        book.end_order(conn, int(done2["add_order_id"]), "not_filled")
+    stops = book.orders(conn, pid, status="approved")
+    assert stops["purpose"].tolist() == ["stop"] and stops["qty"].iloc[0] == 150
+    assert stops["price"].iloc[0] == 1500.0
     conn.close()
     if db_backend is not None:
         cli.main(["--db", str(db_backend), "revisions", "--status", "all"])

@@ -129,7 +129,8 @@ uv run python scripts/record.py revision <dir>/verdict.json --position <ID> --ac
 This writes the `monitor` card and evidence and, unless the action is `hold`, the revision,
 which the book **applies at once** (ADR 0024): the orders it implies are drafted approved, the
 owner's inbox says what to change in Trading212, and `book.py undo REV_ID --reason` reverses
-it. If the book refuses it (a lower stop on an open position, an open-position action on a
+it. Trading212 holds one order per stock (ADR 0025): a partial exit or an exit takes the stop
+order off until it fills, and a stop cannot be tightened while one is working. If the book refuses it (a lower stop on an open position, an open-position action on a
 pending entry, a stop at or above the entry) it is recorded as declined with the reason and
 nothing changes: read the reason and record a corrected verdict only if it still matters.
 

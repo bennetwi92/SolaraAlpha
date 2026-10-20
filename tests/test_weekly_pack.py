@@ -61,7 +61,7 @@ def test_pack_before_and_after_planning(
     report.write_text("## Weekly pipeline\n")
     pack_cli.main(["--run", "1", "--db", str(scan_db), "--out", str(out), "--report", str(report)])
     text = out.read_text()
-    assert "### A.L — position 1 (draft)" in text
+    assert "### A.L — position 1 (approved)" in text
     assert (
         "- entry stop @ 1,560p; stop 1,380p; target 1,794p, 2,028p; R:R 1.3; next level 1,950p"
         in text
@@ -73,7 +73,7 @@ def test_pack_before_and_after_planning(
     )
     assert "- decided by **screen**: screen act reason" in text
     assert "- thesis: Strong winter bookings; fuel hedged." in text
-    assert "uv run python scripts/book.py approve 1" in text
+    assert "approved as planned (ADR 0025)" in text and "`book.py reject 1" in text
     # once drafted, the plan is "pending" for the fit re-run and A.L is no longer a candidate to re-plan
     assert "## Rejected by fit\n\nnone" in text
     assert report.read_text().startswith("## Weekly pipeline\n# Weekly pack")
@@ -131,7 +131,7 @@ def test_open_position_with_review_card(scan_db: Path) -> None:
         "- review (2026-10-09): action **exit**; stop 720p, trailing stop 735p (above it: the monitor decides); deteriorated: momentum; past horizon"
         in text
     )
-    assert "book.py exit 1 --reason time" in text
+    assert "exit signal: the daily monitor decides the exit" in text
     assert "- equity £10,0" in text and "1 of 8 positions" in text
 
 

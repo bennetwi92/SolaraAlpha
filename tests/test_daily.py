@@ -339,7 +339,7 @@ def test_run_daily_saves_triggers_and_reports(
     assert "Market (^FTAS): **calm**" in out
     assert "Book drawdown" in out and "circuit-breaker limit 10%; breaker off" in out
     assert "### Owner actions" in out and "traded through the stop 1,400.0" in out
-    assert "reached the target 1,800.0" in out and "book.py exit 1 --reason target" in out
+    assert "reached the target 1,800.0" in out and "the stop and the daily review manage" in out
     assert "closed 301.0 above the trigger 300.0: place entry order" in out
     assert (
         "ex-dividend 2026-10-20: 10.70p x 100 shares = £10.70 (position 1): confirm against the broker and record — `book.py cash dividend JET2.L 10.70 --at 2026-10-20`"

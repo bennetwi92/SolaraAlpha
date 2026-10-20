@@ -274,11 +274,8 @@ def render_pack(pack: Pack) -> str:
                 lines.append(f"- thesis: {p['thesis']}")
             lines += [
                 "",
-                f"- **Approve / reject** (Actions → Book → Run workflow): `approve {pid}` or"
-                f' `reject {pid} --reason "..."`',
-                "",
-                f"    uv run python scripts/book.py approve {pid}",
-                f'    uv run python scripts/book.py reject {pid} --reason "..."',
+                "- approved as planned (ADR 0025): the inbox lists the steps to take in"
+                f' Trading212; to skip it: `book.py reject {pid} --reason "..."`',
                 "",
             ]
     else:
@@ -330,13 +327,11 @@ def render_pack(pack: Pack) -> str:
                     f"; {rv.get('reason', '')}"
                 )
                 if rv.get("action") == "exit":
-                    lines.append(
-                        f"  - `uv run python scripts/book.py exit {st.position_id} --reason time`"
-                    )
+                    lines.append("  - exit signal: the daily monitor decides the exit (ADR 0024)")
                 if rv.get("event_due"):
                     lines.append(
                         f"  - **event due {str(rv.get('event_due'))[:10]}** ({rv.get('event_status') or 'estimated'}):"
-                        f" policy **{rv.get('event_action') or 'flag'}** (decided in advance; `book.py revisions` for a proposed trim / exit)"
+                        f" policy **{rv.get('event_action') or 'flag'}** (decided in advance; a trim / exit is applied, `book.py revisions`)"
                     )
     else:
         lines.append("none")
