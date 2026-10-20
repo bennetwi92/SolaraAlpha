@@ -85,6 +85,10 @@ research or monitor note when you consider rotating it.
    - **mid (2%)**: a good trade with an ordinary caveat.
    - **low (1%)**: worth owning but with a named doubt (priced-in risk, an event soon, thin
      volume, a gap in the research). Below that conviction, don't fund it.
+   - **financing cap**: a loss-maker with under 12 months' runway and no completed raise gets
+     1% at most, whatever else the case has (a placing gaps through any stop). Take runway and
+     raises from the research note (§7) until the pack carries a financing card (#218); if the
+     note doesn't say, treat it as a gap in the research.
    Check `sizing.at`: if a cap binds, the risk you wrote is not the risk you get; say so.
 4. **The book as a whole.** With the allocation added:
    - heat (open + pending + new risk) <= `max_heat`; slots <= `max_positions`; sector <=
