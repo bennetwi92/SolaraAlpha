@@ -164,10 +164,7 @@ def test_forward_and_sweep_find_a_known_edge() -> None:
     assert _with_threshold(("reward_risk >= 1.5 or coil_pending == true",), "reward_risk", 3) == (
         "reward_risk >= 3 or coil_pending == true",
     )
-    assert set(GRID) == {
-        ("technical", "trend"),
-        ("relative_strength", "rs"),
-    }
+    assert set(GRID) == {("technical", "trend")}  # RS has no ACT clause since #210 phase 0
     text = report(replayed.assign(label="ACT", label_technical="ACT"), sw, ["S.L"], 5)
     assert "survivorship bias" in text and "| technical | trend | 0.25 | 0.4 |" in text
     assert "replayed weeks: 400" in text and "## Threshold sweep" in text

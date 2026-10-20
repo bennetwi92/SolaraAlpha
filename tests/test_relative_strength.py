@@ -12,6 +12,7 @@ from solaraalpha.analysis.relative_strength import (
     basket,
     compare,
     comparisons,
+    flags,
     in_currency,
     relative_strength,
     rs_card,
@@ -158,9 +159,54 @@ def test_toolkit_fetches_comparisons_once_and_snapshots_them(
     monkeypatch.setattr(toolkits, "comparisons", lambda t: Comparisons("^MKT"))
     s, t = toolkits.Inputs("S.L"), toolkits.Inputs("T.L")
     up, down = run_toolkit("relative_strength", s), run_toolkit("relative_strength", t)
-    assert (up.status, down.status) == ("act", "pass")
-    assert down.reason.startswith("failed rs >= -0.25; rs_high == true or peer_top_half == true")
+    assert (up.status, down.status) == ("act", "act")  # no bands: context only (#210)
+    card = up.cards["relative_strength"]
+    tech = toolkits.scorecard(s.weekly)
+    assert card.leadership == flags(card.rs_high, card.market_z4, card.market_z26, tech.trend)[0]
     assert calls == ["S.L", "^MKT", "T.L"]  # the market index fetched once for both
     db = tmp_path / "r.db"
     store.save_run("scan", {}, "S.L", up.cards, daily=s.daily, path=db, others=s.others)
     assert len(store.load_prices("^MKT", path=db)) == len(frames["^MKT"])
+
+
+def test_card_carries_per_horizon_z_and_no_look_ahead() -> None:
+    frames = {"^MKT": _daily("^MKT", 0.0, 1, currency="GBP"), "P1.L": _daily("P1.L", 0.0, 7)}
+    comp = Comparisons("^MKT", None, ("P1.L",))
+    stock = _weekly(_daily("S.L", 0.002, 2))
+    c = compare(stock, comp, _fetcher(frames))
+    card = rs_card(c, trend=0.5)
+    frame = c.frames["market"].iloc[-1]
+    for h in (4, 13, 26):
+        assert getattr(card, f"market_z{h}") == pytest.approx(frame[f"z_{h}"])
+        assert np.isnan(getattr(card, f"industry_z{h}"))  # no industry comparison
+        assert not np.isnan(getattr(card, f"peers_z{h}"))
+    # the score is the mean of the clipped legs
+    legs = [np.clip(getattr(card, f"market_z{h}"), -1, 1) for h in (4, 13, 26)]
+    assert card.market == pytest.approx(np.mean(legs))
+    # truncated series: the card for an earlier week equals the one computed with only the data
+    # up to then (comparisons fetched in full, as live)
+    cut = stock.iloc[:-20]
+    early = rs_card(compare(cut, comp, _fetcher(frames)), trend=0.5)
+    full_frame = c.frames["market"].loc[cut.index[-1]]
+    assert early.market_z4 == pytest.approx(full_frame["z_4"])
+    assert early.market_z26 == pytest.approx(full_frame["z_26"])
+
+
+@pytest.mark.parametrize(
+    ("rs_high", "z4", "z26", "trend", "lead", "spike"),
+    [
+        (True, 0.0, 0.0, 0.25, True, False),  # RS high in an uptrend
+        (True, 0.0, 0.0, 0.2, False, False),  # RS high without one
+        (False, 0.0, 1.0, -0.5, True, False),  # 26-week leg at its cap
+        (False, 0.0, 0.99, 0.5, False, False),
+        (False, 0.5, 0.0, 0.24, False, True),  # 4-week spike outside an uptrend
+        (False, 0.5, 0.0, 0.25, False, False),  # inside one: no warning
+        (False, 0.49, 0.0, -1.0, False, False),
+        (True, 2.0, 0.0, float("nan"), False, False),  # trend unknown: neither trend clause
+        (False, float("nan"), float("nan"), 0.0, False, False),
+    ],
+)
+def test_flags(rs_high: bool, z4: float, z26: float, trend: float, lead: bool, spike: bool) -> None:
+    got = flags(rs_high, z4, z26, trend)
+    assert got[:2] == (lead, spike)
+    assert ("leadership" in got[2]) == lead and ("spike" in got[2]) == spike

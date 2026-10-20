@@ -11,6 +11,7 @@ import pytest
 
 from solaraalpha import store, validation
 from solaraalpha.data.announcements import Issuer
+from solaraalpha.portfolio.fit import RANK_NOTE
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import validate_pack
@@ -171,6 +172,7 @@ def test_pack_keys_independence_and_as_seen(
         {"stage": "screen", "toolkit": "technical", "status": "act", "reason": "trend=0.50"}
     ]
     assert pack["screen_label"]["label"] == "ACT"
+    assert pack["rank_note"] == RANK_NOTE  # the rank is unvalidated (#210)
     assert pack["chart_context"] is None  # no levels card in this run
     # prices limited to what was seen by the run start
     prices = pack["prices"]

@@ -269,10 +269,10 @@ def _field(cards: Cards, model: str, field: str) -> Any:
 
 def watch_on(steps: list[Step]) -> list[dict[str, Any]] | None:
     """What each WATCH toolkit is waiting for, in machine form (None when no toolkit is WATCH):
-    technical extended → ``pullback`` to the 10-week MA ``level``; levels coiled → ``break`` of
-    ``trigger``; levels otherwise → ``compression`` (not yet compressed or at a high);
-    relative strength → ``rs``; fundamentals →
-    ``revisions`` (``eps_revision``). Anything else keeps the toolkit's reason text."""
+    technical extended → ``pullback`` to the 10-week MA ``level``; levels with a pending
+    trigger (compressed) → ``break`` of ``trigger``; levels otherwise → ``compression`` (not yet
+    compressed or at a high); relative strength → ``rs`` (no longer WATCH since #210: no bands);
+    fundamentals → ``revisions`` (``eps_revision``). Anything else keeps the toolkit's reason text."""
     out: list[dict[str, Any]] = []
     for s in steps:
         if s.label != "WATCH" or s.toolkit not in SCREEN_TOOLKITS:

@@ -283,7 +283,7 @@ def _index(n: int = 300, shock: float = 0.0) -> pd.DataFrame:
         },
         index=idx,
     )
-    df.attrs = {"ticker": "^FTAS", "currency": "GBP"}
+    df.attrs = {"ticker": "^FTAI", "currency": "GBP"}
     return df
 
 
@@ -293,7 +293,7 @@ def _fetchers(
     def daily(ticker: str) -> pd.DataFrame:
         if ticker == fail:
             raise ConnectionError("Yahoo down")
-        if ticker == "^FTAS" and ticker not in frames:
+        if ticker == "^FTAI" and ticker not in frames:
             return index if index is not None else _index()
         return frames[ticker]
 
@@ -336,7 +336,7 @@ def test_run_daily_saves_triggers_and_reports(
     daily_cli.main(["--save", *(["--db", str(db)] if db else [])])
     out = capsys.readouterr().out
     assert "Checked: JET2.L (open), W.L (watch), X.L (watch), E.L (pending)" in out
-    assert "Market (^FTAS): **calm**" in out
+    assert "Market (^FTAI): **calm**" in out
     assert "Book drawdown" in out and "circuit-breaker limit 15%; breaker on" in out
     assert "### Owner actions" in out and "traded through the stop 1,400.0" in out
     assert "reached the target 1,800.0" in out and "the stop and the daily review manage" in out
@@ -439,17 +439,17 @@ def test_market_regime_heads_the_report(
     conn = book.connect(db)
     r = run_daily(conn, _fetchers(frames, index=_index(shock=-0.06)), save=True)
     conn.close()
-    assert r.regime is not None and r.regime.regime == "risk_off" and r.regime.index == "^FTAS"
+    assert r.regime is not None and r.regime.regime == "risk_off" and r.regime.index == "^FTAI"
     mt = r.of(("market",))
-    assert len(mt) == 1 and mt[0].detail["regime"] == "risk_off" and mt[0].ticker == "^FTAS"
+    assert len(mt) == 1 and mt[0].detail["regime"] == "risk_off" and mt[0].ticker == "^FTAI"
     text = render_daily(r)
     assert text.index("### Market: **RISK_OFF**") < text.index("### Owner actions")
     assert "Consider tightening stops and pausing new entries" in text
-    cards = store.load_cards(int(r.run_id or 0), "^FTAS", path=db)
+    cards = store.load_cards(int(r.run_id or 0), "^FTAI", path=db)
     assert cards["regime"]["regime"] == "risk_off" and cards["regime"]["drawdown_20d"] < 0
     # the index failing is an error line, not a stop
     conn = book.connect(db)
-    r2 = run_daily(conn, _fetchers(frames, fail="^FTAS"))
+    r2 = run_daily(conn, _fetchers(frames, fail="^FTAI"))
     conn.close()
     assert r2.regime is None and any(e.startswith("regime:") for _, e in r2.errors) and r2.triggers
 

@@ -17,6 +17,7 @@ import pandas as pd
 
 from solaraalpha import store
 from solaraalpha.portfolio import book, performance, risk
+from solaraalpha.portfolio.fit import RANK_NOTE
 from solaraalpha.portfolio.planner import Candidate, PlanRun, plan_run
 from solaraalpha.portfolio.rules import Rules, load_rules
 from solaraalpha.store import Conn
@@ -325,7 +326,7 @@ def render_pack(pack: Pack) -> str:
         [c for c in cands if c.shortlist] or [c for c in cands if c.label == "ACT"],
         key=lambda c: (c.rank is None, c.rank or 0, c.ticker),
     )
-    lines += ["## Shortlist", ""]
+    lines += ["## Shortlist", "", f"_{RANK_NOTE}_", ""]
     lines += [
         f"{i}. {c.ticker}: {c.shortlist or (f'screen rank {c.rank}' if c.rank else 'screen ACT')}"
         f" → **{c.label}** ({c.stage})"

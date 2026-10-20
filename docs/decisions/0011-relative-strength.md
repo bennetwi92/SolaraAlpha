@@ -56,3 +56,24 @@ itself still uses the full `BLOCKING` set.
   week left the 13-week window); the 26-week leg damps it.
 - Comparison prices are fetched once per process and shared across stocks; `--save`
   snapshots them alongside the stock's.
+
+## Amendment (#210 phase 0, owner 2026-10-20): context only, horizons and flags on the card
+
+Following docs/research/0001 (`rs > 0` labelled 42% of weeks ACT, 8-week rank IC about −0.05,
+driven by the 4-week leg):
+
+- **No bands.** `rs > 0` is out. With no ACT clause the pipeline labels a toolkit ACT whenever
+  it runs, so the WATCH clauses could not bind and went too: relative strength no longer moves
+  the screen label, and it has had no weight in the rank since #192. The backtest no longer
+  sweeps `rs`.
+- **Per-horizon z on the card:** `market_z4`, `market_z13`, `market_z26`, and the same for
+  `industry_` and `peers_` (unclipped; the score still clips each at ±1). The agents can tell a
+  4-week spike from 26-week leadership.
+- **Two agent flags, not in the rank:** `leadership` = (`rs_high` and technical `trend` ≥ 0.25)
+  or the 26-week market leg at its cap (`market_z26` ≥ 1); `rs_spike` = `market_z4` ≥ 0.5 and
+  `trend` < 0.25, worded in `context` as "short-term RS spike outside an uptrend ... check the
+  catalyst and whether it is priced in". The toolkit recomputes `trend` from the same weekly
+  bars (it does not depend on side, so it equals the technical card's), which keeps the toolkits
+  independent of their run order. An unknown trend sets neither trend clause.
+- The market comparison stays `^FTAS` until phase 1 of #210, when `^FTAI` (and an
+  equal-weight universe benchmark) are tested on the research panel.

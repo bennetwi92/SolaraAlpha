@@ -145,14 +145,19 @@ def _levels(x: Inputs, side: int = 1) -> Cards:
     return {"levels": levels_card(x.weekly, side)}
 
 
-@toolkit(
-    "relative_strength",
-    act=("rs > 0",),
-    watch=("rs >= -0.25", "rs_high == true or peer_top_half == true"),
-)
+# Relative strength is agent context, not a gate (docs/research/0001; #210 phase 0, owner
+# 2026-10-20): `rs > 0` labelled 42% of weeks ACT with a slightly negative rank IC, so it is out
+# of the band. With no ACT clause a toolkit is ACT whenever it runs (pipeline.band), so the old
+# WATCH clauses (`rs >= -0.25`, `rs_high or peer_top_half`) could never bind and went with it.
+@toolkit("relative_strength")
 def _relative_strength(x: Inputs) -> Cards:
-    """Excess return vs market, industry and peers (config/benchmarks.toml), vol-scaled."""
-    return {"relative_strength": rs_card(compare(x.weekly, comparisons(x.ticker), x.other))}
+    """Excess return vs market, industry and peers (config/benchmarks.toml), vol-scaled;
+    per-horizon z, leadership and short-term-spike flags for the agents."""
+    # The flags need the technical trend: recomputed from the same weekly bars (side-free, so it
+    # equals the technical card's), which keeps the toolkits independent of their run order.
+    trend = scorecard(x.weekly).trend
+    c = compare(x.weekly, comparisons(x.ticker), x.other)
+    return {"relative_strength": rs_card(c, trend)}
 
 
 @toolkit(

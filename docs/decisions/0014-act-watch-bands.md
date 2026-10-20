@@ -163,3 +163,19 @@ are never trimmed. A liquidity ERROR (e.g. a EUR-priced stock, FX not supported 
 the screen label ERROR instead of being dropped silently. `scan.py` exits 1 only when every ticker errored
 (as the agents do, ADR 0019); a per-ticker ERROR is saved, reported and notified, so one stock
 cannot fail the weekly run and skip the agents (#189).
+
+## Amendment (#210 phase 0, owner 2026-10-20): RS out of the bands; the rank is unvalidated
+
+- `relative_strength` has no bands (ADR 0011 amendment): it is ACT whenever it runs, so the
+  screen label combines technical, levels and fundamentals only in practice. Some stocks past
+  the floor but off the shortlist now show WATCH where an RS PASS used to make them PASS, so the
+  daily job watches a few more names.
+- The levels breakout `trigger` follows `compressed` (ADR 0004 amendment), so `watch_on`'s
+  `break` items are rarer.
+- The rank weights stay as they are, `trend` included, until a model passes the bar in ADR 0029
+  (owner). The #210 re-run of the current score (102 names, every week) found the top 7 beating
+  the rest by +3.0 pp at 8 weeks [+1.4, +6.1], but the edge sat in the 52 names added from the
+  AIM 100 (survivorship) and in 2025; on the old AIM UK 50 the top 7 still trailed (−1.1 pp).
+  So every pack the agents read carries one line, `fit.RANK_NOTE`: the rank is unvalidated, a
+  wide net, not a forecast (validator pack `rank_note`, PM pack `rank_note`, weekly pack
+  Shortlist section).
