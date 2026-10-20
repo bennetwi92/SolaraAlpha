@@ -553,7 +553,14 @@ def _save_snapshot(conn: Conn, run_id: int, table: str, key: list[str], new: pd.
     stored version."""
     cols = [c for c in _columns(conn, table) if c not in ("ticker", "run_id", *key)]
     ticker = str(new["ticker"].iloc[0]) if len(new) else ""
-    old = _latest(_read(conn, table, ticker), key)
+    stored = _read(conn, table, ticker)
+    # One version per key per run: an instrument saved twice in a run (a watchlist stock that is
+    # also another's peer) can be fetched minutes apart with a moved live bar; the first wins.
+    this_run = stored.loc[stored["run_id"] == run_id, key]
+    if len(this_run):
+        new = new.merge(this_run, on=key, how="left", indicator=True)
+        new = new[new["_merge"] == "left_only"].drop(columns="_merge")
+    old = _latest(stored, key)
     both = new.merge(old, on=key, how="left", suffixes=("", "_old"), indicator=True)
     changed = both["_merge"] == "left_only"
     for c in cols:
