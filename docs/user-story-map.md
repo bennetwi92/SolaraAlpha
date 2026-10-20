@@ -253,13 +253,14 @@ labelled as such (no look-ahead in the record, and the live decision uses what's
 | S4.6 | As the owner I want every card that justified the trade (technical, levels, RS, fundamentals, validate, research) **linked to the position as its entry conditions**: run_id + ticker + model, plus a frozen copy of the key fields, so the monitor can compare "then" with "now". | R1 | ✅ `entry_conditions`: every card of the run frozen on the position · #114 |
 | S4.7 | As the owner I want the research's kill criteria stored as **thesis conditions** on the position (e.g. "FY guidance cut", "close < 40w MA", "fuel > $X"), each either machine-checkable (field op value) or agent-checked text. | R1 | ✅ `thesis_conditions` from the research card's `kill_criteria` (machine if it parses, else agent) · #114 |
 | S4.8 | As the owner I want a **weekly pack** (markdown / artifact): new ACT plans with size and orders, the WATCH list with what would trigger it, open-position actions, portfolio heat and cash. | R1 | ✅ `scripts/weekly_pack.py`, appended to the scan job summary and saved under `data/processed/packs/` · #115 |
+| S4.10 | As the owner I want a **portfolio manager** who sees the whole book and decides the week's allocation (which ideas, at what risk by conviction, in what order), rotates out the weakest holding for a clearly better idea, and writes me one memo, so the book is run holistically with no approval from me. | R2 | ✅ `/pm` (`scripts/pm_pack.py`, `agents.record_book`): allocation at 1-3% risk, rotations applied as recorded, the planner follows it and the PM approves its drafts; the PM memo heads the pack · ADR 0026 |
 | S4.9 | As the owner I want scaling rules (add on a confirmed breakout or a pullback to a new support; never add to a loser) in the plan, so it can be "held longer while it keeps climbing". | R2 | ✅ the monitor agent's `add` (when and how much is its judgement; never to a loser), applied as recorded; the book refuses one over the position / sector / heat / cash limits · #128, ADR 0025 |
 
 ### A5 — Approve and place (owner)
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S5.1 | As the owner I want to approve, amend (size, price) or reject each draft position with a reason, recorded in the DB. | R1 | ✅ `book.py approve / amend / reject` · #107 |
+| S5.1 | As the owner I want to approve, amend (size, price) or reject each draft position with a reason, recorded in the DB. | R1 | ✅ `book.py approve / amend / reject` · #107; since ADR 0026 the PM approves its own drafts and the owner approves only when the PM did not decide |
 | S5.2 | As the owner I want approved orders listed as broker-ready tickets (ticker, side, type, qty, limit/stop price, validity) to place by hand. | R1 | ✅ `book.py tickets` · #107 |
 | S5.3 | As the owner I want to mark orders as **placed**, with the broker reference. | R1 | ✅ `book.py placed ORDER_ID --ref` · #107 |
 | S5.4 | As the owner I want rejections and amendments counted, so I can see where the system and I disagree (A11). | R2 | ✅ `book.py stats` (`approval_stats` by deciding stage, rejection reasons, amendment size) · #130 |

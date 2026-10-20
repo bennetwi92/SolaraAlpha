@@ -88,7 +88,15 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> Pack:
     for p in positions[positions["opened_from_run_id"] == run_id].to_dict("records"):
         ev = book.position_events(conn, int(p["position_id"]))
         drafted = [x for x in ev.loc[ev["kind"] == "drafted", "payload"]]
-        new.append({**{str(k): v for k, v in p.items()}, "payload": drafted[0] if drafted else {}})
+        od = book.orders(conn, int(p["position_id"]))
+        entry = od.loc[od["purpose"] == "entry", "order_id"]
+        new.append(
+            {
+                **{str(k): v for k, v in p.items()},
+                "payload": drafted[0] if drafted else {},
+                "entry_order_id": int(entry.iloc[-1]) if len(entry) else None,
+            }
+        )
 
     held = plan.held if plan.held is not None else pd.DataFrame(columns=risk.HOLDING_COLS)
     open_rows: list[dict[str, Any]] = []
@@ -231,6 +239,30 @@ def render_pack(pack: Pack) -> str:
             f"Market regime ({rg.get('index')}, {str(rg.get('date'))[:10]}): {mark}{rg.get('regime')}{mark} — {rg.get('reason', '')}",
             "",
         ]
+    lines += ["## PM memo", ""]
+    pm = pack.plan.pm
+    if pm:
+        alloc = (
+            ", ".join(f"{a['ticker']} at {float(a['risk_pct']):.1%} risk" for a in pm["allocation"])
+            or "nothing funded"
+        )
+        rot = "; ".join(f"position {r['position_id']} out ({r['reason']})" for r in pm["rotations"])
+        lines += [
+            f"**{pm.get('label')}** ({float(pm.get('confidence') or 0):.2f}) — allocation: {alloc}"
+            + (f"; rotations: {rot}" if rot else ""),
+            "",
+            str(pm.get("note_md") or pm.get("reasons") or ""),
+            "",
+        ]
+    elif any(c.stage != "screen" for c in pack.plan.candidates):
+        lines += [
+            "> **The PM did not decide this run** (no verdict, or it errored): plans were drafted"
+            " at the rules' risk per trade and wait for your approval.",
+            "",
+        ]
+    else:
+        lines += ["none (no agents this run)", ""]
+
     lines += ["## New plans", ""]
     if pack.new_positions:
         for p in pack.new_positions:
@@ -272,15 +304,26 @@ def render_pack(pack: Pack) -> str:
                 )
             if p["thesis"]:
                 lines.append(f"- thesis: {p['thesis']}")
-            lines += [
-                "",
-                f"- **Approve / reject** (Actions → Book → Run workflow): `approve {pid}` or"
-                f' `reject {pid} --reason "..."`',
-                "",
-                f"    uv run python scripts/book.py approve {pid}",
-                f'    uv run python scripts/book.py reject {pid} --reason "..."',
-                "",
-            ]
+            if p["status"] == "approved":
+                oid = p.get("entry_order_id")
+                lines += [
+                    "",
+                    f"- **Approved by the PM: place it in Trading212**, then `placed {oid} --ref REF`"
+                    " (Actions → Book → Run workflow); `book.py tickets` lists it",
+                    "",
+                ]
+            elif p["status"] == "draft":
+                lines += [
+                    "",
+                    f"- **Approve / reject** (Actions → Book → Run workflow): `approve {pid}` or"
+                    f' `reject {pid} --reason "..."`',
+                    "",
+                    f"    uv run python scripts/book.py approve {pid}",
+                    f'    uv run python scripts/book.py reject {pid} --reason "..."',
+                    "",
+                ]
+            else:
+                lines.append("")
     else:
         lines += ["none", ""]
 

@@ -21,7 +21,8 @@ class Rules:
     confirmed: bool  # False: placeholders; reports warn
     currency: str  # account currency; only "GBP" is supported
     capital: float  # starting capital, account currency
-    risk_per_trade: float  # fraction of equity lost if the stop is hit
+    risk_per_trade: float  # fraction of equity lost if the stop is hit (no PM allocation)
+    risk_per_trade_range: tuple[float, float]  # the PM's band for risk per trade (ADR 0026)
     max_positions: int
     max_position_pct: float  # position value / equity
     max_sector_pct: float  # sector value / equity
@@ -118,6 +119,15 @@ def load_rules(path: Path = RULES) -> Rules:
     ):
         raise ValueError(f"target_moves: expected two increasing moves > 0, got {tm!r}")
     values["target_moves"] = (float(tm[0]), float(tm[1]))
+    rr = raw["risk_per_trade_range"]
+    if not (
+        isinstance(rr, list)
+        and len(rr) == 2
+        and all(isinstance(m, int | float) and not isinstance(m, bool) for m in rr)
+        and 0 < rr[0] <= rr[1] <= 0.05
+    ):
+        raise ValueError(f"risk_per_trade_range: expected [low, high] in (0, 0.05], got {rr!r}")
+    values["risk_per_trade_range"] = (float(rr[0]), float(rr[1]))
     rules = Rules(**values)  # type: ignore[arg-type]
     _validate(rules)
     return rules
@@ -130,6 +140,12 @@ def _validate(r: Rules) -> None:
         raise ValueError(f"capital: must be > 0, got {r.capital}")
     if not 0 < r.risk_per_trade <= 0.05:
         raise ValueError(f"risk_per_trade: must be in (0, 0.05], got {r.risk_per_trade}")
+    lo, hi = r.risk_per_trade_range
+    if not lo <= r.risk_per_trade <= hi:
+        raise ValueError(
+            f"risk_per_trade_range: {list(r.risk_per_trade_range)} must contain risk_per_trade"
+            f" {r.risk_per_trade}"
+        )
     if r.event_policy not in EVENT_POLICIES:
         raise ValueError(f"event_policy: must be one of {EVENT_POLICIES}, got {r.event_policy!r}")
     if not 0 < r.event_trim_fraction <= 1:

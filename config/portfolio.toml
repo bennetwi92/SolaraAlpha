@@ -11,8 +11,9 @@ currency = "GBP"           # account currency (only GBP is supported: no account
 # gains and dividends tax-free; no commission; AIM shares carry no stamp duty. Not every AIM
 # stock is offered on Trading212: check before placing.
 capital = 5000.0           # paper-test starting capital (owner, 2026-10-20); deposited with `book.py cash deposit`
-risk_per_trade = 0.02      # fraction of equity lost if the stop is hit (owner, 2026-10-20)
-max_positions = 5          # (owner, 2026-10-20) ~£800 each at 2% risk and 10-15% stops
+risk_per_trade = 0.02      # fraction of equity lost if the stop is hit (owner, 2026-10-20); used without a PM allocation
+risk_per_trade_range = [0.01, 0.03]  # the PM agent sizes each trade inside this band by conviction (owner, 2026-10-20; ADR 0026)
+max_positions = 5          # (owner, 2026-10-20; 5 concentrated positions confirmed, ADR 0026) ~£800 each at 2% risk and 10-15% stops
 max_position_pct = 0.25    # max position value / equity (owner, 2026-10-20)
 max_sector_pct = 0.40      # max sector value / equity (owner, 2026-10-20)
 max_heat = 0.10            # sum of open risk to the stops / equity: 5 full-risk trades (owner, 2026-10-20)

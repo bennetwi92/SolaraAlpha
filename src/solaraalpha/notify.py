@@ -24,7 +24,7 @@ from solaraalpha.portfolio import book
 from solaraalpha.portfolio.triggers import OWNER_KINDS
 from solaraalpha.store import Conn, query
 
-WEEKLY_SECTIONS = ("New plans", "Open positions", "Stale orders", "Portfolio", "Errors")
+WEEKLY_SECTIONS = ("PM memo", "New plans", "Open positions", "Stale orders", "Portfolio", "Errors")
 INBOX_LABEL = "inbox"
 INBOX_TITLE = "Solara inbox"
 

@@ -1,6 +1,7 @@
 """Record an agent's output in the results DB: the one door agents write through.
 
 uv run python scripts/record.py verdict FILE [--actor agent:NAME] [--run N | --new-run] [--position ID] [--db PATH]
+uv run python scripts/record.py verdict pm.json --actor agent:pm                  # the PM's allocation + rotations
 uv run python scripts/record.py revision FILE --position ID [--actor agent:monitor] [--db PATH]
 uv run python scripts/record.py prior TICKER [--stage research] [--limit 3] [--db PATH]
 uv run python scripts/record.py schema
@@ -24,6 +25,10 @@ revision is applied at once (ADR 0024) and the owner can reverse it with `book.p
 verdicts (with their age in days and the latest evidence `retrieved` time, for the research
 skill's delta mode) and evidence and every filing already interpreted (nsm_id), so a run reuses
 earlier work instead of re-interpreting it. See docs/decisions/0016.
+
+A pm verdict (ticker _BOOK, ADR 0026) is checked against the run and the book (allocated tickers
+final-ACT with research trade levels, risk_pct inside risk_per_trade_range, rotated positions
+open or pending) and its rotations are applied at once (open: exit at market; pending: cancel).
 """
 
 from __future__ import annotations
@@ -53,9 +58,17 @@ def _verdict(args: argparse.Namespace) -> None:
         verdict = verdict.model_copy(update={"run_id": run_id})
     elif args.run is not None:
         verdict = verdict.model_copy(update={"run_id": args.run})
-    conn = store.connect(args.db)
+    if verdict.stage == "pm":
+        from solaraalpha.portfolio import book
+
+        conn = book.connect(args.db)
+    else:
+        conn = store.connect(args.db)
     try:
-        out = agents.record_verdict(conn, verdict, actor, args.position)
+        if verdict.stage == "pm":
+            out = agents.record_book(conn, verdict, actor)
+        else:
+            out = agents.record_verdict(conn, verdict, actor, args.position)
     except (agents.DowngradeError, ValueError) as e:
         print(f"error: {e}")
         sys.exit(2)
@@ -66,6 +79,11 @@ def _verdict(args: argparse.Namespace) -> None:
     if out["label"]:
         print("labels row written")
     print(f"evidence ids: {', '.join(map(str, out['evidence_ids'])) or 'none'}")
+    for a in verdict.allocation or []:
+        print(f"allocated {a.ticker} at {a.risk_pct:.1%} risk: {a.reason}")
+    for r in out.get("rotations", []):
+        line = f"rotation: position {r['position_id']} {r['action']} (revision {r['revision_id']}) {r['status']}"
+        print(line + (f": {r['reason']}" if r["status"] == "declined" else ""))
 
 
 def _revision(args: argparse.Namespace) -> None:
@@ -192,10 +210,13 @@ def _error(args: argparse.Namespace) -> None:
     verdict = agents.error_verdict(args.ticker, args.run, args.stage, args.reason)
     conn = store.connect(args.db)
     try:
-        if (
-            args.if_missing
-            and conn.execute(
+        if args.if_missing and (
+            conn.execute(
                 "SELECT 1 FROM labels WHERE run_id = ? AND ticker = ? AND stage = ?",
+                (args.run, args.ticker, args.stage),
+            ).fetchone()
+            or conn.execute(
+                "SELECT 1 FROM results WHERE run_id = ? AND ticker = ? AND model = ? LIMIT 1",
                 (args.run, args.ticker, args.stage),
             ).fetchone()
         ):
@@ -277,7 +298,7 @@ def main(argv: list[str] | None = None) -> None:
     er.add_argument(
         "--stage",
         required=True,
-        choices=("validate", "research", "events", "monitor", "postmortem", "macro"),
+        choices=("validate", "research", "events", "monitor", "postmortem", "macro", "pm"),
     )
     er.add_argument("--reason", required=True)
     er.add_argument("--position", type=int, help="postmortem: the closed position")
@@ -305,7 +326,7 @@ def main(argv: list[str] | None = None) -> None:
     us.add_argument(
         "--stage",
         required=True,
-        choices=("validate", "research", "events", "monitor", "postmortem", "macro"),
+        choices=("validate", "research", "events", "monitor", "postmortem", "macro", "pm"),
     )
     us.add_argument("--file", help="claude-code-action execution_file (JSON); missing = no usage")
     us.add_argument("--status", choices=("success", "failure"), default="success")
