@@ -18,6 +18,13 @@ deviation of outperformance scores a full +1 (as the technical model's 12-1 mome
 comparison's score is the mean over horizons; ``rs`` is the mean over the comparisons
 available. Each week uses only that week's and earlier closes.
 
+The card also carries each comparison's per-horizon z (``market_z4`` ... ``peers_z26``,
+unclipped), so the agents can tell a 4-week spike (which tends to reverse) from 26-week
+leadership, and two flags for the agents, never for the rank (docs/research/0001; #210):
+``leadership`` (RS line at its 52-week high in an uptrend, or the 26-week market leg at its
+cap) and ``rs_spike`` (a short-term RS spike outside an uptrend). Both read the technical
+model's ``trend``, which the toolkit passes in.
+
 Parameters and choices: ``docs/decisions/0011-relative-strength.md``.
 """
 
@@ -50,6 +57,10 @@ TE_WEEKS = 52  # tracking-error window
 HIGH_WEEKS = 52  # RS line "new high" lookback
 RANK_WEEKS = 13  # peer ranking horizon
 KINDS = ("market", "industry", "peers")
+# Agent flags (docs/research/0001, #210 phase 0); placeholders like every threshold here.
+UPTREND = 0.25  # technical trend at or above this = an uptrend (as the technical ACT band)
+SPIKE_Z = 0.5  # 4-week market z at or above this, outside an uptrend = rs_spike
+Z_CAP = 1.0  # a leg's z is clipped here in the score; at or above it = "at its cap"
 # Minor currency units -> major; the scale cancels in returns, only the currency matters.
 _MAJOR = {"GBp": "GBP", "GBX": "GBP", "ILA": "ILS", "ZAc": "ZAR"}
 
@@ -189,15 +200,61 @@ class RelativeStrength:
     peer_count: int  # peers ranked (excluding the stock)
     peer_top_half: bool  # peer_rank <= ceil((peer_count + 1) / 2); False without a rank
     compared: str  # e.g. "market=^FTAS industry=EXV9.DE peers=EZJ.L,IAG.L"
+    # Per-horizon z per comparison (x_h / (te * sqrt(h)), unclipped; NaN: not available)
+    market_z4: float = float("nan")
+    market_z13: float = float("nan")
+    market_z26: float = float("nan")
+    industry_z4: float = float("nan")
+    industry_z13: float = float("nan")
+    industry_z26: float = float("nan")
+    peers_z4: float = float("nan")
+    peers_z13: float = float("nan")
+    peers_z26: float = float("nan")
+    # Agent context, not in the rank (docs/research/0001). False when trend is unknown.
+    leadership: bool = False  # (rs_high and trend >= UPTREND) or market_z26 >= Z_CAP
+    rs_spike: bool = False  # market_z4 >= SPIKE_Z and trend < UPTREND
+    context: str = ""  # the flags in plain words, for the agents
 
 
-def rs_card(c: Compared) -> RelativeStrength:
+def flags(rs_high: bool, z4: float, z26: float, trend: float) -> tuple[bool, bool, str]:
+    """``(leadership, rs_spike, context)`` from the market comparison and technical ``trend``.
+
+    Leadership: the RS line at its 52-week high in an uptrend (``trend >= UPTREND``), or the
+    26-week market leg at its cap (``z26 >= Z_CAP``). Spike: ``z4 >= SPIKE_Z`` with ``trend <
+    UPTREND``. NaN inputs fail their condition, so an unknown trend sets neither trend clause."""
+    up = bool(trend >= UPTREND)  # NaN compares False
+    lead = bool((rs_high and up) or z26 >= Z_CAP)
+    spike = bool(z4 >= SPIKE_Z and trend < UPTREND)
+    words = []
+    if lead:
+        words.append(
+            "leadership: sustained outperformance of the market (RS line high in an"
+            " uptrend, or 26-week leg at its cap)"
+        )
+    if spike:
+        words.append(
+            "short-term RS spike outside an uptrend: recent outperformance without a"
+            " trend tends to give some back over 4-8 weeks; check the catalyst and"
+            " whether it is priced in"
+        )
+    return lead, spike, "; ".join(words)
+
+
+def rs_card(c: Compared, trend: float = float("nan")) -> RelativeStrength:
     """Summarise :func:`compare` at the stock's latest week (a comparison without that week,
-    e.g. a stale source, counts as unavailable)."""
+    e.g. a stale source, counts as unavailable). ``trend`` is the technical model's trend score
+    for the same week (it feeds only the agent flags; NaN leaves their trend clauses false)."""
     date = c.stock.index[-1]
     last = {k: f.loc[date] for k, f in c.frames.items() if date in f.index}
     score = {k: float(last[k]["score"]) if k in last else float("nan") for k in KINDS}
     x13 = {k: float(np.exp(last[k]["x_13"]) - 1) if k in last else float("nan") for k in KINDS}
+    z = {
+        f"{k}_z{h}": float(last[k][f"z_{h}"]) if k in last else float("nan")
+        for k in KINDS
+        for h in HORIZONS
+    }
+    rs_high = bool("market" in last and last["market"]["rs_high"])
+    lead, spike, context = flags(rs_high, z["market_z4"], z["market_z26"], trend)
     found = [v for v in score.values() if not np.isnan(v)]
 
     rets = {
@@ -217,9 +274,21 @@ def rs_card(c: Compared) -> RelativeStrength:
         market_13w=x13["market"],
         industry_13w=x13["industry"],
         peers_13w=x13["peers"],
-        rs_high=bool("market" in last and last["market"]["rs_high"]),
+        rs_high=rs_high,
         peer_rank=rank,
         peer_count=len(rets),
         peer_top_half=rank is not None and rank <= math.ceil((len(rets) + 1) / 2),
         compared=" ".join(f"{k}={v}" for k, v in c.used.items()),
+        market_z4=z["market_z4"],
+        market_z13=z["market_z13"],
+        market_z26=z["market_z26"],
+        industry_z4=z["industry_z4"],
+        industry_z13=z["industry_z13"],
+        industry_z26=z["industry_z26"],
+        peers_z4=z["peers_z4"],
+        peers_z13=z["peers_z13"],
+        peers_z26=z["peers_z26"],
+        leadership=lead,
+        rs_spike=spike,
+        context=context,
     )

@@ -34,9 +34,9 @@ TOOLKITS = ("technical", "levels", "relative_strength", "fundamentals")
 HORIZONS = (4, 8, 16)
 MIN_WEEKS = 60  # weeks of history before the first replayed card (warm-up for the 52w fields)
 MIN_N = 30  # ACT weeks a sweep cell needs before its numbers are read
+# relative_strength has no ACT clause since #210 phase 0 (context only), so nothing to sweep.
 GRID: dict[tuple[str, str], tuple[float, ...]] = {
     ("technical", "trend"): (0.0, 0.1, 0.25, 0.4),
-    ("relative_strength", "rs"): (-0.1, 0.0, 0.1),
 }
 Fetch = Callable[[str], pd.DataFrame]
 
@@ -118,7 +118,8 @@ def replay(
             continue
         if comp is not None and fetch is not None:
             try:
-                row |= _flat("relative_strength", rs_card(compare(w, comp, sliced_fetch(week))))
+                rs = rs_card(compare(w, comp, sliced_fetch(week)), row["technical.trend"])
+                row |= _flat("relative_strength", rs)
             except (ValueError, IndexError, KeyError) as e:
                 log.debug("%s %s: no relative strength (%s)", ticker, week.date(), e)
         if fund is not None and not fund.empty:
