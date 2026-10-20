@@ -78,9 +78,19 @@ def test_plan_run_drafts_one_position_and_is_idempotent(
     plan_cli.main(["--run", "1", "--db", str(scan_db)])
     out = capsys.readouterr().out
     assert "Already drafted from this run: A.L" in out and "Drafted: none" in out
+
     conn = book.connect(scan_db)
     assert len(book.positions(conn)) == 1
     conn.close()
+
+    conn = book.connect(scan_db)
+    with conn:
+        book.reject_position(conn, 1, "re-plan after a rules change")
+    conn.close()
+    plan_cli.main(["--run", "1", "--db", str(scan_db)])
+    assert "Drafted: none" in capsys.readouterr().out  # a rejected draft still counts as done
+    plan_cli.main(["--run", "1", "--replan", "--db", str(scan_db)])
+    assert "Drafted: A.L -> position 2" in capsys.readouterr().out
 
 
 def test_final_label_precedence(scan_db: Path) -> None:

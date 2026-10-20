@@ -1,13 +1,14 @@
 """Draft positions and orders from a saved scan run's ACT stocks.
 
-uv run python scripts/plan.py --run RUN_ID [--dry-run] [--db PATH]
+uv run python scripts/plan.py --run RUN_ID [--dry-run] [--replan] [--db PATH]
 
 Final label per ticker = the latest stage present in `labels` for the run (research > validate
 > screen); ACT tickers are planned and sized (portfolio.plan), fit-checked against the book
 (portfolio.fit) and the accepted plans written as draft positions with a draft entry order, the
 plan in the `drafted` payload, every card of the run frozen as entry conditions and the
 research's kill criteria as thesis conditions. Rejected-by-fit plans are reported, not written.
-Re-running for the same run skips tickers already drafted from it; --dry-run writes nothing.
+Re-running for the same run skips tickers already drafted from it (with --replan, not those whose
+draft was rejected or cancelled: re-plan after a rules change); --dry-run writes nothing.
 Then: `book.py approve|reject ID`, `book.py tickets`.
 """
 
@@ -81,13 +82,16 @@ def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument("--run", type=int, required=True, help="scan run id (scan.py --save)")
     p.add_argument("--dry-run", action="store_true", help="plan and fit-check, write nothing")
+    p.add_argument(
+        "--replan", action="store_true", help="plan again tickers whose draft was rejected"
+    )
     p.add_argument("--db", type=Path, default=None, help="local DB file (default: configured DB)")
     args = p.parse_args(argv)
     rules = load_rules()
     conn = book.connect(args.db)
     try:
         with conn:
-            out = plan_run(conn, args.run, rules, dry_run=args.dry_run)
+            out = plan_run(conn, args.run, rules, dry_run=args.dry_run, replan=args.replan)
     finally:
         conn.close()
     if rules.warning:
