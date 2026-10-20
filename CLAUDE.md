@@ -330,6 +330,8 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
 .claude/skills/postmortem/  agent skill: post-mortem of a closed trade from its pack; setup / execution scores
 .claude/agents/senior-quant.md  subagent: senior quant persona (technical / levels / RS toolkits, signal research,
                         trade simulation, memos to owner + PM); `claude --agent senior-quant` or delegate
+.claude/agents/portfolio-manager.md  subagent: PM persona (the book as a whole, allocation and rotations,
+                        oversight of the agents, phases B / C, memos to owner); `claude --agent portfolio-manager`
 notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure; fakes.py (FakeTurso), conftest.py (db_backend)
 data/                   gitignored; raw/ processed/ cache/ created on demand
