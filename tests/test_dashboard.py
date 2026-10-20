@@ -75,7 +75,7 @@ def test_dashboard_renders_offline_on_a_fixture_db(
     )
     assert "W.L" in page and "target" in page  # the closed trade
     assert "Weekly pack — run 1" in page and "<h2>New plans</h2>" in page  # the pack converted
-    assert "placeholder portfolio rules" in page
+    assert "placeholder portfolio rules" not in page  # confirmed by the owner
     assert len(page.encode()) < 2_000_000
     assert "<script" not in page.lower()
 

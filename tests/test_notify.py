@@ -226,7 +226,7 @@ def test_daily_renders_each_item_type(
 
 
 def test_one_order_per_stock_steps(db_backend: Path | None) -> None:
-    """A placed stop is cancelled before an exit, an add, or its replacement (ADR 0025)."""
+    """A placed stop is cancelled before an exit, an add, or its replacement (ADR 0026)."""
     conn = book.connect(db_backend)
     with conn:
         pid, oid = book.draft_position(
@@ -293,7 +293,7 @@ def test_weekly_message_lists_the_trades_as_steps(
         "Then tell me: `placed 1`; when it fills: `fill 1 --qty N --price P`",
         "### Your positions",
         "### Money",
-        "- Equity £10,000 (cash £10,000) · 0 of 8 positions",
+        "- Equity £10,000 (cash £10,000) · 0 of 5 positions",
     ):
         assert needle in text, needle
     assert text.rstrip().endswith(

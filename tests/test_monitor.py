@@ -158,7 +158,7 @@ def test_pack_then_now_diff_and_thesis(
     assert pack["entry_conditions"]["technical"]["trend"] == 0.9
     assert set(pack["now"]) >= {"technical", "position", "levels", "relative_strength"}
     assert pack["now"]["position"]["entry_price"] == 1500.0
-    assert set(pack["now_labels"]) == {"technical", "levels", "relative_strength"}
+    assert set(pack["now_labels"]) == {"technical", "levels", "relative_strength", "liquidity"}
     d = pack["diff"]["technical.trend"]
     assert (
         d["then"] == 0.9
@@ -373,6 +373,44 @@ def test_revision_round_trip_each_action(
     book_cli.main([*dbargs, "revisions", "--status", "all"])
     out = capsys.readouterr().out
     assert out.count("accepted") == 4 and out.count("declined") == 1 and out.count("undone") == 1
+
+
+def test_agent_add_is_applied_within_the_limits(
+    world: tuple[Path | None, int, int], tmp_path: Path
+) -> None:
+    db, pid, run = world
+    checks = {
+        "action": "add",
+        "qty": "40",
+        "entry": "1690",
+        "type": "limit",
+        "stop": "1520",
+        "valid_until": "2026-10-30",
+        "structural": "breakout",
+    }
+    # no cash in the book: the add is refused as recorded, nothing changes
+    _record(tmp_path, db, pid, run, checks, "add_refused")
+    conn = book.connect(db)
+    rv = book.revisions(conn).iloc[-1]
+    assert rv["status"] == "declined" and "portfolio limits" in str(rv["decision_reason"])
+    assert book.position_state(conn, pid).stop == 1400.0
+    with conn:
+        book.cash_event(conn, "deposit", 20_000.0, "GBP", at="2026-09-01T00:00:00+00:00")
+    conn.close()
+    run2 = store.start_run("daily", {}, path=db)
+    _record(tmp_path, db, pid, run2, checks, "add")
+    conn = book.connect(db)
+    rv = book.revisions(conn).iloc[-1]
+    assert rv["status"] == "accepted" and rv["new"]["entry"] == 1690.0
+    od = book.orders(conn, pid).set_index("order_id")
+    add = od.loc[rv["done"]["add_order_id"]]
+    assert add["purpose"] == "add" and add["qty"] == 40 and add["price"] == 1690.0
+    assert add["valid_until"] == "2026-10-30" and add["status"] == "approved"
+    assert book.position_state(conn, pid).stop == 1520.0
+    pack = monitoring.build_pack(conn, pid, run2, text=False)
+    assert pack["limits"]["max_heat"] == pytest.approx(0.10)
+    assert "liquidity" in pack["now"]
+    conn.close()
 
 
 def test_revision_rejects_other_stages(

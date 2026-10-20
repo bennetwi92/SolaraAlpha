@@ -37,7 +37,7 @@ def test_plan_run_drafts_one_position_and_is_idempotent(
     assert "event within 9 days" in out
     conn = book.connect(scan_db)
     pos = book.positions(conn)
-    assert list(pos["ticker"]) == ["A.L"] and pos.loc[0, "status"] == "approved"  # ADR 0025
+    assert list(pos["ticker"]) == ["A.L"] and pos.loc[0, "status"] == "approved"  # ADR 0026
     assert pos.loc[0, "opened_from_run_id"] == 1 and pos.loc[0, "horizon_weeks"] == 16
     assert pos.loc[0, "thesis"] == "Strong winter bookings; fuel hedged."
     od = book.orders(conn, 1)
@@ -160,7 +160,7 @@ def test_fit_rejection_is_reported_not_written(
     plan_cli.main(["--run", "1", "--db", str(scan_db)])
     out = capsys.readouterr().out
     assert (
-        "A.L: rejected_by_fit: no free slot: 0 open + 8 pending + 0 accepted >= max_positions 8"
+        "A.L: rejected_by_fit: no free slot: 0 open + 8 pending + 0 accepted >= max_positions 5"
         in out
     )
     assert "Drafted: none" in out

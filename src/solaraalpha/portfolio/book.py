@@ -581,7 +581,7 @@ class PositionState:
     realised_pnl: float  # account currency, net of commission and fees
     costs: float  # commission + fees so far, account currency
     stop: float | None  # the live stop order's price; while an exit or add is worked (one
-    # order per stock, ADR 0025) the stop level it goes back on at
+    # order per stock, ADR 0026) the stop level it goes back on at
     initial_stop: float | None  # planned stop at entry (drafted payload), else the first stop order
     risk_at_stop: float  # (avg_cost - stop) x shares, account currency, floored at 0
     r_unit: float  # initial risk per share x initial shares, account currency (0 if unknown)
@@ -673,7 +673,7 @@ def position_state(conn: Conn, position_id: int) -> PositionState:
 
 def _stop_level(od: pd.DataFrame, ev: pd.DataFrame) -> float | None:
     """The stop level of an open position with no live stop order (taken off while an exit or
-    an add is worked at the broker, ADR 0025): the latest of the stop orders' prices and the
+    an add is worked at the broker, ADR 0026): the latest of the stop orders' prices and the
     ``stop_raised`` levels, a raise winning a tie."""
     found: list[tuple[str, int, float]] = []
     for at, px in zip(
@@ -771,7 +771,7 @@ def approve_position(
     conn: Conn, position_id: int, reason: str = "", actor: str = OWNER, at: str | None = None
 ) -> None:
     """Position ``approved``; its draft orders ``approved`` with it. The planner approves its
-    plans as it drafts them (ADR 0025): the owner is told what to place, never asked."""
+    plans as it drafts them (ADR 0026): the owner is told what to place, never asked."""
     t = iso(at)
     position_event(conn, position_id, "approved", actor=actor, reason=reason, at=t)
     for oid in orders(conn, position_id, status="draft")["order_id"]:
@@ -918,7 +918,7 @@ def fill(
     A fill on a buying order (``entry`` / ``add``) opens the position on its first fill and
     (re)drafts the **protective stop**: an ``approved`` stop order at the planned stop for every
     share held, replacing the previous stop order so it always covers the whole holding. Trading212
-    holds one order per stock (ADR 0025), so a part fill on a buying order cancels the rest of it:
+    holds one order per stock (ADR 0026), so a part fill on a buying order cancels the rest of it:
     the shares held get their stop instead of waiting for the remainder. A fill on
     a selling order that brings the shares to zero **closes** the position (:func:`close_position`,
     reason from :func:`exit_reason_for`). Returns ``{"fill_id", "order_status", "opened",
@@ -959,7 +959,7 @@ def protect(conn: Conn, position_id: int, actor: str = OWNER, at: str | None = N
     """Make the live protective stop order cover every share held, at the planned stop price
     (or the current stop's price once one exists). Replaces the old stop order (cancel + new,
     status ``approved``); returns the new order id, None when nothing is held, no stop is known or
-    an exit / add order is being worked (Trading212 holds one order per stock, ADR 0025)."""
+    an exit / add order is being worked (Trading212 holds one order per stock, ADR 0026)."""
     st = position_state(conn, position_id)
     price = st.stop if st.stop is not None else st.initial_stop
     if st.shares <= 0 or price is None:
@@ -991,14 +991,14 @@ def protect(conn: Conn, position_id: int, actor: str = OWNER, at: str | None = N
 
 def working(od: pd.DataFrame) -> pd.DataFrame:
     """The live exit / add orders among a position's ``orders``: while one is at the broker the
-    stock has no stop order (one order per stock, ADR 0025)."""
+    stock has no stop order (one order per stock, ADR 0026)."""
     return od[od["purpose"].isin(["exit", "add"]) & od["status"].isin(LIVE_ORDER)]
 
 
 def take_stop_off(
     conn: Conn, position_id: int, what: str, actor: str = OWNER, at: str | None = None
 ) -> int | None:
-    """Cancel the live stop order before an exit or add order (one order per stock, ADR 0025);
+    """Cancel the live stop order before an exit or add order (one order per stock, ADR 0026);
     its level stays the position's stop. Returns the cancelled order id, None if there was none."""
     od = orders(conn, position_id)
     live = od[(od["purpose"] == "stop") & od["status"].isin(LIVE_ORDER)]
@@ -1135,7 +1135,7 @@ def exit_position(
 ) -> int:
     """Draft an ``approved`` exit order for ``qty`` shares (default all) tagged with ``reason``
     (one of :data:`EXIT_REASONS`, kept in the order's ``approved`` event). Returns the order id.
-    Trading212 holds one order per stock (ADR 0025): the live stop order is cancelled first; a
+    Trading212 holds one order per stock (ADR 0026): the live stop order is cancelled first; a
     partial exit's fill, or the exit ending unfilled, puts it back for the shares left.
     """
     if reason not in EXIT_REASONS:
@@ -1533,7 +1533,7 @@ AGENT_PREFIX = "agent:"  # an agent's revision is applied as it is recorded (ADR
 
 
 def auto_applied(actor: str) -> bool:
-    """Agents' (ADR 0024) and the pipeline's (adds, pre-results trims; ADR 0025) revisions are
+    """Agents' (ADR 0024) and the pipeline's (pre-results trims and exits; ADR 0026) revisions are
     applied as they are recorded; the owner is told what to do at the broker and can undo."""
     return actor.startswith(AGENT_PREFIX) or actor == PIPELINE
 
@@ -1611,7 +1611,7 @@ def propose_revision(
     Open positions take :data:`OPEN_ACTIONS`; pending entries (draft / approved positions)
     take :data:`PENDING_ACTIONS` (``amend_entry``: a new entry ``price`` and / or ``stop``,
     optionally ``qty``; ``cancel``). ``auto_apply`` (default: the actor is an agent,
-    ``agent:...``, ADR 0024, or the pipeline, ADR 0025) accepts it at once under the same actor;
+    ``agent:...``, ADR 0024, or the pipeline, ADR 0026) accepts it at once under the same actor;
     one the book refuses
     (e.g. a stop not above the current one) is recorded as declined by the pipeline with the
     reason, so the owner sees it, and nothing else changes."""
@@ -1757,6 +1757,9 @@ def _check_revision(conn: Conn, st: PositionState, action: str, new: dict[str, A
             raise ValueError("add needs a positive qty and an entry price")
         if st.shares <= 0:
             raise ValueError(f"position {st.position_id} is {st.status}; nothing to add to")
+        over = add_breaches(conn, st, int(new["qty"]), float(new["entry"]), new.get("stop"))
+        if over:
+            raise ValueError("add breaks the portfolio limits: " + "; ".join(over))
     elif action == "amend_entry":
         if not any(new.get(k) is not None for k in ("price", "stop", "qty")):
             raise ValueError("amend_entry needs a new entry price, stop or qty")
@@ -1765,6 +1768,63 @@ def _check_revision(conn: Conn, st: PositionState, action: str, new: dict[str, A
         stop = new.get("stop", _planned_stop(conn, st.position_id))
         if entry is not None and stop is not None and float(stop) >= float(entry):
             raise ValueError(f"stop {stop} is not below the entry {entry}")
+
+
+def add_breaches(
+    conn: Conn,
+    st: PositionState,
+    qty: int,
+    entry: float,
+    stop: float | None = None,
+    rules: Rules | None = None,
+) -> list[str]:
+    """The portfolio limits an add of ``qty`` at ``entry`` (the whole position's stop moved to
+    ``stop``, never lowered) would break, empty when it fits (ADR 0025). The book holds no live
+    prices: equity is cash plus the open positions at cost, and this position is valued at
+    ``entry`` after the add. Checks ``max_position_pct``, ``max_sector_pct``, ``max_heat`` and
+    the ``cash_buffer``; liquidity (``max_adv_pct``) is the agent's to check."""
+    from solaraalpha.portfolio.risk import sector_of  # local import: risk depends on book
+
+    rules = rules or load_rules()
+    states = [position_state(conn, int(p)) for p in positions(conn)["position_id"]]
+    held = [s for s in states if s.status == "open" and s.shares > 0]
+    cost = {s.position_id: to_account(s.avg_cost * s.shares, s.currency) for s in held}
+    realised = sum(s.realised_pnl for s in states)
+    cash_now = cash_balance(conn) + realised - sum(cost.values())
+    eq = cash_now + sum(cost.values())
+    if eq <= 0:
+        return [f"equity £{eq:,.0f}: nothing to size against"]
+    add_cost = to_account(entry * qty, st.currency)
+    shares = st.shares + qty
+    value = to_account(entry * shares, st.currency)
+    stops = [float(x) for x in (stop, st.stop) if x is not None]
+    new_stop = max(stops) if stops else None
+    avg = (st.avg_cost * st.shares + entry * qty) / shares
+    risk = (
+        max(0.0, to_account((avg - new_stop) * shares, st.currency))
+        if new_stop is not None
+        else value
+    )
+    others = [s for s in held if s.position_id != st.position_id]
+    sector = sector_of(st.ticker)
+    sector_value = value + sum(cost[s.position_id] for s in others if sector_of(s.ticker) == sector)
+    out = []
+    if value > rules.max_position_pct * eq:
+        out.append(
+            f"position {value / eq:.0%} of equity > max_position_pct {rules.max_position_pct:.0%}"
+        )
+    if sector_value > rules.max_sector_pct * eq:
+        out.append(
+            f"sector {sector} {sector_value / eq:.0%} > max_sector_pct {rules.max_sector_pct:.0%}"
+        )
+    heat = (risk + sum(s.risk_at_stop for s in others)) / eq
+    if heat > rules.max_heat:
+        out.append(f"heat {heat:.1%} > max_heat {rules.max_heat:.1%}")
+    if cash_now - add_cost < rules.cash_buffer * eq:
+        out.append(
+            f"cash £{cash_now - add_cost:,.0f} after the add < cash_buffer {rules.cash_buffer:.0%}"
+        )
+    return out
 
 
 def _resize(conn: Conn, st: PositionState, entry: float, stop: float) -> int | None:
@@ -1789,7 +1849,7 @@ def accept_revision(
 
     Open positions: tighten_stop: replace the stop, ratchet only, + ``stop_raised``;
     take_partial: an exit order for the qty; exit: an exit order with reason thesis_broken;
-    revise_target: a ``revised`` event; add: the stop order off (one order per stock, ADR 0025),
+    revise_target: a ``revised`` event; add: the stop order off (one order per stock, ADR 0026),
     an ``add`` buy order for ``qty`` at ``entry``, and the stop level raised to ``stop`` (at least
     breakeven, never lower): the add's fill puts the stop back for the whole position.
     Pending entries (ADR 0024): amend_entry: :func:`amend_position` with the new entry price /

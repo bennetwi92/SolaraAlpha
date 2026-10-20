@@ -1,6 +1,6 @@
 ---
 name: monitor
-description: Daily monitor for every open position and every pending entry (an approved or drafted entry order not yet filled). Reads the monitor pack (entry conditions then vs the toolkits now, thesis conditions, the day's filings, headlines and gaps, the research levels, the systematic stops as context), decides whether anything changed, sets the stop by judgement and records one action (open: hold, tighten the stop, take a partial, exit, revise the target; pending: hold, amend the entry / stop, cancel). The book applies it as it is recorded; the owner is notified and can undo it. Use for "/monitor --run N" (every position of a daily run) or "/monitor --position ID".
+description: Daily monitor for every open position and every pending entry (an approved or drafted entry order not yet filled). Reads the monitor pack (entry conditions then vs the toolkits now, thesis conditions, the day's filings, headlines and gaps, the research levels, the systematic stops as context), decides whether anything changed, sets the stop by judgement and records one action (open: hold, tighten the stop, take a partial, exit, revise the target, add to a winner; pending: hold, amend the entry / stop, cancel). The book applies it as it is recorded; the owner is notified and can undo it. Use for "/monitor --run N" (every position of a daily run) or "/monitor --position ID".
 ---
 
 # Monitor: has anything changed?
@@ -75,6 +75,9 @@ Read `pack.json` in the printed directory:
 - `research`: the latest research verdict (reasons, kill criteria, note) and its evidence ids;
   `research_levels`: the entry, stop and `stop_reason` it set (ADR 0023), when present.
 - `systematic_stops`: context for "The stop".
+- `limits`: what an add must fit (`max_position_pct`, `max_sector_pct`, `max_heat`,
+  `cash_buffer` of equity; `max_adv_pct` of `now.liquidity.adv_gbp_20`, whose
+  `max_position_gbp` is the most the whole position should be worth).
 
 ## Step 2: Decide
 
@@ -90,6 +93,15 @@ Read `pack.json` in the printed directory:
      - `take_partial`: sell `qty` shares (e.g. half) to bank gains or cut risk. Give `qty`.
      - `exit`: the thesis is broken; a market exit (`type` `market`, or `limit` with `price`).
      - `revise_target`: the move sought changed; give the new `target` (and `target_2`).
+     - `add`: scale into a winner (ADR 0025). When and how much is your call, as a portfolio
+       manager's: e.g. a confirmed breakout or a pullback holding new support, a catalyst that
+       extends the move, the thesis strengthening. Give `qty`, `entry` (a limit at or below,
+       `type` `limit`; or `type` `stop` to buy the break), and `stop`: the stop for the
+       **whole** position after the add (never lower than the current one; usually at least
+       breakeven on the original entry). Optionally `valid_until` (YYYY-MM-DD). Size it so the
+       whole position's risk at the new stop is one you would take on a fresh trade, and within
+       `limits` and liquidity; the book refuses an add that breaks position, sector, heat or
+       cash limits.
    - **Pending entry:**
      - `hold`: the plan still stands (the default).
      - `amend_entry`: a new entry `price` (the level to enter at or below, or the new breakout
@@ -97,8 +109,8 @@ Read `pack.json` in the printed directory:
      - `cancel`: the trade no longer makes sense (thesis broken, catalyst priced in, capital
        event); the entry order is cancelled.
 5. `label` encodes the urgency: `ACT` = acted on something that matters before tomorrow's open
-   (exit, cancel, a stop raise), `WATCH` = a change worth the owner's eye (partial, amendment,
-   target revision, hold with a concern), `PASS` = no change. `ERROR` if the pack could not be
+   (exit, cancel, a stop raise, an add), `WATCH` = a change worth the owner's eye (partial,
+   amendment, target revision, hold with a concern), `PASS` = no change. `ERROR` if the pack could not be
    built.
 
 ## Step 3: Record
@@ -114,6 +126,7 @@ filing: `kind` `filing`, its NSM `url`, `nsm_id` = the trigger's `id`; any page 
 "checks": {"action": "tighten_stop", "stop": "1480", "structural": "invalidation", "trigger": "daily_review"}
 "checks": {"action": "take_partial", "qty": "50", "structural": "kill_criterion", "trigger": "gap -2.4 ATR"}
 "checks": {"action": "exit", "type": "market", "structural": "capital_event", "trigger": "filing NI-..."}
+"checks": {"action": "add", "qty": "40", "entry": "1690", "type": "limit", "stop": "1520", "structural": "breakout", "trigger": "daily_review"}
 "checks": {"action": "revise_target", "target": "1900", "structural": "none", "trigger": "daily_review"}
 "checks": {"action": "amend_entry", "price": "805", "stop": "742", "structural": "setup", "trigger": "daily_review"}
 "checks": {"action": "cancel", "structural": "capital_event", "trigger": "filing NI-..."}
@@ -129,10 +142,12 @@ uv run python scripts/record.py revision <dir>/verdict.json --position <ID> --ac
 This writes the `monitor` card and evidence and, unless the action is `hold`, the revision,
 which the book **applies at once** (ADR 0024): the orders it implies are drafted approved, the
 owner's inbox says what to change in Trading212, and `book.py undo REV_ID --reason` reverses
-it. Trading212 holds one order per stock (ADR 0025): a partial exit or an exit takes the stop
-order off until it fills, and a stop cannot be tightened while one is working. If the book refuses it (a lower stop on an open position, an open-position action on a
-pending entry, a stop at or above the entry) it is recorded as declined with the reason and
-nothing changes: read the reason and record a corrected verdict only if it still matters.
+it. Trading212 holds one order per stock (ADR 0026): an exit, a partial or an add takes the
+stop order off until it fills or ends, and nothing else can be applied to that position while
+one is working. If the book refuses it (a lower stop on an open position, an open-position
+action on a pending entry, a stop at or above the entry, an add over a portfolio limit, an
+exit or add already working) it is recorded as declined with the reason and nothing changes:
+read the reason and record a corrected verdict (e.g. a smaller add) only if it still matters.
 
 ## Standards
 

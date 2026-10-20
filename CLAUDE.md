@@ -86,7 +86,8 @@ Current state:
   (`/monitor`, docs/decisions/0018) re-evaluates each one (queue capped by `max_agent_tickers`,
   event-triggered first) and sets the stop by judgement (the levels / ATR / chandelier stops
   are context). Its revision is **applied as it is recorded** (open: tighten_stop /
-  take_partial / exit / revise_target; pending: amend_entry / cancel; `hold` changes nothing);
+  take_partial / exit / revise_target / add; pending: amend_entry / cancel; `hold` changes
+  nothing; adds are the agent's call, refused by the book over the portfolio limits, ADR 0025);
   the book refuses an impossible one (recorded as declined). The owner is told in the inbox
   exactly what to change in Trading212 and can reverse it with `book.py undo REV_ID --reason`. The **market regime** (`analysis/regime.py`: `^FTAS` drawdown, 1-day z, realised
   vol percentile → calm / stressed / risk_off, placeholders) heads the daily report, is saved as a
@@ -97,14 +98,14 @@ Current state:
   `max_agent_tickers` and `--max-turns`; without `CLAUDE_CODE_OAUTH_TOKEN` or
   `ANTHROPIC_API_KEY` it skips and nothing is spent. A failed invocation is recorded as an
   ERROR verdict (`record.py error`); the job fails only if every item errored.
-- **Notifications** (docs/decisions/0021, 0025): the workflows post to the GitHub issue labelled
+- **Notifications** (docs/decisions/0021, 0026): the workflows post to the GitHub issue labelled
   `inbox` only when `scripts/notify.py` has something for the owner; silence otherwise. Plain
   words: per stock, numbered Trading212 steps (`portfolio/broker.py`: every approved order not
   yet placed, the order it replaces cancelled first, what to place once it fills, price alerts
   for the targets, why, what to tell back), then checks to report back (stop should have sold,
   order past its date, dividend), alert changes, information, errors, undo commands.
-- **No owner approval** (docs/decisions/0025): plans are approved as they are drafted and the
-  pipeline's revisions (adds, pre-results trims) are applied like the agents'; the owner only
+- **No owner approval** (docs/decisions/0026): plans are approved as they are drafted and the
+  pipeline's revisions (pre-results trims / exits) are applied like the agents'; the owner only
   places orders, sets alerts and reports placements and fills (`book.py reject` / `undo` override).
 - **Agents write through one door** (docs/decisions/0016): a `verdict.json` (schema:
   `record.py schema`) recorded with `scripts/record.py verdict`, which writes the `labels` row,
@@ -126,11 +127,12 @@ Current state:
   orders and price alerts; **one open order per stock**, so the book never holds two live orders
   for a stock: an exit / partial / add takes the stop order off until it fills or ends, a part
   fill on a buy cancels the rest, no target orders (targets are price alerts). Breakout entries
-  are stop market orders (ADR 0025).
+  are stop market orders (ADR 0026).
 - **Portfolio rules** (capital, risk per trade, position / sector / heat limits, entry validity,
-  long-only, scaling, the pre-results event policy, the drawdown circuit breaker) live in `config/portfolio.toml`, read through `portfolio.rules.load_rules`. All
-  values are **placeholders** until the owner sets them and flips `confirmed = true`; reports
-  print a warning while it is false. See epic #104.
+  long-only, the pre-results event policy, the drawdown circuit breaker) live in `config/portfolio.toml`, read through `portfolio.rules.load_rules`. The owner
+  set them on 2026-10-20 (`confirmed = true`: £5,000, 2% risk, 5 positions, 25% / 40% position
+  / sector caps, 10% heat, breaker on at 15%); reports warn whenever `confirmed` is false. See
+  epic #104.
 
 ## Hard rules
 
@@ -171,7 +173,7 @@ Current state:
 | Validator pack (DB only, independent of other agents) | `uv run python scripts/validate_pack.py JET2.L --run N` / `--run N --all` |
 | Validator (agent) | `/validate JET2.L --run N` or `/validate --run N` in Claude Code |
 | Monitor pack for a daily run's open positions and pending entries (then vs now, thesis, filing text, research levels, systematic stops) | `uv run python scripts/monitor_pack.py --run N [--position ID]` |
-| Monitor (agent): daily re-evaluation; open: hold / tighten / partial / exit / revise target; pending: hold / amend_entry / cancel — applied as recorded (ADR 0024) | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions --status all` / `undo REV_ID --reason` (pipeline proposals: `accept REV_ID` / `decline REV_ID --reason`) |
+| Monitor (agent): daily re-evaluation; open: hold / tighten / partial / exit / revise target / add; pending: hold / amend_entry / cancel — applied as recorded (ADR 0024) | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions --status all` / `undo REV_ID --reason` (pipeline proposals: `accept REV_ID` / `decline REV_ID --reason`) |
 | Validator disagreement log (toolkits not warranted, concerns, rate per run) | `uv run python scripts/validator_stats.py [--since D]` |
 | Post-mortem pack for a closed position (record + weekly bars, hindsight labelled) | `uv run python scripts/postmortem_pack.py POSITION_ID` / `--since ISO` |
 | Post-mortem (agent): set-up, what worked / failed, signal right or wrong, rule proposals | `/postmortem POSITION_ID` in Claude Code → `record.py verdict ... --position ID` |
@@ -224,7 +226,7 @@ src/solaraalpha/        importable package — all reusable code lives here
                         base64 PNG charts, md_to_html for the pack) — #136
   notify.py             owner notifications: daily and weekly inbox messages in plain words (broker
                         steps, checks, alerts, info, errors, undo); channels stdout / GitHub inbox
-                        issue — 0021, 0025
+                        issue — 0021, 0026
   toolkits.py           toolkit register: id -> run fn + act / watch bands; Inputs (lazy,
                         shared per-ticker data)
   pipeline.py           WEEKLY stages (runs_on), clauses, band / combine / screen_label,
@@ -275,16 +277,15 @@ src/solaraalpha/        importable package — all reusable code lives here
     risk.py             holdings / equity / heat / exposure / breaches vs the rules; sector_of
                         (optional `sector` per stock in config/benchmarks.toml)
     plan.py             TradePlan + make_plan: the agent's entry + stop (0023), targets,
-                        add_plan: scale into a winner (>= 1R, breakout or pullback, #128),
                         risk-based size with caps, review dates, flags — see docs/decisions/0015
     fit.py              portfolio fit before drafting: slots, sector cap, heat (reject);
                         correlation, event clash (flag); rank_score — 0015
     planner.py          plan_run: a saved scan run's final labels → plans (research trade levels
-                        required) → fit → approved positions (ADR 0025)
+                        required) → fit → approved positions (ADR 0026)
                         with entry conditions (frozen cards) and thesis conditions (kill criteria)
     weekly_pack.py      build_pack (run + book → data) and render_pack (→ markdown), the Sunday page
     broker.py           Trading212 instructions: approved orders not yet placed → per-stock numbered
-                        steps (cancel the replaced order, place, then the stop), price alerts — 0025
+                        steps (cancel the replaced order, place, then the stop), price alerts — 0026
     triggers.py         daily triggers (pure): stop_close / stop_touched / target_hit / gap /
                         watch_break / entry_break / filing / news — see docs/decisions/0017
     daily.py            run_daily (what to check, fetch, evaluate, save the triggers) + render_daily

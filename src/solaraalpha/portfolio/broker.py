@@ -2,7 +2,7 @@
 
 Trading212 (Stocks & Shares ISA) takes market, limit, stop (market) and stop-limit orders, holds
 **one open order per stock**, and sets price alerts. Nothing waits for the owner's approval (ADR
-0025): every order the book has approved and the owner has not yet marked placed is a
+0026): every order the book has approved and the owner has not yet marked placed is a
 :class:`Task` here, in the order to do it. A task cancels the order its new one replaces (a stop
 moved, the stop taken off for an exit or an add) and says what to place once it fills (the stop
 for the shares bought, the stop back on after a part sale), with the price alerts for the targets.

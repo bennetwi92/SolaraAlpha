@@ -37,9 +37,6 @@ class Rules:
     trail_atr: float  # chandelier trailing stop, in ATRs
     event_flag_days: int  # a scheduled event within this many days of entry is flagged
     max_agent_tickers: int  # cap on tickers the unattended agents work per run, by rank
-    add_fraction: float  # an add's size as a fraction of the initial shares (#128)
-    max_adds: int  # adds per position
-    add_min_r: float  # only add once the position is at least this many R in profit
     event_policy: str  # results inside event_flag_days: flag / hold / trim / exit (#129)
     event_trim_fraction: float  # the share of the position a trim proposes to sell
     circuit_breaker: bool  # stop new entries in a drawdown (#143); off until the owner confirms
@@ -75,9 +72,6 @@ _TYPES = {
     "trail_atr": float,
     "event_flag_days": int,
     "max_agent_tickers": int,
-    "add_fraction": float,
-    "max_adds": int,
-    "add_min_r": float,
     "event_policy": str,
     "event_trim_fraction": float,
     "circuit_breaker": bool,
@@ -136,12 +130,6 @@ def _validate(r: Rules) -> None:
         raise ValueError(f"capital: must be > 0, got {r.capital}")
     if not 0 < r.risk_per_trade <= 0.05:
         raise ValueError(f"risk_per_trade: must be in (0, 0.05], got {r.risk_per_trade}")
-    if not 0 < r.add_fraction <= 1:
-        raise ValueError(f"add_fraction: must be in (0, 1], got {r.add_fraction}")
-    if r.max_adds < 0:
-        raise ValueError(f"max_adds: must be >= 0, got {r.max_adds}")
-    if r.add_min_r < 0:
-        raise ValueError(f"add_min_r: must be >= 0, got {r.add_min_r}")
     if r.event_policy not in EVENT_POLICIES:
         raise ValueError(f"event_policy: must be one of {EVENT_POLICIES}, got {r.event_policy!r}")
     if not 0 < r.event_trim_fraction <= 1:

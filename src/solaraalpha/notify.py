@@ -1,4 +1,4 @@
-"""Owner notifications: say something only when something needs the owner (ADR 0021, 0025).
+"""Owner notifications: say something only when something needs the owner (ADR 0021, 0026).
 
 Plain words first. :func:`daily_message` opens with what to do in Trading212, stock by stock
 in the order to do it (:mod:`solaraalpha.portfolio.broker`: every approved order not yet placed;

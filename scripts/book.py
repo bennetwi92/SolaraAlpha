@@ -27,7 +27,7 @@ uv run python scripts/book.py exit POSITION_ID --reason stop|trailing_stop|targe
                                  [--type market|limit] [--price P] [--qty N]
 
 A first fill on an entry order opens the position and drafts its protective stop order
-(approved, so it appears in `tickets` at once). Trading212 holds one order per stock (ADR 0025):
+(approved, so it appears in `tickets` at once). Trading212 holds one order per stock (ADR 0026):
 a part fill on a buy cancels the rest of it, and an exit or add takes the stop order off until it
 fills or ends (then the stop is drafted again for the shares held). A stop or
 exit fill that brings the shares to zero closes the position (exit reason, P&L, R-multiple,
@@ -261,7 +261,7 @@ def _tickets(conn: Conn, a: argparse.Namespace) -> None:
 def _fill(conn: Conn, a: argparse.Namespace) -> None:
     out = book.fill(conn, a.order_id, a.qty, a.price, a.at, a.commission, a.fees)
     status = out["order_status"]
-    if status == "cancelled":  # a part fill on a buy: the rest is cancelled (ADR 0025)
+    if status == "cancelled":  # a part fill on a buy: the rest is cancelled (ADR 0026)
         status = "part filled, the rest cancelled (one order per stock)"
     msg = f"order {a.order_id} {status}; position holds {out['shares']} shares"
     if out["opened"]:

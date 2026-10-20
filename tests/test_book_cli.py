@@ -42,7 +42,7 @@ def test_new_approve_tickets_placed_round_trip(
         capsys=capsys,
     )
     assert "position 1 drafted for JET2.L: entry order 1 (limit 100)" in out
-    assert "placeholder portfolio rules" in out
+    assert "placeholder portfolio rules" not in out  # confirmed by the owner
 
     out = run(db, "list", capsys=capsys)
     assert "JET2.L" in out and "draft" in out and "limit 100 @ 1,520p (draft)" in out
@@ -197,7 +197,7 @@ def test_full_fill_opens_and_drafts_stop(db: Path, capsys: pytest.CaptureFixture
 def test_part_fill_cancels_the_rest_and_protects_what_is_held(
     db: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Trading212 holds one order per stock (ADR 0025): the stop replaces the rest of the entry
+    # Trading212 holds one order per stock (ADR 0026): the stop replaces the rest of the entry
     _approved_entry(db, capsys)
     out = run(db, "fill", "1", "--qty", "40", "--price", "1510", "--commission", "5", capsys=capsys)
     assert "order 1 part filled, the rest cancelled (one order per stock); position holds 40" in out

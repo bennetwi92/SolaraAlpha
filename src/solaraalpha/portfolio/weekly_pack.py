@@ -274,7 +274,7 @@ def render_pack(pack: Pack) -> str:
                 lines.append(f"- thesis: {p['thesis']}")
             lines += [
                 "",
-                "- approved as planned (ADR 0025): the inbox lists the steps to take in"
+                "- approved as planned (ADR 0026): the inbox lists the steps to take in"
                 f' Trading212; to skip it: `book.py reject {pid} --reason "..."`',
                 "",
             ]

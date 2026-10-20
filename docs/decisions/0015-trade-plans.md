@@ -79,6 +79,9 @@ position**, in the watchlist or not (`solaraalpha.portfolio.review`):
 
 ## Scaling (#128)
 
+> Superseded by ADR 0025: adds are the monitor agent's call within the portfolio limits;
+> `add_plan` and the weekly review's add proposal are removed. Kept for the record.
+
 The strategy holds "while the stock keeps climbing", so adding to a working position is
 planned and rule-based; **never add to a loser**. `portfolio.plan.add_plan(state, review_card,
 levels, technical, rules, adds)` proposes an add only when **all** hold:

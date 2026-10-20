@@ -189,7 +189,7 @@ def test_event_policy_decided_in_advance(db_backend: Path | None) -> None:
     )
     assert (c.event_due, c.event_action) == ("", "")
 
-    # trim / exit are applied as revisions (ADR 0025), once per event; flag / hold propose nothing
+    # trim / exit are applied as revisions (ADR 0026), once per event; flag / hold propose nothing
     conn = book.connect(db_backend)
     with conn:
         pid, oid = book.draft_position(
