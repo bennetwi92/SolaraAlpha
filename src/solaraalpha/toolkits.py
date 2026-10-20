@@ -26,7 +26,12 @@ import pandas as pd
 
 from solaraalpha.analysis.events import build_pack
 from solaraalpha.analysis.financing import FinancingCard, financing_card
-from solaraalpha.analysis.fundamentals import FundamentalsCard, fundamentals_card
+from solaraalpha.analysis.fundamentals import (
+    FundamentalsCard,
+    fundamentals_card,
+    fx_ticker,
+    reporting_currency,
+)
 from solaraalpha.analysis.levels import LevelsCard, levels_card
 from solaraalpha.analysis.liquidity import LiquidityCard, liquidity_card
 from solaraalpha.analysis.relative_strength import RelativeStrength, compare, comparisons, rs_card
@@ -179,7 +184,9 @@ def _relative_strength(x: Inputs) -> Cards:
 def _fundamentals(x: Inputs, as_of: str | None = None) -> Cards:
     """Growth / value / quality scores, point-in-time via publication lags; the financing card
     (runway, dilution, raises) beside it as context."""
-    card = fundamentals_card(x.fund, x.weekly, as_of)
+    pair = fx_ticker(reporting_currency(x.fund), x.weekly.attrs.get("currency"))
+    fx = x.other(pair)["close"] if pair else None
+    card = fundamentals_card(x.fund, x.weekly, as_of, fx)
     try:
         ann: pd.DataFrame | None = x.announcements
     except Exception as e:  # filings are context: the card goes on without them

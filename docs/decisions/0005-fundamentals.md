@@ -29,8 +29,8 @@ model, which needs every input).
 
 Market observations older than 13 weeks are ignored (Yahoo samples them only a few times a
 year, so forward growth / revisions are often NaN). Valuation converts the price from its
-minor unit (GBp → GBP) and is skipped (NaN) if the listing and reporting currencies differ —
-no FX conversion yet. `next_period` is the expected end of the next reporting period, with
+minor unit (GBp → GBP) and, when the accounts are in another currency, through the Yahoo FX
+rate as of each week (`fx_ticker`, e.g. `GBPUSD=X`; #220); without the rate it is NaN. `next_period` is the expected end of the next reporting period, with
 results typically 1-3 months later. Treat a results date inside the holding window as both a
 catalyst and gap risk.
 
@@ -64,3 +64,17 @@ say how stale. The filings are fetched once per stock (`Inputs.announcements`); 
 the filing fields are None and the fundamentals card is unaffected. No sizing rule follows from
 it automatically: the PM caps a loss-maker under 12 months' runway with no completed raise at 1%
 risk in `/pm` (owner decision on #214).
+
+## Amendment: FX, growth_n, undefined ratios (#220, #213)
+
+- **FX.** 30 of 104 names report in USD / EUR / AUD while priced in pence. Valuation (P/E,
+  earnings and FCF yields, market cap, the own-history percentile) now converts the price into
+  the reporting currency with the Yahoo FX daily close on or before each week, so it stays
+  point-in-time. The toolkit, `scripts/fundamentals.py` and the backtest replay (when it has a
+  fetch) pass the rate.
+- **`growth_n`.** The card shows how many of the five growth sub-signals the score rests on: 1-2
+  is a thin score. Counting missing as neutral in `rank_score` changes the shortlist, so it waits
+  for the senior quant's test (#223).
+- **Undefined ratios.** ROE is NaN on zero equity (it raised before, #213), and net debt / EBITDA
+  is NaN when EBITDA is not positive. It used to be infinite and score −1 whatever the cash; for
+  a loss-maker the financing card's runway is the question.
