@@ -242,7 +242,7 @@ src/solaraalpha/        importable package — all reusable code lives here
   catalysts.py          fresh_catalysts: ticker -> one-line reason (new material filings, headlines,
                         a scheduled event in the window); a stock with one can join the shortlist
   pm.py                 the portfolio manager's pack: research-ACT candidates (verdict, levels, sizing
-                        across the risk band), open / pending positions, money, regime, macro,
+                        across the risk band, financing, results-day gap cost), open / pending positions, money, regime, macro,
                         correlations, limits — docs/decisions/0027
   value_models.py       register of per-stock value models (config/value_models.toml) for research
   dashboard.py          render_dashboard: one self-contained HTML page from the DB (inline CSS,
