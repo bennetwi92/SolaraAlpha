@@ -154,11 +154,19 @@ jobs:
           --ticker "${{ matrix.ticker }}" --stage validate
           --file "${{ steps.agent.outputs.execution_file }}"
           --status "${{ steps.agent.outcome == 'success' && 'success' || 'failure' }}" || true
-      - if: steps.agent.outcome == 'failure'
+      - name: ERROR if the agent failed or ended without recording a verdict
+        if: always() && steps.agent.outcome != 'skipped'
         run: >
           uv run --no-sync python scripts/record.py error "${{ matrix.ticker }}"
-          --run "${{ needs.gate.outputs.run }}" --stage validate
-          --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }})" || true
+          --run "${{ needs.gate.outputs.run }}" --stage validate --if-missing
+          --reason "${{ steps.agent.outcome == 'failure' && 'claude-code-action failed or hit the turn limit' || 'the agent ended without recording a verdict' }} (job ${{ github.run_id }})" || true
+      - uses: actions/upload-artifact@v4  # the agent's transcript, to see why it failed
+        if: always() && steps.agent.outputs.execution_file != ''
+        with:
+          name: transcript-validate-${{ strategy.job-index }}
+          path: ${{ steps.agent.outputs.execution_file }}
+          if-no-files-found: ignore
+          retention-days: 14
 
   macro-groups:
     needs: [gate, validate]
@@ -213,11 +221,19 @@ jobs:
           --ticker "${{ matrix.group }}" --stage macro
           --file "${{ steps.agent.outputs.execution_file }}"
           --status "${{ steps.agent.outcome == 'success' && 'success' || 'failure' }}" || true
-      - if: steps.agent.outcome == 'failure'
+      - name: ERROR if the agent failed or ended without recording a verdict
+        if: always() && steps.agent.outcome != 'skipped'
         run: >
           uv run --no-sync python scripts/record.py error "${{ matrix.group }}"
-          --run "${{ needs.gate.outputs.run }}" --stage macro
-          --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }})" || true
+          --run "${{ needs.gate.outputs.run }}" --stage macro --if-missing
+          --reason "${{ steps.agent.outcome == 'failure' && 'claude-code-action failed or hit the turn limit' || 'the agent ended without recording a verdict' }} (job ${{ github.run_id }})" || true
+      - uses: actions/upload-artifact@v4  # the agent's transcript, to see why it failed
+        if: always() && steps.agent.outputs.execution_file != ''
+        with:
+          name: transcript-macro-${{ strategy.job-index }}
+          path: ${{ steps.agent.outputs.execution_file }}
+          if-no-files-found: ignore
+          retention-days: 14
 
   research:
     needs: [gate, validate, macro]
@@ -273,11 +289,19 @@ jobs:
           --ticker "${{ matrix.ticker }}" --stage research
           --file "${{ steps.agent.outputs.execution_file }}"
           --status "${{ steps.agent.outcome == 'success' && 'success' || 'failure' }}" || true
-      - if: steps.agent.outcome == 'failure'
+      - name: ERROR if the agent failed or ended without recording a verdict
+        if: always() && steps.agent.outcome != 'skipped'
         run: >
           uv run --no-sync python scripts/record.py error "${{ matrix.ticker }}"
-          --run "${{ needs.gate.outputs.run }}" --stage research
-          --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }})" || true
+          --run "${{ needs.gate.outputs.run }}" --stage research --if-missing
+          --reason "${{ steps.agent.outcome == 'failure' && 'claude-code-action failed or hit the turn limit' || 'the agent ended without recording a verdict' }} (job ${{ github.run_id }})" || true
+      - uses: actions/upload-artifact@v4  # the agent's transcript, to see why it failed
+        if: always() && steps.agent.outputs.execution_file != ''
+        with:
+          name: transcript-research-${{ strategy.job-index }}
+          path: ${{ steps.agent.outputs.execution_file }}
+          if-no-files-found: ignore
+          retention-days: 14
 
   plan:
     needs: [gate, research, research-agents]

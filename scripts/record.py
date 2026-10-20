@@ -192,6 +192,15 @@ def _error(args: argparse.Namespace) -> None:
     verdict = agents.error_verdict(args.ticker, args.run, args.stage, args.reason)
     conn = store.connect(args.db)
     try:
+        if (
+            args.if_missing
+            and conn.execute(
+                "SELECT 1 FROM labels WHERE run_id = ? AND ticker = ? AND stage = ?",
+                (args.run, args.ticker, args.stage),
+            ).fetchone()
+        ):
+            print(f"{args.stage} verdict already recorded for {args.ticker} in run {args.run}")
+            return
         agents.record_verdict(conn, verdict, args.actor or f"agent:{args.stage}", args.position)
     except ValueError as e:
         print(f"error: {e}")
@@ -273,6 +282,11 @@ def main(argv: list[str] | None = None) -> None:
     er.add_argument("--reason", required=True)
     er.add_argument("--position", type=int, help="postmortem: the closed position")
     er.add_argument("--actor")
+    er.add_argument(
+        "--if-missing",
+        action="store_true",
+        help="only when the stage has no verdict for the ticker in the run (an agent that ended without recording one)",
+    )
     er.add_argument("--db", type=Path, default=None)
     qu = sub.add_parser(
         "queue", help="tickers (or position ids) the agents should work, best first"

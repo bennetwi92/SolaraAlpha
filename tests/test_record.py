@@ -403,6 +403,19 @@ def test_error_queue_latest_run_and_outcome(
     )  # nothing recorded: ok
     assert "0 recorded" in capsys.readouterr().out
 
+    # --if-missing (the runner after every agent): no-op when a verdict exists, else ERROR
+    def if_missing(ticker: str) -> str:
+        record.main(
+            [
+                *("error", ticker, "--run", str(run_id), "--stage", "events", "--if-missing"),
+                *("--reason", "the agent ended without recording a verdict", *args),
+            ]
+        )
+        return capsys.readouterr().out
+
+    assert "recorded events ERROR for C.L" in if_missing("C.L")
+    assert "already recorded for C.L" in if_missing("C.L")
+
 
 def test_max_agent_tickers_rule() -> None:
     from solaraalpha.portfolio.rules import load_rules
