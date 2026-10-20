@@ -349,6 +349,8 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
 .claude/agents/fundamental-strategist.md  subagent: fundamentals / balance sheet / valuation / macro / policy
                         specialist (fundamentals toolkit, expectations, financing risk, event gaps, #214);
                         `claude --agent fundamental-strategist`
+.claude/hooks/guard_live_writes.py  PreToolUse guard the three subagents load: blocks live book / DB
+                        writes, workflow runs and inbox posts unless `SOLARA_ALLOW_WRITES=1`
 notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure; fakes.py (FakeTurso), conftest.py (db_backend)
 data/                   gitignored; raw/ processed/ cache/ created on demand
@@ -394,6 +396,19 @@ docs/
 ## Issues
 
 GitHub issues are the backlog and the hand-off between threads/agents.
+
+### Desk ownership
+
+The three subagents (`.claude/agents/`) each own an area; one owner per file. Others propose in
+the owner's issue rather than edit. Status lives in each agent's issue, never in its file.
+Decision rules live in the skills (`.claude/skills/`), never duplicated in a subagent file.
+
+| Area | Owner | Live state |
+|---|---|---|
+| `analysis/technical.py`, `levels.py`, `relative_strength.py`, `regime.py` (method), `backtest.py`, `scorecard.py`; the `fit.rank_score` formula and its test; `portfolio/shadow.py`; `docs/research/`; ADR 0029 | `senior-quant` | #210 |
+| `analysis/fundamentals.py`, `financing.py`, `events.py`, `jet2_value.py`; `data/fundamentals.py`, `announcements.py`; `catalysts.py`; `value_models`; the `growth` input to the rank; the fundamental content of `/events`, `/research`, `/macro` | `fundamental-strategist` | #214 |
+| `pm.py`, `portfolio/planner.py`, `plan.py`, `fit.py` (slots, sector, heat), `review.py`; the `/pm`, `/validate`, `/monitor`, `/postmortem` skills and the agent chain (`agents.yml`, failures, cost) | `portfolio-manager` | ADR 0027 phases; its current issue |
+| ADR 0022, bands, rank weights, `config/portfolio.toml`, the book and broker mechanics, data sources, anything unlisted; every live write (`SOLARA_ALLOW_WRITES=1`) | owner | — |
 - One issue = one deliverable. Title is imperative ("Persist events notes to the DB").
 - Body: **Context** (why, links to ADRs/PRs), **Scope** (what's in / out), **Acceptance**
   (checkable list), **Open questions** (anything needing the owner's choice — don't assume).
