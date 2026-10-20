@@ -78,3 +78,21 @@ risk in `/pm` (owner decision on #214).
 - **Undefined ratios.** ROE is NaN on zero equity (it raised before, #213), and net debt / EBITDA
   is NaN when EBITDA is not positive. It used to be infinite and score −1 whatever the cash; for
   a loss-maker the financing card's runway is the question.
+
+## Amendment: real publication dates (#221, #214 F2)
+
+The statutory lags are about twice reality on AIM (first results ~70 days after a year end, ~50
+after a half-year end, on a 26-name sample), so a point-in-time card was 2-3 months staler than
+what an investor had. `with_publication(fund, ann)` dates each statement period from the
+issuer's NSM filing that published the statements: final / preliminary results or the annual
+report (`FR`, `PRE`, `ACS`) for a fiscal year, the half-year report (`IR`) for an interim, the
+first after the period end and within 12 months of it. A trading update (`TST`) or notice of
+results (`NOR`) never counts, because it can come before the statements and would make them
+known too early. A late filer keeps its real (later) date. With no such filing (no LEI, NSM
+history too short, quarterly codes we don't map) the statutory lag stays. The toolkit and
+`scripts/backtest.py` pass the filings; `scripts/fundamentals.py` and the validator's pack keep
+the statutory lags (conservative).
+
+**Restated figures.** Yahoo serves figures as restated, not as first reported: a mild
+look-ahead in any backtest. The `--save` snapshots of `fetch_fundamentals` build the
+as-first-seen history from now on.

@@ -13,6 +13,7 @@ from solaraalpha.analysis.fundamentals import (
     fx_ticker,
     known,
     usable_from,
+    with_publication,
     yoy,
 )
 from solaraalpha.data.fundamentals import parse_timeseries
@@ -156,3 +157,42 @@ def test_yoy_and_eps_series() -> None:
 def test_errors() -> None:
     with pytest.raises(ValueError):
         fundamentals_card(_fund(), _weekly(), "2010-01-01")
+
+
+def _filings(rows: list[tuple[str, str]]) -> pd.DataFrame:
+    return pd.DataFrame({"published": [_ts(d) for _, d in rows], "type_code": [c for c, _ in rows]})
+
+
+def test_real_publication_dates() -> None:
+    fund = _fund()  # fiscal years to 31 March, half-years to 30 September
+    ann = _filings(
+        [
+            ("TST", "2025-04-20 07:00"),  # pre-close trading update: not the statements
+            ("PRE", "2025-07-10 07:00"),  # FY25 results
+            ("ACS", "2025-08-01 07:00"),  # annual report: later, the prelims count
+            ("IR", "2025-11-20 07:00"),  # H1 FY26
+        ]
+    )
+    pub = with_publication(fund, ann)
+    use = usable_from(pub).set_axis(pd.MultiIndex.from_frame(fund[["field", "date"]]))
+    assert use["annualNetIncome", _ts("2025-03-31")] == _ts("2025-07-10 07:00")
+    assert use["trailingDilutedEPS", _ts("2025-09-30")] == _ts("2025-11-20 07:00")
+    assert use["trailingPeRatio", _ts("2025-08-20")] == _ts("2025-08-20")  # market: own date
+    # the trading update never makes FY25 known: not on 2025-05-01, but by the results
+    assert _ts("2025-03-31") not in set(known(pub, "2025-05-01")["date"])
+    assert _ts("2025-03-31") in set(known(pub, "2025-07-11")["date"])
+    # ...and earlier than the statutory 6-month lag
+    assert _ts("2025-03-31") not in set(known(fund, "2025-07-11")["date"])
+
+
+def test_publication_falls_back_to_statutory_lag() -> None:
+    fund = _fund()
+    lag = usable_from(fund)
+    assert usable_from(with_publication(fund, None)).equals(lag)
+    only_tst = _filings([("TST", "2025-04-20"), ("NOR", "2025-06-01")])
+    assert usable_from(with_publication(fund, only_tst)).equals(lag)
+    fy25 = (fund["field"] == "annualNetIncome") & (fund["date"] == _ts("2025-03-31"))
+    late = _filings([("FR", "2026-01-15")])  # a late filer: its real date, past the 6-month lag
+    assert usable_from(with_publication(fund, late))[fy25].iloc[0] == _ts("2026-01-15")
+    stray = _filings([("FR", "2026-05-01")])  # over a year on: another period's, not FY25's
+    assert usable_from(with_publication(fund, stray))[fy25].iloc[0] == _ts("2025-09-30")

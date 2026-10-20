@@ -13,8 +13,9 @@ pillars, each scored in ``[-1, +1]`` (+ = favourable for a long):
   and share-count dilution.
 
 **No look-ahead.** Statement figures are dated at the period end but published later, so
-:func:`known` makes them usable only after a statutory reporting lag (``ANNUAL_LAG``,
-``INTERIM_LAG``). Market fields (P/E, forward P/E, market cap) are known on their observation
+:func:`known` makes them usable only from the publication of their results filing on the NSM
+(:func:`with_publication`, #221) or, when none is found, after the statutory reporting lag
+(``ANNUAL_LAG``, ``INTERIM_LAG``). Market fields (P/E, forward P/E, market cap) are known on their observation
 date. :func:`fundamentals_card` with ``as_of`` applies those lags; without it (the live view)
 everything fetched counts, since it has all been published by now.
 
@@ -36,6 +37,14 @@ log = get_logger(__name__)
 
 ANNUAL_LAG = pd.DateOffset(months=6)  # AIM rule 19 (Main Market: 4 months)
 INTERIM_LAG = pd.DateOffset(months=3)  # AIM rule 18 / DTR 4.2 half-yearly reports
+# NSM type codes of the filings that publish the statements (#221): a trading update (TST) or a
+# notice of results (NOR) does not. Final / preliminary results or the annual report for a
+# fiscal year; the half-year report for an interim period.
+ANNUAL_RESULTS = frozenset({"FR", "PRE", "ACS"})
+INTERIM_RESULTS = frozenset({"IR"})
+# A results filing up to this long after the period end is that period's, even past the statutory
+# lag (a late filer: the later date is the honest one); beyond it, it belongs to another period.
+MAX_PUBLICATION = pd.DateOffset(months=12)
 YEAR_TOL = pd.Timedelta(days=20)  # "a year earlier" may be off by a few days (52/53-week years)
 FRESH_WEEKS = 13  # market observations older than this are ignored
 REVISION_WEEKS = (4, 26)  # forward-estimate revision measured over this many weeks
@@ -57,15 +66,50 @@ def series(fund: pd.DataFrame, field: str) -> pd.Series:
     return pd.Series(f["value"].to_numpy(), index=pd.DatetimeIndex(f["date"]), name=field)
 
 
-def usable_from(fund: pd.DataFrame) -> pd.Series:
-    """Date from which each row may be used: observation date for market fields; period end
-    plus ``ANNUAL_LAG`` for fiscal-year figures, ``INTERIM_LAG`` for interim ones."""
+def _annual(fund: pd.DataFrame) -> pd.Series:
+    """Rows dated at a fiscal-year end (``annual*`` fields, or any field on such a date)."""
     annual_ends = set(fund.loc[fund["field"].str.startswith("annual"), "date"])
+    return fund["field"].str.startswith("annual") | fund["date"].isin(annual_ends)
+
+
+def usable_from(fund: pd.DataFrame) -> pd.Series:
+    """Date from which each row may be used: observation date for market fields; for statement
+    figures the publication time of their results filing when :func:`with_publication` found
+    one (column ``published``), else period end plus ``ANNUAL_LAG`` for fiscal-year figures,
+    ``INTERIM_LAG`` for interim ones."""
     market = fund["field"].isin(MARKET_FIELDS)
-    annual = fund["field"].str.startswith("annual") | fund["date"].isin(annual_ends)
+    annual = _annual(fund)
     lagged = fund["date"].where(~annual, fund["date"] + ANNUAL_LAG)
     lagged = lagged.where(annual, fund["date"] + INTERIM_LAG)
+    if "published" in fund:
+        lagged = fund["published"].where(fund["published"].notna(), lagged)
     return fund["date"].where(market, lagged)
+
+
+def with_publication(fund: pd.DataFrame, ann: pd.DataFrame | None) -> pd.DataFrame:
+    """``fund`` plus a ``published`` column: for each statement period end, the publication time
+    of the issuer's results filing for it in ``ann`` (NSM), NaT when there is none.
+
+    The filing must be the results themselves (:data:`ANNUAL_RESULTS` for a fiscal-year end,
+    :data:`INTERIM_RESULTS` for an interim one), the first after the period end and within
+    :data:`MAX_PUBLICATION` of it (a late filer's date is kept, even past the statutory lag:
+    that is when the market saw the figures). A trading update published before the statements
+    never counts, so the figures are never known too early; NaT falls back to the statutory lag
+    in :func:`usable_from`. Market fields stay NaT (known on their own date).
+    """
+    out = fund.copy()
+    out["published"] = pd.Series(pd.NaT, index=out.index, dtype="datetime64[ns, UTC]")
+    if ann is None or ann.empty:
+        return out
+    stmt = ~out["field"].isin(MARKET_FIELDS)
+    annual = _annual(out)
+    for is_annual, codes in ((True, ANNUAL_RESULTS), (False, INTERIM_RESULTS)):
+        pub = ann.loc[ann["type_code"].isin(codes), "published"].sort_values()
+        for d in out.loc[stmt & (annual == is_annual), "date"].unique():
+            after = pub[pub > d]
+            if len(after) and after.iloc[0] <= d + MAX_PUBLICATION:
+                out.loc[stmt & (out["date"] == d), "published"] = after.iloc[0]
+    return out
 
 
 def known(fund: pd.DataFrame, as_of: str | pd.Timestamp) -> pd.DataFrame:

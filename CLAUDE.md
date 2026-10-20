@@ -43,7 +43,8 @@ Current state:
   quirks) are added only when a stock needs one.
 - Fundamentals are fetched fresh each run too (`fetch_fundamentals`). Statement dates are
   **period ends, not publication dates**: anything as-of a past date goes through `known()`
-  (statutory reporting lags), never the raw frame.
+  (the real results filing date via `with_publication`, else statutory reporting lags), never the
+  raw frame.
 - Events & catalysts are split: `scripts/events.py` gathers facts programmatically (filings,
   market reactions, expected events, headlines) into an event pack; interpretation is done by
   an agent via the `/events` skill (`.claude/skills/events/SKILL.md`), and the Sunday research
