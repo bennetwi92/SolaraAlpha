@@ -46,7 +46,10 @@ Read `pack.json` in the printed directory:
   `breaker_tripped`, `slots_free` (max positions minus open minus pending).
 - `candidates`: per research-ACT ticker, the `research` verdict (confidence, scores incl.
   `catalyst_score` and `event_risk`, reasons, kill criteria, `trade`), `next_event`,
-  `financing` (runway, dilution, raises; None when not saved), `adv_gbp_20`, `sizing` (`stop_pct` and, at the low / mid / high risk of the band, the position
+  `financing` (runway, dilution, raises; None when not saved), `event_gap` (the next event,
+  `in_first_half` of the horizon, past results-day moves `n` / `worst` / `p90_abs`,
+  `small_sample`, and what the worst and p90 move would cost at each risk of the band, GBP and %
+  of equity), `adv_gbp_20`, `sizing` (`stop_pct` and, at the low / mid / high risk of the band, the position
   value and the risk actually taken after the caps: `capped_by` set means the cap binds),
   `plan_at_default_risk` (what the rules alone would draft, and whether fit would accept it),
   `no_plan` (why it cannot be planned), `already_drafted` (a draft from this run: funding it
@@ -90,6 +93,10 @@ research or monitor note when you consider rotating it.
      candidate's `financing` (`loss_making`, `runway_now_months` from `cash_period`,
      `last_raise`, `raised_since_period`) with the research note's §7; when the card is missing
      and the note doesn't say, treat it as a gap in the research.
+   - **gap, not just stop**: when `event_gap.in_first_half`, the stop is not the worst case.
+     Read `event_gap.cost`: if the worst past move at your risk would cost more than about twice
+     that risk, size down or say why not. A `small_sample` is a reason for caution, not comfort.
+     This is judgement, not a rule (the hard cap waits for the shadow-book test, #223).
    Check `sizing.at`: if a cap binds, the risk you wrote is not the risk you get; say so.
 4. **The book as a whole.** With the allocation added:
    - heat (open + pending + new risk) <= `max_heat`; slots <= `max_positions`; sector <=

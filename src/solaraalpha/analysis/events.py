@@ -12,6 +12,7 @@ and docs/decisions/0006.
 * :func:`expected_events` projects the issuer's recurring scheduled filings (results, trading
   updates, AGM) one cycle forward from their publication anniversaries. The dates are
   *estimates*; the company's own notice of a date overrides them.
+* :func:`event_moves` summarises the past results-day moves (the gap risk a stop can't cover).
 * :func:`build_pack` fetches and assembles all of it into the event pack the agent reads.
 """
 
@@ -42,6 +43,8 @@ SCHEDULED = frozenset({"Financial Results", "General Meetings"})
 VOL_SESSIONS = 60  # return volatility for the z-score
 VOLUME_SESSIONS = 20  # baseline volume
 PRE_SESSIONS = 5  # run-up before the announcement (leakage / positioning)
+NOTICE = frozenset({"NOR"})  # "Notice of Results": a date, not news
+EVENT_QUANTILE = 0.9
 
 
 def material(ann: pd.DataFrame) -> pd.DataFrame:
@@ -153,6 +156,25 @@ def expected_events(
     return pd.DataFrame(rows)
 
 
+def event_moves(ann: pd.DataFrame) -> dict[str, Any]:
+    """Past results-day moves from ``ann`` with :func:`reactions`: ``n`` sessions with a
+    material Financial Results filing (notices of results dropped; filings sharing a session
+    count once), ``worst`` (most negative session return, NaN if none) and ``p90_abs`` (the
+    :data:`EVENT_QUANTILE` of the absolute returns)."""
+    empty = {"n": 0, "worst": float("nan"), "p90_abs": float("nan")}
+    if "ret" not in ann:
+        return empty
+    res = material(ann[(ann["category"] == "Financial Results") & ~ann["type_code"].isin(NOTICE)])
+    rets = res.dropna(subset=["ret"]).drop_duplicates("session")["ret"]
+    if rets.empty:
+        return empty
+    return {
+        "n": len(rets),
+        "worst": float(rets.min()),
+        "p90_abs": float(rets.abs().quantile(EVENT_QUANTILE)),
+    }
+
+
 def build_pack(
     ticker: str,
     days: int = 7,
@@ -217,6 +239,7 @@ def build_pack(
         "routine_filings_skipped": routine,
         "expected_events": _records(expected),
         "results_history": _records(history),
+        "event_moves": event_moves(ann),
         "news_query": headlines.attrs.get("query"),
         "news": _records(headlines),
         "notes": notes,
