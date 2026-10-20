@@ -344,6 +344,9 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
                         trade simulation, memos to owner + PM); `claude --agent senior-quant` or delegate
 .claude/agents/portfolio-manager.md  subagent: PM persona (the book as a whole, allocation and rotations,
                         oversight of the agents, phases B / C, memos to owner); `claude --agent portfolio-manager`
+.claude/agents/fundamental-strategist.md  subagent: fundamentals / balance sheet / valuation / macro / policy
+                        specialist (fundamentals toolkit, expectations, financing risk, event gaps, #214);
+                        `claude --agent fundamental-strategist`
 notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure; fakes.py (FakeTurso), conftest.py (db_backend)
 data/                   gitignored; raw/ processed/ cache/ created on demand
