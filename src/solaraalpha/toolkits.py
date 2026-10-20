@@ -31,6 +31,7 @@ from solaraalpha.analysis.fundamentals import (
     fundamentals_card,
     fx_ticker,
     reporting_currency,
+    with_publication,
 )
 from solaraalpha.analysis.levels import LevelsCard, levels_card
 from solaraalpha.analysis.liquidity import LiquidityCard, liquidity_card
@@ -184,15 +185,16 @@ def _relative_strength(x: Inputs) -> Cards:
 def _fundamentals(x: Inputs, as_of: str | None = None) -> Cards:
     """Growth / value / quality scores, point-in-time via publication lags; the financing card
     (runway, dilution, raises) beside it as context."""
-    pair = fx_ticker(reporting_currency(x.fund), x.weekly.attrs.get("currency"))
-    fx = x.other(pair)["close"] if pair else None
-    card = fundamentals_card(x.fund, x.weekly, as_of, fx)
     try:
         ann: pd.DataFrame | None = x.announcements
-    except Exception as e:  # filings are context: the card goes on without them
+    except Exception as e:  # filings refine the dates and feed financing: go on without them
         log.warning("%s: filings unavailable (%s: %s)", x.ticker, type(e).__name__, e)
         ann = None
-    return {"fundamentals": card, "financing": financing_card(x.fund, ann, card.date, as_of)}
+    fund = with_publication(x.fund, ann)  # real publication dates for known() (#221)
+    pair = fx_ticker(reporting_currency(fund), x.weekly.attrs.get("currency"))
+    fx = x.other(pair)["close"] if pair else None
+    card = fundamentals_card(fund, x.weekly, as_of, fx)
+    return {"fundamentals": card, "financing": financing_card(fund, ann, card.date, as_of)}
 
 
 @toolkit("liquidity")  # no bands: information for sizing (adv_gbp_20) and the validator

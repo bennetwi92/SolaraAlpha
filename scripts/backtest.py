@@ -20,8 +20,10 @@ from pathlib import Path
 import pandas as pd
 
 from solaraalpha.analysis.backtest import forward, replay, report, sweep
+from solaraalpha.analysis.fundamentals import with_publication
 from solaraalpha.analysis.relative_strength import comparisons
 from solaraalpha.config import settings
+from solaraalpha.data.announcements import fetch_announcements, resolve_issuer
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.fundamentals import fetch_fundamentals
 from solaraalpha.data.prices import fetch_daily
@@ -58,6 +60,11 @@ def main(argv: list[str] | None = None) -> None:
         except Exception as e:
             print(f"{t}: fundamentals unavailable ({e})")
             fund = None
+        if fund is not None:
+            try:  # real results publication dates for known() (#221); else statutory lags
+                fund = with_publication(fund, fetch_announcements(resolve_issuer(t).lei))
+            except Exception as e:
+                print(f"{t}: filings unavailable ({e}); statutory lags")
         comp = comparisons(t)
         bench = None
         if comp.market:
