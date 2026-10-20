@@ -15,6 +15,9 @@ open question (§6 Q7); nothing may cost money or need a new secret.
   owner's phone through GitHub notifications, keeps a history, and needs only the workflow's
   `GITHUB_TOKEN` with `issues: write`. The workflow step finds the open `inbox` issue (or
   creates it) and comments with `gh`.
+- **Weekly timing** (2026-10-20): with the agents configured, the weekly message is sent by the
+  agents' plan job after the plans are drafted (the scan's own message said "New plans: none");
+  the scan sends it only when the agents will not run.
 - **Content** comes from `scripts/notify.py --mode daily|weekly --run N`
   (`solaraalpha.notify`), which writes markdown to the channel and **exits 3 when there is
   nothing to send**; the step then posts nothing.

@@ -274,6 +274,9 @@ def render_pack(pack: Pack) -> str:
                 lines.append(f"- thesis: {p['thesis']}")
             lines += [
                 "",
+                f"- **Approve / reject** (Actions → Book → Run workflow): `approve {pid}` or"
+                f' `reject {pid} --reason "..."`',
+                "",
                 f"    uv run python scripts/book.py approve {pid}",
                 f'    uv run python scripts/book.py reject {pid} --reason "..."',
                 "",

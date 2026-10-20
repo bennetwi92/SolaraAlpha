@@ -320,6 +320,16 @@ jobs:
       - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage research >> "$GITHUB_STEP_SUMMARY" || true
       - run: uv run --no-sync python scripts/plan.py --run "${{ needs.gate.outputs.run }}"
       - run: uv run --no-sync python scripts/weekly_pack.py --run "${{ needs.gate.outputs.run }}" --report "$GITHUB_STEP_SUMMARY"
+      - name: Notify the owner of the week's plans (GitHub inbox issue)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set +e
+          uv run --no-sync python scripts/notify.py --mode weekly --run "${{ needs.gate.outputs.run }}" --summary-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --channel github-issue
+          rc=$?
+          set -e
+          if [ "$rc" = "3" ]; then echo "nothing to notify" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
       - name: Fail only if every agent errored
         run: |
           uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage validate
