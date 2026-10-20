@@ -21,8 +21,10 @@ cash_buffer = 0.05         # fraction of equity never deployed
 long_only = true           # the book rejects short positions (§6 Q10)
 entry_validity_days = 7    # an unfilled entry order expires after this (§6 Q8: Sunday for Monday)
 entry_limit_buffer = 0.01  # limit entries at close x (1 + this)
-stop_entry_orders = true   # Trading212 offers stop orders (owner to confirm they work on AIM, §6 Q2);
-                           # false: limit at the trigger once a daily close is above it
+stop_entry_orders = true   # breakout entries are Trading212 stop (market) orders (owner, 2026-10-20;
+                           # ADR 0026); false: limit at the trigger once a daily close is above it.
+                           # Trading212 holds one open order per stock: no target orders, the
+                           # stop comes off while an exit or add is worked
 horizon_weeks = [2, 16]    # holding horizon; held longer while the stock keeps climbing
 target_moves = [0.15, 0.30]  # plan targets: entry x (1 + each), the +15-30% move sought (ADR 0022);
                            # a target hit is a review, not a sell order: the trailing stop exits

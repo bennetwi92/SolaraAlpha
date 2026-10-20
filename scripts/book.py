@@ -8,7 +8,7 @@ uv run python scripts/book.py approve POSITION_ID [--reason TEXT]
 uv run python scripts/book.py amend POSITION_ID [--qty N] [--price P] [--stop P] [--reason TEXT]
 uv run python scripts/book.py reject POSITION_ID --reason TEXT
 uv run python scripts/book.py tickets                       # approved, not yet placed orders
-uv run python scripts/book.py placed ORDER_ID [--ref BROKER_REF] [--at ISO]
+uv run python scripts/book.py placed ORDER_ID [ORDER_ID ...] [--ref BROKER_REF] [--at ISO]
 uv run python scripts/book.py fill ORDER_ID --qty N --price P [--at ISO] [--commission X] [--fees X]
 uv run python scripts/book.py unfilled ORDER_ID [--reason TEXT]   # entry never filled
 uv run python scripts/book.py cancel ORDER_ID [--reason TEXT]
@@ -27,7 +27,9 @@ uv run python scripts/book.py exit POSITION_ID --reason stop|trailing_stop|targe
                                  [--type market|limit] [--price P] [--qty N]
 
 A first fill on an entry order opens the position and drafts its protective stop order
-(approved, so it appears in `tickets` at once); later entry fills re-size that stop. A stop or
+(approved, so it appears in `tickets` at once). Trading212 holds one order per stock (ADR 0026):
+a part fill on a buy cancels the rest of it, and an exit or add takes the stop order off until it
+fills or ends (then the stop is drafted again for the shares held). A stop or
 exit fill that brings the shares to zero closes the position (exit reason, P&L, R-multiple,
 holding weeks) and cancels its remaining orders; `show` adds MFE / MAE from daily prices.
 Dividends recorded against a position count in its net P&L; a split scales the shares, the
@@ -258,7 +260,10 @@ def _tickets(conn: Conn, a: argparse.Namespace) -> None:
 @command("fill")
 def _fill(conn: Conn, a: argparse.Namespace) -> None:
     out = book.fill(conn, a.order_id, a.qty, a.price, a.at, a.commission, a.fees)
-    msg = f"order {a.order_id} {out['order_status']}; position holds {out['shares']} shares"
+    status = out["order_status"]
+    if status == "cancelled":  # a part fill on a buy: the rest is cancelled (ADR 0026)
+        status = "part filled, the rest cancelled (one order per stock)"
+    msg = f"order {a.order_id} {status}; position holds {out['shares']} shares"
     if out["opened"]:
         msg += "; position opened"
     if out["stop_order_id"]:
@@ -421,8 +426,9 @@ def _expire(conn: Conn, a: argparse.Namespace) -> None:
 
 @command("placed")
 def _placed(conn: Conn, a: argparse.Namespace) -> None:
-    book.place_order(conn, a.order_id, a.ref, a.at)
-    print(f"order {a.order_id} placed" + (f" ({a.ref})" if a.ref else ""))
+    for oid in a.order_id:
+        book.place_order(conn, oid, a.ref, a.at)
+        print(f"order {oid} placed" + (f" ({a.ref})" if a.ref else ""))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -465,8 +471,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("tickets", help="approved, not yet placed orders")
 
-    pl = sub.add_parser("placed", help="mark an order as placed at the broker")
-    pl.add_argument("order_id", type=int)
+    pl = sub.add_parser("placed", help="mark orders as placed at the broker")
+    pl.add_argument("order_id", type=int, nargs="+")
     pl.add_argument("--ref", help="broker reference")
     pl.add_argument("--at", help="ISO time (default now)")
 

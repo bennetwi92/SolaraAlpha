@@ -11,7 +11,7 @@ import pytest
 
 from solaraalpha import monitoring, store, toolkits
 from solaraalpha.analysis.relative_strength import Comparisons
-from solaraalpha.portfolio import book
+from solaraalpha.portfolio import book, broker
 from solaraalpha.portfolio.triggers import Trigger
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -491,9 +491,18 @@ def test_pending_entry_review_amend_cancel_and_undo(
     assert entry is not None and entry["qty"] == 200 and entry["price"] == 1560.0
     assert entry["status"] == "approved"  # the replacement has to be placed again
     assert book.position_state(conn, pid).initial_stop == 1470.0
-    lines = notify.applied_changes(conn, "2000-01-01")
-    want = "pending entry amended: stop 1,380p → 1,470p, qty 100 → 200 — amend the entry order in Trading212"
-    assert any(want in line for line in lines), lines
+    task = next(t for t in broker.tasks(conn) if t.position_id == pid)
+    assert task.title == "Change the entry"
+    assert task.steps[0] == (
+        f"Cancel your buy order #{oid} (**Buy 100 · Stop order · stop price 1,560p**)"
+    )
+    new_oid = entry["order_id"]
+    assert task.steps[1].startswith(
+        f"Place **Buy 200 · Stop order · stop price 1,560p** (#{new_oid})"
+    )
+    assert "**Sell 200 · Stop order · stop price 1,470p**" in task.steps[2]
+    assert task.why == "tighter invalidation (the monitor agent)"
+    assert task.undo == f"book.py undo {rid} --reason ..."
     with conn:
         book.undo_revision(conn, rid, "keep the wider stop")
     entry = book.pending_entry(conn, pid)
@@ -506,6 +515,12 @@ def test_pending_entry_review_amend_cancel_and_undo(
     assert book.position_status(conn, pid) == "cancelled" and book.pending_entry(conn, pid) is None
     with pytest.raises(ValueError, match="re-plan"):
         book.undo_revision(conn, cid, "oops")
-    lines = notify.applied_changes(conn, "2000-01-01")
-    assert any("pending entry cancelled — cancel the entry order in Trading212" in x for x in lines)
+    assert all(t.position_id != pid for t in broker.tasks(conn))  # nothing left to place
+    (gone,) = broker.cancels_since(conn, "2000-01-01")
+    assert gone.ticker == "JET2.L" and gone.steps == [
+        f"Cancel your buy order #{oid} (**Buy 100 · Stop order · stop price 1,560p**)"
+        " if it is still there"
+    ]
+    text = notify.daily_message(conn, run, ("revisions",))
+    assert text is not None and "### 1. JET2.L — Cancel an order" in text
     conn.close()

@@ -189,7 +189,7 @@ def test_event_policy_decided_in_advance(db_backend: Path | None) -> None:
     )
     assert (c.event_due, c.event_action) == ("", "")
 
-    # trim / exit are proposed as revisions the owner decides on; flag / hold propose nothing
+    # trim / exit are applied as revisions (ADR 0026), once per event; flag / hold propose nothing
     conn = book.connect(db_backend)
     with conn:
         pid, oid = book.draft_position(
@@ -215,16 +215,20 @@ def test_event_policy_decided_in_advance(db_backend: Path | None) -> None:
         assert rid is not None
         assert (
             propose_event_action(conn, st, c, rules(event_policy="trim"), 3) is None
-        )  # pending: once
+        )  # decided: once per event
     rv = book.revisions(conn, pid)
     assert rv["action"].tolist() == ["take_partial"] and rv["new"].iloc[0] == {
         "qty": 30,
         "type": "market",
     }
+    assert rv["status"].iloc[0] == "accepted" and rv["decided_by"].iloc[0] == "pipeline"
     assert rv["trigger"].iloc[0] == "event_due 2026-10-19 (review run 3)"
     assert rv["reason"].iloc[0] == "event due 2026-10-19 (confirmed): policy trim"
+    od = book.orders(conn, pid).set_index("purpose")
+    assert od.loc["exit", "qty"] == 30 and od.loc["exit", "status"] == "approved"
+    assert od.loc["stop", "status"] == "cancelled"  # one order per stock: off for the sale
     with conn:
-        book.decline_revision(conn, int(rid), "holding through")
+        book.undo_revision(conn, int(rid), "holding through")
         c = review(
             st, THEN, {**NOW, "position": position(), "events": soon}, rules(event_policy="exit")
         )
@@ -235,8 +239,8 @@ def test_event_policy_decided_in_advance(db_backend: Path | None) -> None:
         rv["action"].tolist() == ["take_partial", "exit"]
         and rv["trigger"].iloc[1] == "event_due 2026-10-19"
     )
-    with conn:
-        done = book.accept_revision(conn, int(rid2))
+    assert rv["status"].tolist() == ["undone", "accepted"]
+    done = rv["done"].iloc[1]
     assert book.order_status(conn, int(done["exit_order_id"])) == "approved"
     conn.close()
 

@@ -3,8 +3,8 @@
 Reads one run from the results DB (its labels, cards and price snapshots), plans and sizes
 every ticker whose final label is ACT at the research agent's entry and stop (its card's
 ``trade_*`` fields, ADR 0023; no agent levels, no plan) (:mod:`solaraalpha.portfolio.plan`), checks the plans
-against the book (:mod:`solaraalpha.portfolio.fit`) and writes the accepted ones as draft
-positions with their entry order, the full plan in the ``drafted`` payload, every justifying
+against the book (:mod:`solaraalpha.portfolio.fit`) and writes the accepted ones as approved
+positions (no owner approval, ADR 0026) with their entry order, the full plan in the ``drafted`` payload, every justifying
 card frozen as entry conditions and the research's kill criteria as thesis conditions. Re-running
 for the same run is a no-op for tickers that already have a position from it. The weekly pack
 reuses :func:`plan_run` in dry-run mode. See docs/decisions/0015.
@@ -302,7 +302,8 @@ def write_plan(
     rules: Rules,
     at: str,
 ) -> int:
-    """Draft position + entry order + entry conditions + thesis conditions for one plan."""
+    """Position + entry order + entry conditions + thesis conditions for one plan, approved as
+    it is drafted: the owner is told what to place, never asked to approve (ADR 0026)."""
     research = cards.get("research") or {}
     thesis = str(research.get("reasons") or "")
     payload = {**asdict(plan), "fit_flags": list(flags)}
@@ -323,6 +324,7 @@ def write_plan(
         rules=rules,
         valid_until=plan.valid_until.strftime("%Y-%m-%d"),
     )
+    book.approve_position(conn, pid, "approved as planned (ADR 0026)", book.PIPELINE, at)
     frozen = {m: cards[m] for m in ENTRY_CONDITION_MODELS if m in cards}
     book.add_entry_conditions(conn, pid, run_id, frozen)
     for crit in kill_criteria(research):
