@@ -33,6 +33,7 @@ class Rules:
     entry_limit_buffer: float  # limit entries at close x (1 + buffer)
     stop_entry_orders: bool  # broker accepts buy-stop orders on AIM
     horizon_weeks: tuple[int, int]  # holding horizon (min, max)
+    target_moves: tuple[float, float]  # plan targets as moves above the entry (ADR 0022)
     trail_atr: float  # chandelier trailing stop, in ATRs
     event_flag_days: int  # a scheduled event within this many days of entry is flagged
     max_agent_tickers: int  # cap on tickers the unattended agents work per run, by rank
@@ -114,6 +115,15 @@ def load_rules(path: Path = RULES) -> Rules:
     if not (isinstance(hw, list) and len(hw) == 2 and all(isinstance(w, int) for w in hw)):
         raise ValueError(f"horizon_weeks: expected two integers, got {hw!r}")
     values["horizon_weeks"] = (hw[0], hw[1])
+    tm = raw["target_moves"]
+    if not (
+        isinstance(tm, list)
+        and len(tm) == 2
+        and all(isinstance(m, int | float) and not isinstance(m, bool) for m in tm)
+        and 0 < tm[0] < tm[1]
+    ):
+        raise ValueError(f"target_moves: expected two increasing moves > 0, got {tm!r}")
+    values["target_moves"] = (float(tm[0]), float(tm[1]))
     rules = Rules(**values)  # type: ignore[arg-type]
     _validate(rules)
     return rules

@@ -12,8 +12,8 @@ from solaraalpha.portfolio.rules import Rules, load_rules
 DATE = pd.Timestamp("2026-10-09", tz="UTC")
 
 
-def rules(**over: object) -> Rules:
-    return Rules(**{**load_rules().__dict__, **over})
+def rules(**over: object) -> Rules:  # the sizing tests' numbers assume 0.75% risk per trade
+    return Rules(**{**load_rules().__dict__, "risk_per_trade": 0.0075, **over})
 
 
 def levels(**over: object) -> dict:
@@ -38,7 +38,8 @@ def test_limit_entry_near_the_close_with_levels_stop() -> None:
     assert p.entry == pytest.approx(1515.0)  # close x 1.01
     assert p.stop == 1400.0 and p.stop_source == "levels"
     assert p.risk_per_share == pytest.approx(115.0)
-    assert p.reward_risk == pytest.approx((1800 - 1515) / 115)
+    assert p.target == pytest.approx(1515 * 1.15) and p.target_2 == pytest.approx(1515 * 1.30)
+    assert p.reward_risk == pytest.approx(1515 * 0.15 / 115) and p.next_level == 1800.0
     assert p.valid_until == DATE + pd.Timedelta(days=7)
     # risk 0.75% of £10k = £75; risk per share 115p = £1.15 -> 65 shares
     assert p.shares == 65 and p.capped_by == "risk"
@@ -105,24 +106,25 @@ def test_review_date_and_event_flag() -> None:
     assert make_plan("JET2.L", levels(), TECH, nan, rules(), 1e4, 1e4).flags == ()
 
 
-def test_blue_sky_and_wide_stop_flag() -> None:
+def test_targets_are_the_move_sought_and_wide_stops_are_not_flagged() -> None:
     p = make_plan(
         "JET2.L", levels(target=math.nan, target_2=math.nan), TECH, None, rules(), 1e4, 1e4
     )
-    assert math.isnan(p.target) and p.reward_risk == math.inf
+    assert math.isnan(p.next_level) and p.target == pytest.approx(1515 * 1.15)  # blue sky
     p = make_plan("JET2.L", levels(stop=1200.0), TECH, None, rules(), 1e4, 1e4)
-    assert "risk_pct > 15%" in p.flags
-    # a raised entry above the first target: use the next one
+    assert p.flags == ()  # a 21% stop: volatility is wanted (ADR 0022)
+    # a raised entry above the first level: the next level is the one above it
     p = make_plan(
         "JET2.L",
         levels(coil_pending=True, trigger=1850.0, target=1800.0),
         TECH,
         None,
-        rules(),
+        rules(target_moves=(0.2, 0.4)),
         1e4,
         1e4,
     )
-    assert p.target == 2000.0 and math.isnan(p.target_2)
+    assert p.next_level == 2000.0
+    assert (p.target, p.target_2) == (pytest.approx(1850 * 1.2), pytest.approx(1850 * 1.4))
 
 
 def test_adv_gbp() -> None:

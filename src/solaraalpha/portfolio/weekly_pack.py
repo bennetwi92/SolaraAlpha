@@ -251,6 +251,10 @@ def render_pack(pack: Pack) -> str:
                 if rr is None or (isinstance(rr, float) and math.isinf(rr))
                 else f"{float(rr):.1f}"
             )
+            if "next_level" in pl:  # plans since ADR 0022: targets are the move sought
+                nl = pl.get("next_level")
+                nl_ok = nl is not None and not (isinstance(nl, float) and math.isnan(nl))
+                rr_s += f"; next level {_px(nl, ccy) if nl_ok else 'blue sky'}"
             risk_amt = float(pl.get("risk_amount") or 0.0)
             pct = f" ({risk_amt / eq.equity:.2%} of equity)" if eq.equity > 0 else ""
             lines += [
