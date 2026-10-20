@@ -7,7 +7,10 @@
 
 confirmed = false          # owner has not set these; reports warn while false
 currency = "GBP"           # account currency (only GBP is supported: no account FX yet)
-capital = 10000.0          # PLACEHOLDER starting capital (account currency)
+# Broker: Trading212, Stocks & Shares ISA (owner, 2026-10-20). Long only, no margin, no shorting;
+# gains and dividends tax-free; no commission; AIM shares carry no stamp duty. Not every AIM
+# stock is offered on Trading212: check before placing.
+capital = 5000.0           # paper-test starting capital (owner, 2026-10-20); deposited with `book.py cash deposit`
 risk_per_trade = 0.0075    # PLACEHOLDER fraction of equity lost if the stop is hit
 max_positions = 8          # PLACEHOLDER
 max_position_pct = 0.20    # PLACEHOLDER max position value / equity
@@ -18,7 +21,7 @@ cash_buffer = 0.05         # PLACEHOLDER fraction of equity never deployed
 long_only = true           # the book rejects short positions (§6 Q10)
 entry_validity_days = 7    # an unfilled entry order expires after this (§6 Q8: Sunday for Monday)
 entry_limit_buffer = 0.01  # limit entries at close x (1 + this)
-stop_entry_orders = true   # broker accepts buy-stop orders on AIM (owner to confirm, §6 Q2);
+stop_entry_orders = true   # Trading212 offers stop orders (owner to confirm they work on AIM, §6 Q2);
                            # false: limit at the trigger once a daily close is above it
 horizon_weeks = [2, 16]    # holding horizon; held longer while the stock keeps climbing
 trail_atr = 3.0            # chandelier trailing stop distance in ATRs (ADR 0003)
