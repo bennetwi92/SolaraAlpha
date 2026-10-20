@@ -104,6 +104,9 @@ def test_slot_exhaustion_rejects_the_lowest_ranked() -> None:
     assert [p.ticker for p in rep.accepted] == ["B.L"]
 
 
+CAPS = rules(max_sector_pct=0.35, max_heat=0.06)
+
+
 def test_sector_and_heat_caps_reject() -> None:
     held = holdings(("H.L", 2500.0, 100.0))  # Tech already 25%
     scores = {"A.L": 0.9, "C.L": 0.5}
@@ -112,7 +115,7 @@ def test_sector_and_heat_caps_reject() -> None:
         held,
         EMPTY,
         EQ,
-        rules(),
+        CAPS,
         scores,
         sectors=SECTORS,
     )
@@ -124,7 +127,7 @@ def test_sector_and_heat_caps_reject() -> None:
         held,
         EMPTY,
         EQ,
-        rules(),
+        CAPS,
         scores,
         sectors=SECTORS,
     )
@@ -140,7 +143,7 @@ def test_sector_and_heat_caps_reject() -> None:
         held,
         EMPTY,
         EQ,
-        rules(),
+        CAPS,
         scores,
         sectors=SECTORS,
     )
@@ -152,7 +155,7 @@ def test_sector_and_heat_caps_reject() -> None:
         EMPTY,
         EMPTY,
         EQ,
-        rules(),
+        CAPS,
         scores,
         sectors=SECTORS,
     )

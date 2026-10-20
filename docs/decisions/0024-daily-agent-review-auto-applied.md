@@ -31,7 +31,8 @@ everything still at risk, and the agents' changes to take effect without waiting
   unchanged: `revision_proposed` → the orders → `revision_accepted` (with `done`: order ids, old
   → new). One the book refuses (a lower stop, an open-position action on a pending entry, a stop
   above the entry) is recorded as `revision_declined` by the pipeline with the reason; nothing
-  else changes. Pipeline proposals (adds, pre-results trims) still wait for the owner.
+  else changes. Pipeline proposals (pre-results trims) still wait for the owner. Since ADR 0025 the monitor
+  can also `add` to an open position, within the portfolio limits.
 - **The owner is told what to do at the broker** (Trading212): the daily inbox lists each
   applied change with the broker action ("stop raised 743.3p → 760p — amend the stop order in
   Trading212, then `book.py placed N`") and the undo command. A replaced order starts

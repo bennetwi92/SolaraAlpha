@@ -337,7 +337,7 @@ def test_run_daily_saves_triggers_and_reports(
     out = capsys.readouterr().out
     assert "Checked: JET2.L (open), W.L (watch), X.L (watch), E.L (pending)" in out
     assert "Market (^FTAS): **calm**" in out
-    assert "Book drawdown" in out and "circuit-breaker limit 10%; breaker off" in out
+    assert "Book drawdown" in out and "circuit-breaker limit 15%; breaker on" in out
     assert "### Owner actions" in out and "traded through the stop 1,400.0" in out
     assert "reached the target 1,800.0" in out and "book.py exit 1 --reason target" in out
     assert "closed 301.0 above the trigger 300.0: place entry order" in out

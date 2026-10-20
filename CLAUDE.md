@@ -86,7 +86,8 @@ Current state:
   (`/monitor`, docs/decisions/0018) re-evaluates each one (queue capped by `max_agent_tickers`,
   event-triggered first) and sets the stop by judgement (the levels / ATR / chandelier stops
   are context). Its revision is **applied as it is recorded** (open: tighten_stop /
-  take_partial / exit / revise_target; pending: amend_entry / cancel; `hold` changes nothing);
+  take_partial / exit / revise_target / add; pending: amend_entry / cancel; `hold` changes
+  nothing; adds are the agent's call, refused by the book over the portfolio limits, ADR 0025);
   the book refuses an impossible one (recorded as declined). The owner is told in the inbox
   exactly what to change in Trading212 and can reverse it with `book.py undo REV_ID --reason`. The **market regime** (`analysis/regime.py`: `^FTAS` drawdown, 1-day z, realised
   vol percentile → calm / stressed / risk_off, placeholders) heads the daily report, is saved as a
@@ -118,9 +119,10 @@ Current state:
 - **Broker: Trading212, Stocks & Shares ISA** — long only, no margin, no commission, AIM has no
   stamp duty; not every AIM stock is offered there.
 - **Portfolio rules** (capital, risk per trade, position / sector / heat limits, entry validity,
-  long-only, scaling, the pre-results event policy, the drawdown circuit breaker) live in `config/portfolio.toml`, read through `portfolio.rules.load_rules`. All
-  values are **placeholders** until the owner sets them and flips `confirmed = true`; reports
-  print a warning while it is false. See epic #104.
+  long-only, the pre-results event policy, the drawdown circuit breaker) live in `config/portfolio.toml`, read through `portfolio.rules.load_rules`. The owner
+  set them on 2026-10-20 (`confirmed = true`: £5,000, 2% risk, 5 positions, 25% / 40% position
+  / sector caps, 10% heat, breaker on at 15%); reports warn whenever `confirmed` is false. See
+  epic #104.
 
 ## Hard rules
 
@@ -161,7 +163,7 @@ Current state:
 | Validator pack (DB only, independent of other agents) | `uv run python scripts/validate_pack.py JET2.L --run N` / `--run N --all` |
 | Validator (agent) | `/validate JET2.L --run N` or `/validate --run N` in Claude Code |
 | Monitor pack for a daily run's open positions and pending entries (then vs now, thesis, filing text, research levels, systematic stops) | `uv run python scripts/monitor_pack.py --run N [--position ID]` |
-| Monitor (agent): daily re-evaluation; open: hold / tighten / partial / exit / revise target; pending: hold / amend_entry / cancel — applied as recorded (ADR 0024) | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions --status all` / `undo REV_ID --reason` (pipeline proposals: `accept REV_ID` / `decline REV_ID --reason`) |
+| Monitor (agent): daily re-evaluation; open: hold / tighten / partial / exit / revise target / add; pending: hold / amend_entry / cancel — applied as recorded (ADR 0024) | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions --status all` / `undo REV_ID --reason` (pipeline proposals: `accept REV_ID` / `decline REV_ID --reason`) |
 | Validator disagreement log (toolkits not warranted, concerns, rate per run) | `uv run python scripts/validator_stats.py [--since D]` |
 | Post-mortem pack for a closed position (record + weekly bars, hindsight labelled) | `uv run python scripts/postmortem_pack.py POSITION_ID` / `--since ISO` |
 | Post-mortem (agent): set-up, what worked / failed, signal right or wrong, rule proposals | `/postmortem POSITION_ID` in Claude Code → `record.py verdict ... --position ID` |
@@ -264,7 +266,6 @@ src/solaraalpha/        importable package — all reusable code lives here
     risk.py             holdings / equity / heat / exposure / breaches vs the rules; sector_of
                         (optional `sector` per stock in config/benchmarks.toml)
     plan.py             TradePlan + make_plan: the agent's entry + stop (0023), targets,
-                        add_plan: scale into a winner (>= 1R, breakout or pullback, #128),
                         risk-based size with caps, review dates, flags — see docs/decisions/0015
     fit.py              portfolio fit before drafting: slots, sector cap, heat (reject);
                         correlation, event clash (flag); rank_score — 0015

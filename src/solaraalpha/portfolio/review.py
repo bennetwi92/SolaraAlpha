@@ -22,7 +22,6 @@ from solaraalpha.log import get_logger
 from solaraalpha.pipeline import Step, run_toolkit
 from solaraalpha.portfolio import book
 from solaraalpha.portfolio.book import PIPELINE, PositionState
-from solaraalpha.portfolio.plan import TradePlan, add_plan
 from solaraalpha.portfolio.rules import Rules
 from solaraalpha.store import Conn
 from solaraalpha.toolkits import Inputs
@@ -214,41 +213,7 @@ class Reviewed:
     steps: list[Step]
     cards: dict[str, Any]
     stop_order_id: int | None = None
-    add: TradePlan | None = None  # a proposed add (#128), None when the rules say no
-    add_revision_id: int | None = None
     event_revision_id: int | None = None  # the pre-results trim / exit proposed (#129)
-
-
-def adds_so_far(conn: Conn, position_id: int) -> int:
-    """Filled ``add`` orders on the position (an accepted but unfilled add counts too, so the
-    cap is not overshot while one is live)."""
-    od = book.orders(conn, position_id)
-    return int(
-        (
-            (od["purpose"] == "add") & ~od["status"].isin(["cancelled", "expired", "not_filled"])
-        ).sum()
-    )
-
-
-def propose_add(conn: Conn, state: PositionState, plan: TradePlan, run_id: int | None) -> int:
-    """Record the add as a ``revision_proposed`` event (action ``add``) the owner accepts with
-    ``book.py accept`` (which drafts the add order and raises the stop) or declines."""
-    return book.propose_revision(
-        conn,
-        state.position_id,
-        "add",
-        {
-            "qty": plan.shares,
-            "entry": plan.entry,
-            "type": plan.entry_type,
-            "stop": plan.stop,
-            "valid_until": plan.valid_until.strftime("%Y-%m-%d"),
-            "risk_amount": plan.risk_amount,
-        },
-        f"{plan.flags[0]}; stop to {plan.stop:,.1f} ({plan.stop_source}); {plan.flags[1]}",
-        PIPELINE,
-        trigger=f"review run {run_id}" if run_id is not None else "review",
-    )
 
 
 def review_positions(
@@ -285,19 +250,8 @@ def review_positions(
             log.warning("position %d (%s): no position card; review limited", pid, state.ticker)
         card = review(state, then, cards, rules)
         item = Reviewed(state, card, steps, cards)
-        if card.action == "hold":
-            item.add = add_plan(
-                state,
-                card,
-                cards.get("levels"),
-                cards.get("technical"),
-                rules,
-                adds=adds_so_far(conn, pid),
-            )
         if run_id is not None:
             with conn:
-                if item.add is not None and not _add_pending(conn, pid):
-                    item.add_revision_id = propose_add(conn, state, item.add, run_id)
                 item.event_revision_id = propose_event_action(conn, state, card, rules, run_id)
                 rows = [(s.stage, s.toolkit, s.status, s.reason) for s in steps]
                 store.save_ticker(
@@ -313,11 +267,6 @@ def review_positions(
         out.append(item)
         log.info("%s: review %s (%s)", state.ticker, card.action, card.reason)
     return out
-
-
-def _add_pending(conn: Conn, position_id: int) -> bool:
-    rv = book.revisions(conn, position_id, status="proposed")
-    return bool((rv["action"] == "add").any()) if not rv.empty else False
 
 
 def raise_stop(conn: Conn, state: PositionState, new_stop: float, run_id: int) -> int:
@@ -375,13 +324,6 @@ def review_report(items: list[Reviewed]) -> str:
             line += f"; **event due {c.event_due}** ({c.event_status}): policy {c.event_action}"
             if it.event_revision_id:
                 line += f" — `book.py accept {it.event_revision_id}` / `decline`"
-        if it.add is not None:
-            line += (
-                f"; **add proposed** ({it.add.flags[0]}): {it.add.shares} shares limit {it.add.entry:,.1f},"
-                f" stop to {it.add.stop:,.1f}, risk {it.add.risk_amount:,.0f}"
-            )
-            if it.add_revision_id:
-                line += f" — `book.py accept {it.add_revision_id}`"
         lines.append(line)
     return "\n".join(lines) + "\n"
 

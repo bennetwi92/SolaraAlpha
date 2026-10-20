@@ -1,23 +1,23 @@
 # Portfolio rules: the one place sizing, portfolio fit and the risk view take their limits from
 # (solaraalpha.portfolio.rules; epic #104, user story map S0.3).
 #
-# Every number marked PLACEHOLDER is a stand-in the owner has not set (story map §6 Q1, Q2,
-# Q8, Q10). Reports print a warning while `confirmed` is false. Change a value here, not in
-# code; `load_rules` validates the file and rejects unknown keys.
+# Set by the owner on 2026-10-20 (story map §6 Q1, Q2, Q8, Q10); bands and limits are revisited
+# once backtested. Reports print a warning while `confirmed` is false. Change a value here, not
+# in code; `load_rules` validates the file and rejects unknown keys.
 
-confirmed = false          # owner has not set these; reports warn while false
+confirmed = true           # owner set these on 2026-10-20; reports warn while false
 currency = "GBP"           # account currency (only GBP is supported: no account FX yet)
 # Broker: Trading212, Stocks & Shares ISA (owner, 2026-10-20). Long only, no margin, no shorting;
 # gains and dividends tax-free; no commission; AIM shares carry no stamp duty. Not every AIM
 # stock is offered on Trading212: check before placing.
 capital = 5000.0           # paper-test starting capital (owner, 2026-10-20); deposited with `book.py cash deposit`
 risk_per_trade = 0.02      # fraction of equity lost if the stop is hit (owner, 2026-10-20)
-max_positions = 8          # PLACEHOLDER
-max_position_pct = 0.20    # PLACEHOLDER max position value / equity
-max_sector_pct = 0.35      # PLACEHOLDER max sector value / equity
-max_heat = 0.06            # PLACEHOLDER sum of open risk to the stops / equity
-max_adv_pct = 0.05         # PLACEHOLDER position value <= this x median daily traded value
-cash_buffer = 0.05         # PLACEHOLDER fraction of equity never deployed
+max_positions = 5          # (owner, 2026-10-20) ~£800 each at 2% risk and 10-15% stops
+max_position_pct = 0.25    # max position value / equity (owner, 2026-10-20)
+max_sector_pct = 0.40      # max sector value / equity (owner, 2026-10-20)
+max_heat = 0.10            # sum of open risk to the stops / equity: 5 full-risk trades (owner, 2026-10-20)
+max_adv_pct = 0.05         # position value <= this x median daily traded value
+cash_buffer = 0.05         # fraction of equity never deployed
 long_only = true           # the book rejects short positions (§6 Q10)
 entry_validity_days = 7    # an unfilled entry order expires after this (§6 Q8: Sunday for Monday)
 entry_limit_buffer = 0.01  # limit entries at close x (1 + this)
@@ -28,15 +28,14 @@ target_moves = [0.15, 0.30]  # plan targets: entry x (1 + each), the +15-30% mov
                            # a target hit is a review, not a sell order: the trailing stop exits
 trail_atr = 3.0            # chandelier trailing stop distance in ATRs (ADR 0003)
 event_flag_days = 14       # results / trading update within this many days of entry = flag
-max_agent_tickers = 10     # PLACEHOLDER cap on tickers the unattended agents work per run (ADR 0019)
-add_fraction = 0.5         # PLACEHOLDER add size as a fraction of the initial shares (#128)
-max_adds = 2               # PLACEHOLDER adds per position
-add_min_r = 1.0            # PLACEHOLDER only add once the position is this many R in profit
-event_policy = "flag"      # PLACEHOLDER results inside event_flag_days of an open position: flag / hold / trim / exit (§6 Q9, #129)
-event_trim_fraction = 0.5  # PLACEHOLDER fraction of the shares a `trim` policy proposes to sell
-circuit_breaker = false    # off until the owner turns it on (#143, §6 Q1)
-max_drawdown_new_entries = 0.10  # PLACEHOLDER equity this far below its high stops new entries while the breaker is on
+max_agent_tickers = 10     # cap on tickers the unattended agents work per run (ADR 0019)
+# Adds to a winner are the monitor agent's call (size, timing; ADR 0025), within the limits above.
+event_policy = "flag"      # results inside event_flag_days of an open position: flag / hold / trim / exit (§6 Q9, #129);
+                           # flag (owner, 2026-10-20): the monitor agent decides hold / trim / exit
+event_trim_fraction = 0.5  # fraction of the shares a `trim` policy proposes to sell
+circuit_breaker = true     # on (owner, 2026-10-20; #143, §6 Q1)
+max_drawdown_new_entries = 0.15  # equity this far below its high stops new entries while the breaker is on
 benchmark = "^FTAS"        # equity-curve comparison (Yahoo ticker). ^FTAI = FTSE AIM All-Share is also served
-shortlist_size = 7         # PLACEHOLDER top-ranked tickers the screen sends to the agents a week (ADR 0022, #192)
-shortlist_catalysts = 3    # PLACEHOLDER at most this many more join the shortlist on a catalyst (outside the top N)
-min_adv_gbp = 25000.0      # PLACEHOLDER the screen's liquidity floor: 20-session median daily traded value, GBP
+shortlist_size = 7         # top-ranked tickers the screen sends to the agents a week (ADR 0022, #192)
+shortlist_catalysts = 3    # at most this many more join the shortlist on a catalyst (outside the top N)
+min_adv_gbp = 25000.0      # the screen's liquidity floor: 20-session median daily traded value, GBP
