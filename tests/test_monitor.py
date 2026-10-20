@@ -62,7 +62,12 @@ class Research:
 
 
 @pytest.fixture
-def world(db_backend: Path | None, monkeypatch: pytest.MonkeyPatch) -> tuple[Path | None, int, int]:
+def world(
+    db_backend: Path | None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> tuple[Path | None, int, int]:
+    from solaraalpha.config import settings
+
+    monkeypatch.setattr(settings, "data_dir", tmp_path / "data")  # packs never land in data/
     """An open JET2.L position drafted from a scan run with entry conditions and thesis
     conditions, and a daily run with a filing trigger on it."""
     monkeypatch.setattr(toolkits, "fetch_daily", lambda ticker: _daily())

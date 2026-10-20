@@ -185,22 +185,12 @@ def latest_research(conn: Conn, ticker: str) -> dict[str, Any] | None:
 
 
 def research_levels(research: dict[str, Any] | None) -> dict[str, Any] | None:
-    """The trade levels the research agent set (ADR 0023): its ``levels`` object (stored as
-    JSON text or as ``levels.<field>`` / ``levels_<field>`` card fields), None when absent."""
-    if not research:
-        return None
-    raw = research.get("levels")
-    if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except ValueError:
-            raw = None
-    out: dict[str, Any] = dict(raw) if isinstance(raw, dict) else {}
-    for k, v in research.items():
-        for prefix in ("levels.", "levels_"):
-            if k.startswith(prefix):
-                out[k.removeprefix(prefix)] = v
-    return out or None
+    """The trade levels the research agent set (ADR 0023: ``trade_*`` card fields), None when
+    the research card has none."""
+    from solaraalpha.agents import trade_levels
+
+    levels = trade_levels(research) if research else None
+    return levels.model_dump() if levels is not None else None
 
 
 def systematic_stops(cards_now: dict[str, Any]) -> dict[str, Any]:

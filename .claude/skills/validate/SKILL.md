@@ -41,8 +41,9 @@ Read `pack.json` in the printed directory. It holds, built only from the DB:
   run, or `"unavailable"`.
 
 Next to it is **`chart.png`**: the last 104 weekly candles with the 10w / 40w MAs, the levels
-model's support, resistance and trendlines, the coil lines and trigger, and the plan's stop
-and target, over volume. **Read it** (the Read tool renders images) and judge the picture, not
+model's support, resistance and trendlines, the coil lines and trigger, and the levels map's
+stop and target (context only: the research agent sets the trade's entry and stop, ADR 0023),
+over volume. **Read it** (the Read tool renders images) and judge the picture, not
 only the numbers.
 
 If the pack cannot be built (the command fails), write an **ERROR** verdict with the failure
