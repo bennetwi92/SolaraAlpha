@@ -18,6 +18,7 @@ from solaraalpha.analysis.relative_strength import (
     comparisons,
     rs_card,
 )
+from solaraalpha.analysis.technical import scorecard
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.prices import fetch_daily
 from solaraalpha.store import save_run
@@ -70,7 +71,7 @@ def main() -> None:
         print(ranked.map(lambda r: f"{r:+.1%}").to_string(), "\n")
 
     print("Scorecard:")
-    card = rs_card(c)
+    card = rs_card(c, scorecard(weekly).trend)  # trend feeds the leadership / spike flags
     for k, v in asdict(card).items():
         print(f"  {k:>13}: {v:.2f}" if isinstance(v, float) else f"  {k:>13}: {v}")
 

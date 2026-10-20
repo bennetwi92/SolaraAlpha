@@ -1,7 +1,7 @@
 """Market regime from the index: is this a "tighten everything" day? (issue #142, S7.9)
 
-Pure function over the market index's daily bars (``^FTAS`` by default, the existing market
-default): drawdown from the 20-day high, the day's return in units of 60-day volatility, the
+Pure function over the market index's daily bars (the daily job passes the rules' ``benchmark``,
+``^FTAI`` since #210 phase 0; ``^FTAS`` is the function's default): drawdown from the 20-day high, the day's return in units of 60-day volatility, the
 20-day realised volatility and its percentile over the last year, and a three-way ``regime``
 with **placeholder** rules: ``risk_off`` when the drawdown is below -8% or the day is a
 3-sigma fall; ``stressed`` when realised vol sits above its 80th percentile; else ``calm``.

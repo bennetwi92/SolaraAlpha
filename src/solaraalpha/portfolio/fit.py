@@ -27,6 +27,12 @@ RANK_FIELDS = (
     ("levels", "compression"),
     ("fundamentals", "growth"),
 )
+# Shown wherever the agents read the rank (validator, PM and weekly packs), until a rank model
+# passes the bar agreed in #210 (ADR 0029).
+RANK_NOTE = (
+    "The screen rank is unvalidated: no test has yet shown that higher-ranked stocks make better"
+    " trades (#210). Treat it as a wide net, not a forecast."
+)
 CORRELATION_WEEKS = 26
 CORRELATION_FLAG = 0.7  # placeholder: weekly-return correlation with a holding above this flags
 

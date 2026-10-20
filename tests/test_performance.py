@@ -174,13 +174,13 @@ def test_history_script_offline(
     frames = {
         "A.L": _px("A.L", {"2026-10-01": 1500.0, "2026-10-20": 1650.0}),
         "B.L": _px("B.L", {"2026-10-01": 500.0, "2026-10-20": 550.0}),
-        "^FTAS": _px("^FTAS", {"2026-10-01": 4000.0, "2026-10-20": 4200.0}, currency="GBP"),
+        "^FTAI": _px("^FTAI", {"2026-10-01": 4000.0, "2026-10-20": 4200.0}, currency="GBP"),
     }
     monkeypatch.setattr(portfolio_cli, "fetch_daily", lambda t: frames[t])
     portfolio_cli.main(["--history", "--db", str(db)])
     out = capsys.readouterr().out
     assert "Equity curve 2026-10-01 → 2026-10-30: £10,190 on net flows £10,000 (P&L £190)" in out
-    assert "Time-weighted return +1.90% vs ^FTAS +5.00% (excess -3.10%)" in out
+    assert "Time-weighted return +1.90% vs ^FTAI +5.00% (excess -3.10%)" in out
     assert "Max drawdown -0.10% from 2026-10-01 to 2026-10-05" in out  # the commissions
     assert "Correlated holdings (26w > 0.7):" in out
 
@@ -199,7 +199,7 @@ def test_history_script_offline(
     text = render_pack(build_pack(conn, run_id))
     conn.close()
     assert (
-        "- performance since 2026-10-01: P&L £190 on net flows £10,000, time-weighted +1.9%, ^FTAS +5.0%, max drawdown -0.1%"
+        "- performance since 2026-10-01: P&L £190 on net flows £10,000, time-weighted +1.9%, ^FTAI +5.0%, max drawdown -0.1%"
         in text
     )
 

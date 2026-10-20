@@ -176,4 +176,4 @@ def _validate(r: Rules) -> None:
     if r.trail_atr <= 0:
         raise ValueError(f"trail_atr: must be > 0, got {r.trail_atr}")
     if not r.benchmark:
-        raise ValueError("benchmark: must be a Yahoo ticker, e.g. ^FTAS")
+        raise ValueError("benchmark: must be a Yahoo ticker, e.g. ^FTAI")

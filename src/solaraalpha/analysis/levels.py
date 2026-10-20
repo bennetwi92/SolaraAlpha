@@ -16,22 +16,23 @@ used once it is confirmed.
   x ATR of the close; the one with most touches wins.
 * **coil** — the last ``COIL_WEEKS`` weeks: their high-low span in ATRs, and least-squares lines
   through their highs and lows (converging lines = a triangle squeezing into its apex). A tight
-  span (``COIL_ATR``) means the stock is coiled, and the plan becomes a breakout plan.
+  span (``COIL_ATR``) means the stock is coiled (information; it held in about a third of weeks).
 * **significant levels** — prior 52-week and 5-year highs/lows (5-year = as far back as the
   supplied history goes, up to 5 years). ``blue_sky`` = closed above the 5-year high, so no
   overhead supply.
 * **compression** — the stock against its own past year: the last ``COIL_WEEKS`` weeks' range
   as a percentile of the year's ranges and their volume against the year's median. Compressed
-  (a narrowing range on drying-up volume) means a move may be close. Context, not a signal
-  (docs/decisions/0022).
+  (a narrowing range on drying-up volume) means a move may be close, and the plan becomes a
+  breakout plan above the coil's line (``trigger``). Context, not a signal (docs/decisions/0022).
 * **wedge** — the upper and lower trendlines converging, with the weeks to their apex.
 
 :func:`levels_card` turns the level map into a plan for a position on ``side`` and two scores in
 [-1, +1]: ``structure`` (market view, + bullish) and ``setup`` (reward:risk for ``side``).
-When coiled the plan is entered on a stop order beyond the coil (``trigger``) rather than at the
-close, so reward:risk is measured from where the trade would actually start. Reward:risk to
-the next level is information, not an estimate of the move: the bands don't use it (0004
-amendment). ``context`` puts compression, wedge, breakout and distance to the high in one line
+When compressed the plan is entered on a stop order beyond the coil (``trigger``) rather than at
+the close, so reward:risk is measured from where the trade would actually start (ADR 0004,
+amendment #210: the trigger follows ``compressed``, about 7% of weeks, not ``coiled``).
+Reward:risk to the next level is information, not an estimate of the move: the bands don't use
+it (0004 amendment). ``context`` puts compression, wedge, breakout and distance to the high in one line
 for the agents.
 All levels use raw ``high``/``low``/``close`` so they are real price levels.
 Parameters are documented in ``docs/decisions/0004-levels.md``.
@@ -309,14 +310,14 @@ class LevelsCard:
     breakout: int  # +1 closed above last week's nearest resistance, -1 below its support, else 0
     box_atr: float  # nearest resistance minus nearest support, in ATRs
     coil_atr: float  # span of the last COIL_WEEKS weeks, in ATRs
-    coiled: bool  # coil_atr <= COIL_ATR: plan a breakout from ``trigger``
+    coiled: bool  # coil_atr <= COIL_ATR (information; the trigger follows ``compressed``)
     coil_upper: float  # line through the coil's highs, projected to the coming week
     coil_upper_slope: float  # per week
     coil_lower: float  # line through the coil's lows
     coil_lower_slope: float
     apex_weeks: float  # weeks until the coil's lines meet (NaN unless converging)
-    trigger: float  # breakout entry (stop order) beyond the coil; NaN = enter at the close
-    coil_pending: bool  # coiled and the trigger is still above the close: wait for the break
+    trigger: float  # breakout entry (stop order) beyond the coil when compressed; NaN = the close
+    coil_pending: bool  # compressed and the trigger is still above the close: wait for the break
     stop: float  # beyond the nearest level against ``side``
     target: float  # nearest level in favour of ``side`` beyond the entry (NaN: nothing)
     target_2: float  # the one after
@@ -350,7 +351,9 @@ def levels_card(weekly: pd.DataFrame, side: int = 1) -> LevelsCard:
     long), at least ``MIN_STOP_ATR`` from the close; ``STOP_ATR`` (technical model) if there is
     no such level. Targets: the next two levels in the position's favour.
 
-    Coiled (the last ``COIL_WEEKS`` weeks span at most ``COIL_ATR`` ATRs): the entry is a stop
+    Compressed (:func:`compression`: the last ``COIL_WEEKS`` weeks' range in the tightest
+    ``COMPRESS_PCTILE`` of the stock's year, on volume at most ``VOLUME_DRY`` of its median; ADR
+    0004 amendment #210): the entry is a stop
     order ``TRIGGER_ATR`` beyond the coil's line (upper for a long), or beyond the close if that
     is further, and beyond the nearest level ahead (resistance for a long) when that level lies
     inside the coil's range. The stop still sits beyond the nearest level against the position
@@ -365,13 +368,15 @@ def levels_card(weekly: pd.DataFrame, side: int = 1) -> LevelsCard:
     lm = level_map(weekly)
     above, below = _nearest(lm, close)
     c = coil(weekly)
+    comp = compression(weekly)
     w = weekly.iloc[-COIL_WEEKS:]
     edge = [c.upper, close] if side == 1 else [c.lower, close]
     box = (above, w["high"].max()) if side == 1 else (below, w["low"].min())
     if not box[0].empty and side * (box[0].iloc[0] - box[1]) <= 0:
         edge.append(float(box[0].iloc[0]))  # the box edge lies inside the coil: clear it too
-    trigger = side * max(side * e for e in edge) + side * TRIGGER_ATR * a if c.coiled else np.nan
-    entry = trigger if c.coiled else close
+    squeeze = comp.compressed  # the breakout plan follows compression, not the coil (#210)
+    trigger = side * max(side * e for e in edge) + side * TRIGGER_ATR * a if squeeze else np.nan
+    entry = trigger if squeeze else close
     against = below if side == 1 else above
     favour = lm.loc[side * (lm["price"] - entry) > 0, "price"].sort_values(ascending=side == 1)
 
@@ -390,7 +395,6 @@ def levels_card(weekly: pd.DataFrame, side: int = 1) -> LevelsCard:
     parts = [2 * (close - lo52) / (hi52 - lo52) - 1 if hi52 > lo52 else 0.0]
     parts += [t.slope / FULL_SLOPE for t in (upper, lower) if t is not None]
 
-    comp = compression(weekly)
     width = apex = np.nan
     if upper is not None and lower is not None:
         width = float(np.log(upper.value / lower.value))
@@ -436,7 +440,7 @@ def levels_card(weekly: pd.DataFrame, side: int = 1) -> LevelsCard:
         coil_lower_slope=c.lower_slope,
         apex_weeks=c.apex_weeks,
         trigger=float(trigger),
-        coil_pending=bool(c.coiled and not np.isnan(trigger) and side * (trigger - close) > 0),
+        coil_pending=bool(squeeze and not np.isnan(trigger) and side * (trigger - close) > 0),
         stop=stop,
         target=targets[0],
         target_2=targets[1],

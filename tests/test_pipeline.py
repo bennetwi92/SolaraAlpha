@@ -157,18 +157,16 @@ def test_levels_bands(monkeypatch: pytest.MonkeyPatch, fields: dict, label: str)
 
 
 @pytest.mark.parametrize(
-    ("fields", "label"),
+    "fields",
     [
-        (dict(rs=0.01, rs_high=False, peer_top_half=False), "ACT"),
-        (dict(rs=0.0, rs_high=True, peer_top_half=False), "WATCH"),
-        (dict(rs=-0.25, rs_high=False, peer_top_half=True), "WATCH"),
-        (dict(rs=-0.1, rs_high=False, peer_top_half=False), "PASS"),
-        (dict(rs=-0.26, rs_high=True, peer_top_half=True), "PASS"),
-        (dict(rs=math.nan, rs_high=False, peer_top_half=False), "PASS"),
+        dict(rs=0.01, rs_high=False, peer_top_half=False),
+        dict(rs=-0.26, rs_high=False, peer_top_half=False),
+        dict(rs=math.nan, rs_high=False, peer_top_half=False),
     ],
 )
-def test_relative_strength_bands(monkeypatch: pytest.MonkeyPatch, fields: dict, label: str) -> None:
-    assert _band(monkeypatch, "relative_strength", **fields)[0] == label
+def test_relative_strength_has_no_bands(monkeypatch: pytest.MonkeyPatch, fields: dict) -> None:
+    # context for the agents only (docs/research/0001, #210 phase 0): ACT whenever it runs
+    assert _band(monkeypatch, "relative_strength", **fields) == ("ACT", "ran")
 
 
 @pytest.mark.parametrize(

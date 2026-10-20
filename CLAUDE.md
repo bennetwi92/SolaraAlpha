@@ -67,9 +67,12 @@ Current state:
   `growth`); the top `shortlist_size` (7) plus up to `shortlist_catalysts` (3) with a fresh
   catalyst (`solaraalpha.catalysts.fresh_catalysts`: new filings, headlines, scheduled events)
   are ACT, the rest keep their band label capped at WATCH. Saved per stock in the `labels`
-  table (`store.shortlist`) with `rank`, `shortlist` (why) and `watch_on` (JSON). Levels is
+  table (`store.shortlist`) with `rank`, `shortlist` (why) and `watch_on` (JSON). **The rank is
+  unvalidated**: every pack the agents read says so (`fit.RANK_NOTE`, #210). Levels is
   compression / breakout context (`compression`, `compressed`, `wedge`, `new_high`, ADR 0004
-  amendment #194); relative strength is agent context (docs/research/0001). Stocks:
+  amendment #194; the breakout `trigger` only when `compressed`, amendment #210); relative
+  strength is agent context with no bands (per-horizon z, `leadership` and `rs_spike` flags; ADR
+  0011 amendment #210, docs/research/0001). Stocks:
   `config/watchlist.toml` (hand snapshot with a `snapshot` date; the scan warns once a quarterly
   FTSE review month has passed since it). After the pipeline the scan **reviews every open position** (all
   toolkits with the position's entry → a `review` card; the trailing stop is context for the
@@ -90,9 +93,16 @@ Current state:
   take_partial / exit / revise_target / add; pending: amend_entry / cancel; `hold` changes
   nothing; adds are the agent's call, refused by the book over the portfolio limits, ADR 0025);
   the book refuses an impossible one (recorded as declined). The owner is told in the inbox
-  exactly what to change in Trading212 and can reverse it with `book.py undo REV_ID --reason`. The **market regime** (`analysis/regime.py`: `^FTAS` drawdown, 1-day z, realised
+  exactly what to change in Trading212 and can reverse it with `book.py undo REV_ID --reason`. The **market regime** (`analysis/regime.py` on `Rules.benchmark`, `^FTAI`: drawdown, 1-day z, realised
   vol percentile → calm / stressed / risk_off, placeholders) heads the daily report, is saved as a
   `regime` card, shows in the weekly pack and flags every plan `market risk_off` (advisory).
+- **Shadow book** (docs/decisions/0028, recording only): beside every decision, the `shadow`
+  table (`portfolio/shadow.py`) records what fixed rules would have done (top 5 by rank, random 2
+  from the shortlist, breakout entry, 2-ATR / levels stops, chandelier trail, flat 2%), written
+  once per full weekly scan by `scan.py --save` (screen baselines) and `plan.py` (agent-paired).
+  Never traded; a later simulator replays it. **Research protocol** (docs/decisions/0029): target
+  `burst_10w`, a pass bar fixed in advance, and a **locked holdout** (signal Fridays 2025-10-24
+  to 2026-10-16): never look at it until the owner signs off a candidate.
 - **Agents run unattended when the owner adds a Claude secret** (docs/decisions/0019):
   `agents.yml` runs after the scan (`/validate` → `/macro` → `/research` → `/pm` → `plan.py` → `weekly_pack.py`)
   and after the daily job (`/monitor`) via `claude-code-action`, capped by
@@ -197,7 +207,7 @@ Current state:
 | Fresh catalysts (filings, headlines, scheduled events) per stock | `uv run python scripts/catalysts.py [TICKERS...] [--days 7] [--horizon 10] [--no-news]` |
 | Refresh the watchlist (FTSE AIM 100 + AIM UK 50; by hand, never CI) | `uv run python scripts/universe.py [--write]` |
 | Book trades by hand (draft, approve, amend, reject, tickets, placed, fills, exits) | `uv run python scripts/book.py new JET2.L --entry 1520 --stop 1400 --qty 100` / `list` / `show ID` / `approve ID` / `amend ID --qty N --price P --stop P` / `reject ID --reason TEXT` / `tickets` / `placed ORDER_ID [ORDER_ID ...] [--ref REF]` / `fill ORDER_ID --qty N --price P [--commission X]` / `unfilled ORDER_ID` / `cancel ORDER_ID` / `expire` / `exit ID --reason stop|target|thesis_broken|...` / `cash dividend TICKER GBP --at EXDATE` / `split ID --ratio 2:1` / `corporate-close ID --price P --reason takeover|delisting` / `stats [--since D]` (`--db PATH` for a local file; from GitHub: the **Book** workflow, `gh workflow run book.yml -f command='cash deposit 5000'`; `-f script=plan.py -f command='--run 8'` re-plans a run) |
-| Plan the week's trades from a saved scan run (final ACT labels → plan → fit → approved positions) | `uv run python scripts/plan.py --run N [--dry-run] [--replan]` (`--replan`: again for tickers whose draft was rejected) |
+| Plan the week's trades from a saved scan run (final ACT labels → plan → fit → approved positions) | `uv run python scripts/plan.py --run N [--dry-run] [--replan]` (`--replan`: again for tickers whose draft was rejected; also records the shadow book's agent-paired baselines, ADR 0028) |
 | Weekly pack for a run (new plans with approve/reject commands, fit rejections, watch list, open positions, money, errors) | `uv run python scripts/weekly_pack.py --run N [--out FILE] [--report FILE]` |
 | Portfolio view: holdings, cash, equity, heat, sector exposure, breaches | `uv run python scripts/portfolio.py [--save] [--price JET2.L=1520]` (cash in: `book.py cash deposit 10000`) |
 | Equity curve, time-weighted return, drawdown, vs benchmark, correlated holdings | `uv run python scripts/portfolio.py --history` |
@@ -309,6 +319,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         return vs Rules.benchmark, correlation of holdings' weekly returns
     journal.py          trade journal: closed trades (close summary + set-up type from the plan),
                         hit rate / average R / expectancy by exit reason and set-up
+    shadow.py           shadow book: systematic baselines beside every decision, append-only
+                        `shadow` table, record (scan / plan time) and load — 0028
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM 100 + AIM UK 50 snapshot)
 config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)
@@ -333,6 +345,9 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
                         trade simulation, memos to owner + PM); `claude --agent senior-quant` or delegate
 .claude/agents/portfolio-manager.md  subagent: PM persona (the book as a whole, allocation and rotations,
                         oversight of the agents, phases B / C, memos to owner); `claude --agent portfolio-manager`
+.claude/agents/fundamental-strategist.md  subagent: fundamentals / balance sheet / valuation / macro / policy
+                        specialist (fundamentals toolkit, expectations, financing risk, event gaps, #214);
+                        `claude --agent fundamental-strategist`
 notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure; fakes.py (FakeTurso), conftest.py (db_backend)
 data/                   gitignored; raw/ processed/ cache/ created on demand

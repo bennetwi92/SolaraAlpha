@@ -85,3 +85,16 @@ minor level) is context, not an ACT condition.
 stop order above a tight coil), not the compression signal. The validator's pack carries the
 fields as `chart_context`; `/validate` and `/research` read them as timing context. Thresholds
 are placeholders like the rest.
+
+## Amendment (#210 phase 0, owner 2026-10-20): the trigger follows `compressed`
+
+`coiled` (4-week span ≤ 1.5 ATR) held in about a third of weeks and gave every one a buy-stop
+`trigger`, so a trigger did not mean a squeeze. The breakout plan now follows `compressed`
+(range in the tightest fifth of the stock's year on volume at most 0.8× its median; 6.9% of
+stock-weeks in the #194 replay): `trigger` is set, and `coil_pending` can be true, only when
+`compressed`. The trigger level is unchanged (0.1 ATR beyond the coil's line, or beyond the
+close or the box edge inside the coil). `coiled` and `coil_atr` stay on the card as information.
+The research agent sets the live entry (ADR 0023), so this changes the levels card's context and
+the planner's unused fallback, not an order by itself. Still open from #210 (phase 1): the
+wedge's firing rate (14.4%), the 5-year window behind `blue_sky` on trimmed histories, and a log
+of trendline changes.

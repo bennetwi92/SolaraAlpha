@@ -63,8 +63,8 @@ The levels card describes *when a move may be close*; it does not say how far it
 - **Breakout and highs**: `breakout` (+1 closed above last week's nearest resistance),
   `new_high` (above the prior 52-week high), `blue_sky` (above the 5-year high),
   `from_high_52w` (distance to the 52-week high).
-- `coiled` / `coil_pending` / `trigger` are the **plan's** entry mechanics (a stop order
-  above a tight 4-week coil), not a compression signal.
+- `coil_pending` / `trigger` are the **plan's** entry mechanics (a stop order above the
+  4-week coil's line, set only when `compressed`); `coiled` is a tight 4-week span, information.
 - `reward_risk` is the distance to the *next* level over the distance to the stop. It is
   information, **not an estimate of the move**: the next resistance is not where a +15-30%
   move stops. Never downgrade for a low `reward_risk` alone; no band uses it.

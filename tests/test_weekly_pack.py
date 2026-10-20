@@ -9,6 +9,7 @@ import pytest
 from scanfix import build_scan_db
 from solaraalpha import store
 from solaraalpha.portfolio import book
+from solaraalpha.portfolio.fit import RANK_NOTE
 from solaraalpha.portfolio.rules import Rules
 from solaraalpha.portfolio.weekly_pack import build_pack, latest_review_cards, render_pack
 
@@ -232,7 +233,7 @@ def test_shortlist_agrees_across_queue_planner_store_and_pack(db_backend: Path |
         }
         text = render_pack(build_pack(conn, run))
         assert (
-            "## Shortlist\n\n1. B.L: rank 1 → **ACT** (screen)\n2. A.L: rank 2 → **ACT** (screen)\n"
+            f"## Shortlist\n\n_{RANK_NOTE}_\n\n1. B.L: rank 1 → **ACT** (screen)\n2. A.L: rank 2 → **ACT** (screen)\n"
             "3. K.L: catalyst: contract win → **ACT** (screen)\n" in text
         )
     finally:

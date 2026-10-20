@@ -38,7 +38,7 @@ event_policy = "flag"      # results inside event_flag_days of an open position:
 event_trim_fraction = 0.5  # fraction of the shares a `trim` policy proposes to sell
 circuit_breaker = true     # on (owner, 2026-10-20; #143, §6 Q1)
 max_drawdown_new_entries = 0.15  # equity this far below its high stops new entries while the breaker is on
-benchmark = "^FTAS"        # equity-curve comparison (Yahoo ticker). ^FTAI = FTSE AIM All-Share is also served
+benchmark = "^FTAI"        # equity-curve comparison (Yahoo ticker): FTSE AIM All-Share, our own market (owner, 2026-10-20; #210)
 shortlist_size = 7         # top-ranked tickers the screen sends to the agents a week (ADR 0022, #192)
 shortlist_catalysts = 3    # at most this many more join the shortlist on a catalyst (outside the top N)
 min_adv_gbp = 25000.0      # the screen's liquidity floor: 20-session median daily traded value, GBP
