@@ -242,7 +242,7 @@ src/solaraalpha/        importable package — all reusable code lives here
   catalysts.py          fresh_catalysts: ticker -> one-line reason (new material filings, headlines,
                         a scheduled event in the window); a stock with one can join the shortlist
   pm.py                 the portfolio manager's pack: research-ACT candidates (verdict, levels, sizing
-                        across the risk band), open / pending positions, money, regime, macro,
+                        across the risk band, financing, results-day gap cost), open / pending positions, money, regime, macro,
                         correlations, limits — docs/decisions/0027
   value_models.py       register of per-stock value models (config/value_models.toml) for research
   dashboard.py          render_dashboard: one self-contained HTML page from the DB (inline CSS,
@@ -414,6 +414,14 @@ Decision rules live in the skills (`.claude/skills/`), never duplicated in a sub
   (checkable list), **Open questions** (anything needing the owner's choice — don't assume).
 - State dependencies explicitly ("Blocked by #N"). Keep it short; detail goes in the PR/ADR.
 - PRs reference their issue (`Closes #N`). Note decisions taken during the work on the issue.
+- Labels (an unlabelled issue is ready to work):
+  - `needs-owner` — waiting on the owner's decision (proposals, open questions). Don't build
+    until the owner has answered on the issue; then remove the label.
+  - `epic` — umbrella issue listing its deliverables; closed when they are done, not by a PR.
+  - `R1` / `R2` / `R3` — release slice from `docs/user-story-map.md`.
+  - `inbox` — reserved for the "Solara inbox" notification issue (docs/decisions/0021); the
+    workflows comment on the open one. Never put backlog work there.
+  - `type:task` is legacy; don't use it on new issues.
 
 ## Workflow for Claude
 

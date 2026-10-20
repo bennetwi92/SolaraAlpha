@@ -15,6 +15,7 @@ and shared across stocks (:meth:`Inputs.other`).
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, fields
 from functools import cached_property
@@ -25,7 +26,12 @@ import pandas as pd
 
 from solaraalpha.analysis.events import build_pack
 from solaraalpha.analysis.financing import FinancingCard, financing_card
-from solaraalpha.analysis.fundamentals import FundamentalsCard, fundamentals_card
+from solaraalpha.analysis.fundamentals import (
+    FundamentalsCard,
+    fundamentals_card,
+    fx_ticker,
+    reporting_currency,
+)
 from solaraalpha.analysis.levels import LevelsCard, levels_card
 from solaraalpha.analysis.liquidity import LiquidityCard, liquidity_card
 from solaraalpha.analysis.relative_strength import RelativeStrength, compare, comparisons, rs_card
@@ -178,7 +184,9 @@ def _relative_strength(x: Inputs) -> Cards:
 def _fundamentals(x: Inputs, as_of: str | None = None) -> Cards:
     """Growth / value / quality scores, point-in-time via publication lags; the financing card
     (runway, dilution, raises) beside it as context."""
-    card = fundamentals_card(x.fund, x.weekly, as_of)
+    pair = fx_ticker(reporting_currency(x.fund), x.weekly.attrs.get("currency"))
+    fx = x.other(pair)["close"] if pair else None
+    card = fundamentals_card(x.fund, x.weekly, as_of, fx)
     try:
         ann: pd.DataFrame | None = x.announcements
     except Exception as e:  # filings are context: the card goes on without them
@@ -209,6 +217,10 @@ class EventsCard:
     weeks_to_next: float
     pack: str  # directory holding pack.json, for the agent
     next_event_status: str = ""  # confirmed (a fixed calendar slot) / estimated (projection), #129
+    # past results-day moves (#219): sessions counted, worst return, p90 of |return|
+    event_moves: int = 0
+    event_worst_move: float = float("nan")
+    event_p90_move: float = float("nan")
 
 
 CONFIRMED_WINDOW_DAYS = 2  # past filings all within this many days of each other = a fixed slot
@@ -223,6 +235,7 @@ def _events(x: Inputs, days: int = 7, horizon: int = 16, out: str | None = None)
     now = pd.Timestamp(pack["generated"])
     zs = [abs(a["z"]) for a in pack["announcements"] if a.get("z") is not None]
     nxt = min((pd.Timestamp(e["likely"]) for e in pack["expected_events"]), default=None)
+    moves = pack.get("event_moves") or {"n": 0, "worst": math.nan, "p90_abs": math.nan}
     status = ""
     if nxt is not None:
         ev = min(pack["expected_events"], key=lambda e: pd.Timestamp(e["likely"]))
@@ -238,6 +251,9 @@ def _events(x: Inputs, days: int = 7, horizon: int = 16, out: str | None = None)
             weeks_to_next=(nxt - now).days / 7 if nxt is not None else float("nan"),
             pack=str(path),
             next_event_status=status,
+            event_moves=moves["n"],
+            event_worst_move=moves["worst"],
+            event_p90_move=moves["p90_abs"],
         )
     }
 

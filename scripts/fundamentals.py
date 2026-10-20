@@ -10,7 +10,12 @@ from dataclasses import asdict
 
 import pandas as pd
 
-from solaraalpha.analysis.fundamentals import fundamentals_card, known
+from solaraalpha.analysis.fundamentals import (
+    fundamentals_card,
+    fx_ticker,
+    known,
+    reporting_currency,
+)
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.fundamentals import fetch_fundamentals
 from solaraalpha.data.prices import fetch_daily
@@ -39,7 +44,9 @@ def main() -> None:
         print(table.T.iloc[:, -10:].to_string(), "\n")
 
     print("Fundamentals card:")
-    card = fundamentals_card(fund, weekly, args.as_of)
+    pair = fx_ticker(reporting_currency(fund), weekly.attrs.get("currency"))
+    fx = fetch_daily(pair)["close"] if pair else None
+    card = fundamentals_card(fund, weekly, args.as_of, fx)
     for k, v in asdict(card).items():
         print(f"  {k:>15}: {v:.3f}" if isinstance(v, float) else f"  {k:>15}: {v}")
 
