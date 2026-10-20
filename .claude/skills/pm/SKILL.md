@@ -46,7 +46,7 @@ Read `pack.json` in the printed directory:
   `breaker_tripped`, `slots_free` (max positions minus open minus pending).
 - `candidates`: per research-ACT ticker, the `research` verdict (confidence, scores incl.
   `catalyst_score` and `event_risk`, reasons, kill criteria, `trade`), `next_event`,
-  `adv_gbp_20`, `sizing` (`stop_pct` and, at the low / mid / high risk of the band, the position
+  `financing` (runway, dilution, raises; None when not saved), `adv_gbp_20`, `sizing` (`stop_pct` and, at the low / mid / high risk of the band, the position
   value and the risk actually taken after the caps: `capped_by` set means the cap binds),
   `plan_at_default_risk` (what the rules alone would draft, and whether fit would accept it),
   `no_plan` (why it cannot be planned), `already_drafted` (a draft from this run: funding it
@@ -86,9 +86,10 @@ research or monitor note when you consider rotating it.
    - **low (1%)**: worth owning but with a named doubt (priced-in risk, an event soon, thin
      volume, a gap in the research). Below that conviction, don't fund it.
    - **financing cap**: a loss-maker with under 12 months' runway and no completed raise gets
-     1% at most, whatever else the case has (a placing gaps through any stop). Take runway and
-     raises from the research note (§7) until the pack carries a financing card (#218); if the
-     note doesn't say, treat it as a gap in the research.
+     1% at most, whatever else the case has (a placing gaps through any stop). Read the
+     candidate's `financing` (`loss_making`, `runway_now_months` from `cash_period`,
+     `last_raise`, `raised_since_period`) with the research note's §7; when the card is missing
+     and the note doesn't say, treat it as a gap in the research.
    Check `sizing.at`: if a cap binds, the risk you wrote is not the risk you get; say so.
 4. **The book as a whole.** With the allocation added:
    - heat (open + pending + new risk) <= `max_heat`; slots <= `max_positions`; sector <=

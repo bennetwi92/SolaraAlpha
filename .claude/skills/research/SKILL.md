@@ -139,7 +139,11 @@ detail.
 6. **Macro and environment.** Rates, FX, commodities, consumer, weather or climate where
    relevant, sector rotation.
 7. **Ownership and flow.** Director dealings, major holders (TR-1), buybacks, placings and
-   dilution, short interest where free data exists.
+   dilution, short interest where free data exists. **Cite the `financing` card** (in the
+   validator pack's `cards`, Step 3c): a loss-maker's `runway_now_months` and `cash_period`,
+   `dilution_12m` / `dilution_36m`, `raises_3y` and `last_raise`, `raised_since_period`. Say
+   whether a raise is likely inside the holding window; the PM caps a loss-maker with under 12
+   months' runway and no completed raise at 1% risk.
 8. **Thesis and kill criteria.** Why this goes up over 2-16 weeks; what would prove it wrong;
    the bear case; the **Valuation** sub-section when the stock has a value model (Step 3b). **2-5 kill criteria.** Use the machine form `field op value` on a card field
    where possible (the fields of the technical, levels, relative_strength and fundamentals

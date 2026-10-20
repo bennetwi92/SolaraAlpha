@@ -24,14 +24,19 @@ from typing import Any
 import pandas as pd
 
 from solaraalpha.analysis.events import build_pack
+from solaraalpha.analysis.financing import FinancingCard, financing_card
 from solaraalpha.analysis.fundamentals import FundamentalsCard, fundamentals_card
 from solaraalpha.analysis.levels import LevelsCard, levels_card
 from solaraalpha.analysis.liquidity import LiquidityCard, liquidity_card
 from solaraalpha.analysis.relative_strength import RelativeStrength, compare, comparisons, rs_card
 from solaraalpha.analysis.technical import Position, Scorecard, assess_position, scorecard
+from solaraalpha.data.announcements import fetch_announcements, resolve_issuer
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.fundamentals import fetch_fundamentals
 from solaraalpha.data.prices import fetch_daily
+from solaraalpha.log import get_logger
+
+log = get_logger(__name__)
 
 Cards = dict[str, Any]
 _OTHERS: dict[str, pd.DataFrame] = {}  # other instruments' daily prices, fetched this process
@@ -63,6 +68,11 @@ class Inputs:
     @cached_property
     def fund(self) -> pd.DataFrame:
         return fetch_fundamentals(self.ticker)
+
+    @cached_property
+    def announcements(self) -> pd.DataFrame:
+        """The issuer's NSM filings (``LOOKBACK_YEARS``), found by LEI."""
+        return fetch_announcements(resolve_issuer(self.ticker).lei)
 
     def other(self, ticker: str) -> pd.DataFrame:
         """Daily prices (as fetched) of another instrument this ticker is compared with."""
@@ -166,8 +176,15 @@ def _relative_strength(x: Inputs) -> Cards:
     watch=("quality > -0.5", "eps_revision > 0"),
 )
 def _fundamentals(x: Inputs, as_of: str | None = None) -> Cards:
-    """Growth / value / quality scores, point-in-time via publication lags."""
-    return {"fundamentals": fundamentals_card(x.fund, x.weekly, as_of)}
+    """Growth / value / quality scores, point-in-time via publication lags; the financing card
+    (runway, dilution, raises) beside it as context."""
+    card = fundamentals_card(x.fund, x.weekly, as_of)
+    try:
+        ann: pd.DataFrame | None = x.announcements
+    except Exception as e:  # filings are context: the card goes on without them
+        log.warning("%s: filings unavailable (%s: %s)", x.ticker, type(e).__name__, e)
+        ann = None
+    return {"fundamentals": card, "financing": financing_card(x.fund, ann, card.date, as_of)}
 
 
 @toolkit("liquidity")  # no bands: information for sizing (adv_gbp_20) and the validator
@@ -232,7 +249,7 @@ CARDS: dict[str, tuple[type, ...]] = {
     "technical": (Scorecard, Position),
     "levels": (LevelsCard,),
     "relative_strength": (RelativeStrength,),
-    "fundamentals": (FundamentalsCard,),
+    "fundamentals": (FundamentalsCard, FinancingCard),
     "liquidity": (LiquidityCard,),
     "events": (EventsCard,),
 }

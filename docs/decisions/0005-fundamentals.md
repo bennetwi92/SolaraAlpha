@@ -50,3 +50,17 @@ lagged EPS. Tested by changing every not-yet-public value and checking the card 
 - Sector-relative valuation, short interest and directors' dealings aren't included (no
   reliable free source yet). Earnings dates and surprise vs consensus would be the most
   valuable additions for this horizon if a free source turns up.
+
+## Amendment: the financing card (#218, #214 F4)
+
+The fundamentals toolkit also returns a `financing` card (`analysis/financing.py`), saved beside
+the fundamentals card and judged by no band: context for the PM pack, the validator / research
+pack and thesis conditions. Runway (loss-makers burning cash: last annual cash / annual FCF burn,
+at the period end and what is left today), dilution over ~1 and ~3 years, equity raises in 3 years
+from NSM headlines (placing, fundraise, subscription, retail offer, ...; filings within 14 days =
+one raise), and whether a warrant or convertible appears in a headline. Runway comes from the
+last annual accounts, so it is stale by construction; `cash_period` and `raised_since_period`
+say how stale. The filings are fetched once per stock (`Inputs.announcements`); if they fail,
+the filing fields are None and the fundamentals card is unaffected. No sizing rule follows from
+it automatically: the PM caps a loss-maker under 12 months' runway with no completed raise at 1%
+risk in `/pm` (owner decision on #214).
