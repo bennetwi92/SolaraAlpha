@@ -133,3 +133,12 @@ the drawdown beyond the limit it rejects **every** new plan with `circuit breake
 Y%`. Open positions, their stops and reviews are untouched. The weekly pack's portfolio section
 and the daily report show the drawdown vs the limit and whether the breaker is off, on or
 active, so the owner sees it coming before it trips.
+
+## Amendment (2026-10-20): targets are the move sought; no wide-stop flag
+
+Owner decision, following ADR 0022. Plan targets are `entry x (1 + target_moves)` (`[0.15, 0.30]`
+in `config/portfolio.toml`), the +15-30% move the strategy seeks, not the levels map's next
+resistance (which sat a fraction above the entry and made R:R meaningless). The next level is
+kept on the plan as `next_level` for context (NaN = blue sky; the journal's set-up type reads
+it). A target hit is a review trigger, not a sell order: the trailing stop exits. The
+`risk_pct > 15%` flag is gone: volatility is wanted. Risk per trade is 2% (owner).

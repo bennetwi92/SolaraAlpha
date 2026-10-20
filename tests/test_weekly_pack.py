@@ -62,8 +62,11 @@ def test_pack_before_and_after_planning(
     pack_cli.main(["--run", "1", "--db", str(scan_db), "--out", str(out), "--report", str(report)])
     text = out.read_text()
     assert "### A.L — position 1 (draft)" in text
-    assert "- entry stop @ 1,560p; stop 1,380p; target 1,950p, 2,250p; R:R 2.2" in text
-    assert "- 41 shares, value £640, risk £74 (0.74% of equity); valid until 2026-10-16" in text
+    assert (
+        "- entry stop @ 1,560p; stop 1,380p; target 1,794p, 2,028p; R:R 1.3; next level 1,950p"
+        in text
+    )
+    assert "- 111 shares, value £1,732, risk £200 (2.00% of equity); valid until 2026-10-16" in text
     assert (
         "- flags: event within 9 days, event within 9 days" in text
         or "- flags: event within 9 days" in text

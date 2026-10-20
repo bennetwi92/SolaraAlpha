@@ -44,11 +44,13 @@ def test_plan_run_drafts_one_position_and_is_idempotent(
     assert len(od) == 1 and od.loc[0, "type"] == "stop" and od.loc[0, "price"] == 1560.0
     assert od.loc[0, "purpose"] == "entry" and od.loc[0, "status"] == "draft"
     assert od.loc[0, "valid_until"] == "2026-10-16"
-    # risk 0.75% of £10k = £75; risk/share = 1560 - 1380 = 180p -> 41 shares
-    assert od.loc[0, "qty"] == 41
+    # risk 2% of £10k = £200; risk/share = 1560 - 1380 = 180p -> 111 shares
+    assert od.loc[0, "qty"] == 111
     ev = book.position_events(conn, 1)
     payload = ev["payload"].iloc[0]
-    assert payload["entry_type"] == "stop" and payload["stop"] == 1380.0 and payload["shares"] == 41
+    assert (
+        payload["entry_type"] == "stop" and payload["stop"] == 1380.0 and payload["shares"] == 111
+    )
     assert (
         payload["capped_by"] == "risk"
         and payload["fit_flags"] == ["event within 9 days"]

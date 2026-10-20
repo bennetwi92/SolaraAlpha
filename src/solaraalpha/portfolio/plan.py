@@ -1,7 +1,8 @@
 """Trade plans: turn an ACT stock's cards into entry, stop, targets, size and review dates.
 
 Pure functions, no I/O. The levels card gives the entry (a breakout trigger when coiled, else
-the close), stop and targets; the technical card the fallback stop; the events card the next
+the close), stop and the next level overhead (context only); the targets are the move the
+strategy seeks (``rules.target_moves``, ADR 0022); the technical card the fallback stop; the events card the next
 scheduled event; the rules the risk budget and caps. Money is in the account currency (GBP) via
 :func:`solaraalpha.portfolio.book.to_account`; prices stay in the quote currency (pence for LSE).
 See docs/decisions/0015.
@@ -18,7 +19,6 @@ import pandas as pd
 from solaraalpha.portfolio.book import to_account
 from solaraalpha.portfolio.rules import Rules
 
-MAX_RISK_PCT = 0.15  # flag a stop more than this far below the entry
 EVENT_REVIEW_DAYS = 2  # review a position this many days before a scheduled event
 ADV_SESSIONS = 20  # median daily traded value over this many sessions
 
@@ -34,9 +34,9 @@ class TradePlan:
     valid_until: pd.Timestamp  # unfilled entry orders expire after this
     stop: float
     stop_source: str  # levels / technical
-    target: float  # NaN: nothing overhead (blue sky)
-    target_2: float
-    reward_risk: float  # (target - entry) / (entry - stop); inf when no target
+    target: float  # entry x (1 + rules.target_moves[0]): a review when hit, not a sell order
+    target_2: float  # entry x (1 + rules.target_moves[1])
+    reward_risk: float  # (target - entry) / (entry - stop)
     risk_per_share: float  # entry - stop, quote currency
     shares: int
     position_value: float  # GBP at the entry
@@ -46,6 +46,7 @@ class TradePlan:
     trail_atr: float
     review_dates: tuple[pd.Timestamp, ...]
     flags: tuple[str, ...]
+    next_level: float = math.nan  # the levels map's next target above the entry; NaN: blue sky
 
 
 def _get(card: Any, field: str) -> Any:
@@ -85,7 +86,9 @@ def make_plan(
     * **Review dates.** ``events.next_event`` - :data:`EVENT_REVIEW_DAYS` when it falls inside
       the horizon; flag ``"event within N days"`` when the event is within
       ``rules.event_flag_days`` of the plan date.
-    * Flag ``"risk_pct > 15%"`` when the stop is more than :data:`MAX_RISK_PCT` below the entry.
+    * **Targets** ``entry x (1 + rules.target_moves)``: the +15-30% move sought, not the next
+      level (ADR 0022: the level map is context). The next level above the entry is kept as
+      ``next_level`` (NaN: blue sky). A wide stop is not flagged: volatility is wanted.
     """
     date = pd.Timestamp(_get(levels, "date"))
     close = float(_get(levels, "close"))
@@ -107,16 +110,11 @@ def make_plan(
         raise ValueError(f"{ticker}: no stop below the entry {entry:.2f} (levels/technical)")
     stop = float(stop)
     risk_ps = entry - stop
-    if risk_ps / entry > MAX_RISK_PCT:
-        flags.append(f"risk_pct > {MAX_RISK_PCT:.0%}")
 
-    target = float(_get(levels, "target")) if _finite(_get(levels, "target")) else math.nan
-    target_2 = float(_get(levels, "target_2")) if _finite(_get(levels, "target_2")) else math.nan
-    if _finite(target) and target <= entry:  # the level map's target sits below a raised entry
-        target, target_2 = (
-            (target_2, math.nan) if _finite(target_2) and target_2 > entry else (math.nan, math.nan)
-        )
-    reward_risk = (target - entry) / risk_ps if _finite(target) else math.inf
+    overhead = [float(v) for v in (_get(levels, "target"), _get(levels, "target_2")) if _finite(v)]
+    next_level = min((v for v in overhead if v > entry), default=math.nan)
+    target, target_2 = (round(entry * (1 + m), 2) for m in rules.target_moves)
+    reward_risk = (target - entry) / risk_ps
 
     entry_gbp, risk_gbp = to_account(entry, currency), to_account(risk_ps, currency)
     caps = {"risk": equity_gbp * rules.risk_per_trade / risk_gbp}
@@ -164,6 +162,7 @@ def make_plan(
         trail_atr=rules.trail_atr,
         review_dates=tuple(reviews),
         flags=tuple(flags),
+        next_level=next_level,
     )
 
 

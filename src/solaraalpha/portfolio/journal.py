@@ -33,9 +33,10 @@ COLUMNS = [
 
 
 def setup_type(plan: dict[str, Any]) -> str:
-    """``blue_sky`` when the plan had no target overhead, ``breakout`` for a stop entry at the
-    trigger, else ``pullback``."""
-    target = plan.get("target")
+    """``blue_sky`` when the plan had no level overhead, ``breakout`` for a stop entry at the
+    trigger, else ``pullback``. Plans since ADR 0022 carry the level as ``next_level`` (their
+    ``target`` is the move sought); older plans had the level as ``target``."""
+    target = plan.get("next_level", plan.get("target"))
     rr = plan.get("reward_risk")
     if (
         target is None

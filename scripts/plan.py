@@ -42,8 +42,11 @@ def render(out: PlanRun, dry_run: bool) -> str:
                     "entry": f"{p.entry_type} {p.entry:,.1f}"
                     + (" (wait for break)" if p.wait_for_break else ""),
                     "stop": f"{p.stop:,.1f}",
-                    "target": "blue sky" if math.isnan(p.target) else f"{p.target:,.1f}",
-                    "R:R": "inf" if math.isinf(p.reward_risk) else f"{p.reward_risk:.1f}",
+                    "targets": f"{p.target:,.1f} / {p.target_2:,.1f}",
+                    "next level": "blue sky"
+                    if math.isnan(p.next_level)
+                    else f"{p.next_level:,.1f}",
+                    "R:R": f"{p.reward_risk:.1f}",
                     "shares": p.shares,
                     "value": f"£{p.position_value:,.0f}",
                     "risk": f"£{p.risk_amount:,.0f}",
