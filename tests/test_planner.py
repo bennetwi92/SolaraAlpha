@@ -8,7 +8,7 @@ import pytest
 
 from scanfix import build_scan_db
 from solaraalpha import store
-from solaraalpha.portfolio import book
+from solaraalpha.portfolio import book, shadow
 from solaraalpha.portfolio.planner import final_labels, kill_criteria, plan_run
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -31,9 +31,14 @@ def test_plan_run_drafts_one_position_and_is_idempotent(
     assert book.positions(conn).empty
     conn.close()
 
+    conn = book.connect(scan_db)
+    assert shadow.load(conn).empty  # a dry run records no shadow rows either
+    conn.close()
+
     plan_cli.main(["--run", "1", "--db", str(scan_db)])
     out = capsys.readouterr().out
     assert "Drafted: A.L -> position 1" in out
+    assert "shadow book: random2_shortlist 1" in out  # ADR 0028: the only shortlisted name
     assert "event within 9 days" in out
     conn = book.connect(scan_db)
     pos = book.positions(conn)

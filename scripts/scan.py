@@ -17,7 +17,8 @@ which sets stops: ADR 0024, never drafted here), deterioration since entry and t
 judged into a `review` card; an exit is reported, never drafted. Add --save to record the scan as one run in
 the results DB (every stock's cards, steps, a `labels` row per stock and input snapshots),
 --report FILE to append a markdown summary (GitHub Actions: "$GITHUB_STEP_SUMMARY") and
---run-id-file FILE to write the saved run id. Exits 1 if any toolkit errored (after reporting
+--run-id-file FILE to write the saved run id. A saved full scan also records the screen's
+shadow-book baselines (top 5 by rank, random 2 from the shortlist; ADR 0028). Exits 1 if any toolkit errored (after reporting
 and saving).
 """
 
@@ -48,7 +49,7 @@ from solaraalpha.pipeline import (
     watchlist,
     watchlist_snapshot,
 )
-from solaraalpha.portfolio import book
+from solaraalpha.portfolio import book, shadow
 from solaraalpha.portfolio.review import Reviewed, review_positions, review_report
 from solaraalpha.portfolio.rules import load_rules
 from solaraalpha.store import save_label, save_ticker, start_run
@@ -196,6 +197,17 @@ def main(argv: list[str] | None = None) -> None:
             conn.close()
         for it in reviewed:
             print(f"{it.state.ticker:<10} review {it.card.action:<6} {it.card.reason}")
+    if run_id is not None and not args.toolkit and not args.tickers:
+        # the screen's systematic baselines, written at decision time (ADR 0028); a failure here
+        # is reported, never a reason to stop the weekly flow
+        try:
+            conn = book.connect()
+            try:
+                print(shadow.summary(shadow.record(conn, run_id)))
+            finally:
+                conn.close()
+        except Exception as e:
+            print(f"shadow book not recorded: {type(e).__name__}: {e}")
     if run_id is not None:
         print(f"saved run {run_id}")
         if args.run_id_file:

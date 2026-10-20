@@ -9,8 +9,10 @@ plan in the `drafted` payload, every card of the run frozen as entry conditions 
 research's kill criteria as thesis conditions. Rejected-by-fit plans are reported, not written.
 With the PM's verdict for the run (ADR 0027) only its allocation is planned, at its risk per
 trade and in its order, and the drafts are approved by the PM (nothing for the owner to approve).
-Re-running for the same run skips tickers already drafted from it (with --replan, not those whose
-draft was rejected or cancelled: re-plan after a rules change); --dry-run writes nothing.
+Then the shadow book (ADR 0028) records the baselines paired with the research and PM decisions
+(once per run). Re-running for the same run skips tickers already drafted from it (with
+--replan, not those whose draft was rejected or cancelled: re-plan after a rules change);
+--dry-run writes nothing.
 Then: `book.py approve|reject ID`, `book.py tickets`.
 """
 
@@ -22,7 +24,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from solaraalpha.portfolio import book
+from solaraalpha.portfolio import book, shadow
 from solaraalpha.portfolio.planner import PlanRun, plan_run
 from solaraalpha.portfolio.rules import load_rules
 
@@ -115,14 +117,19 @@ def main(argv: list[str] | None = None) -> None:
     args = p.parse_args(argv)
     rules = load_rules()
     conn = book.connect(args.db)
+    shadow_line = ""
     try:
         with conn:
             out = plan_run(conn, args.run, rules, dry_run=args.dry_run, replan=args.replan)
+        if not args.dry_run:  # the baselines paired with the agents' decisions (ADR 0028)
+            shadow_line = shadow.summary(shadow.record(conn, args.run, rules))
     finally:
         conn.close()
     if rules.warning:
         print(rules.warning)
     print(render(out, args.dry_run))
+    if shadow_line:
+        print(shadow_line)
 
 
 if __name__ == "__main__":
