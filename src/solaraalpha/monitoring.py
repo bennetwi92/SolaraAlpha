@@ -1,11 +1,15 @@
-"""The monitor's pack: a triggered position, then versus now, for the monitor agent.
+"""The monitor's pack: an open position or a pending entry, then versus now, for the monitor.
 
-For each position with an agent trigger (``gap``, ``filing``) in a daily run, the pack holds the
-position's state, orders and plan, the **entry conditions** frozen when it was drafted, the
-cards **now** (technical with the position's entry date and price, levels, relative strength,
-re-run on fresh data), a per-field then → now diff, the thesis conditions (machine ones
-evaluated now), the triggers with the filing's full text, and the latest research verdict.
-The agent proposes; the owner accepts or declines through ``book.py``. See docs/decisions/0018.
+Every weekday each open position and each pending entry (a draft / approved position with an
+unfilled entry order) has a ``daily_review`` in the daily run (ADR 0024), so every one gets a
+pack: the position's state (``status`` ``open`` / ``pending``), orders, plan and the pending
+entry order, the **entry conditions** frozen when it was drafted, the cards **now** (technical
+with the position's entry date and price when open, levels, relative strength, re-run on fresh
+data), a per-field then → now diff, the thesis conditions (machine ones evaluated now), the
+day's triggers with the filing's full text, the latest research verdict and the levels it set
+(``research_levels``), and the systematic stops (``systematic_stops``: levels, technical,
+chandelier) as context only: the agent sets the stop. The agent's revision is applied as it is
+recorded; the owner can undo it (``book.py undo``). See docs/decisions/0018, 0024.
 """
 
 from __future__ import annotations
@@ -29,7 +33,8 @@ from solaraalpha.toolkits import Inputs
 
 log = get_logger(__name__)
 
-AGENT_TRIGGERS = ("gap", "filing", "thesis_hit")
+AGENT_TRIGGERS = ("gap", "filing", "thesis_hit", "daily_review")
+EVENT_TRIGGERS = ("gap", "filing", "thesis_hit")  # reviewed first when the queue is capped
 DIFF_FIELDS = (
     ("technical", "trend"),
     ("technical", "momentum"),
@@ -44,15 +49,28 @@ NOW_TOOLKITS = ("technical", "levels", "relative_strength")
 
 
 def positions_to_review(conn: Conn, run_id: int) -> list[int]:
-    """Positions with an agent trigger in daily run ``run_id``."""
+    """Positions with an agent trigger in daily run ``run_id`` (since ADR 0024 every open
+    position and pending entry has its ``daily_review``), most urgent first: an event trigger
+    (gap, filing, thesis hit), then open positions, then pending entries; by id within each."""
     marks = ", ".join("?" * len(AGENT_TRIGGERS))
     df = query(
-        f"SELECT DISTINCT position_id FROM triggers WHERE run_id = ? AND kind IN ({marks})"
-        " AND position_id IS NOT NULL ORDER BY position_id",
+        f"SELECT position_id, kind, detail FROM triggers WHERE run_id = ? AND kind IN ({marks})"
+        " AND position_id IS NOT NULL",
         conn,
         [run_id, *AGENT_TRIGGERS],
     )
-    return [int(p) for p in df["position_id"]]
+    if df.empty:
+        return []
+    rank: dict[int, int] = {}
+    for pid, kind, detail in zip(df["position_id"], df["kind"], df["detail"], strict=True):
+        pid = int(pid)
+        if kind in EVENT_TRIGGERS:
+            r = 0
+        else:
+            d = json.loads(detail) if isinstance(detail, str) else (detail or {})
+            r = 2 if d.get("status") == "pending" else 1
+        rank[pid] = min(rank.get(pid, 9), r)
+    return sorted(rank, key=lambda p: (rank[p], p))
 
 
 def _jsonable(card: Any) -> dict[str, Any]:
@@ -166,6 +184,25 @@ def latest_research(conn: Conn, ticker: str) -> dict[str, Any] | None:
     return card
 
 
+def research_levels(research: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The trade levels the research agent set (ADR 0023: ``trade_*`` card fields), None when
+    the research card has none."""
+    from solaraalpha.agents import trade_levels
+
+    levels = trade_levels(research) if research else None
+    return levels.model_dump() if levels is not None else None
+
+
+def systematic_stops(cards_now: dict[str, Any]) -> dict[str, Any]:
+    """The rule-based stops (context only: the agent decides the stop, ADR 0024): the levels
+    map's stop, the technical ATR stop and, for an open position, the chandelier trail."""
+    return {
+        "levels": (cards_now.get("levels") or {}).get("stop"),
+        "technical": (cards_now.get("technical") or {}).get("stop"),
+        "chandelier": (cards_now.get("position") or {}).get("stop"),
+    }
+
+
 def build_pack(
     conn: Conn, position_id: int, run_id: int, inputs: Inputs | None = None, text: bool = True
 ) -> dict[str, Any]:
@@ -191,10 +228,13 @@ def build_pack(
                 row["text"] = f"unavailable: {e}"
         trig_rows.append(row)
     research = latest_research(conn, state.ticker)
+    status = "pending" if state.status in ("draft", "approved") else str(state.status)
     return {
         "position_id": position_id,
         "ticker": state.ticker,
         "daily_run_id": run_id,
+        "status": status,
+        "pending_entry": book.pending_entry(conn, position_id) if status == "pending" else None,
         "state": asdict(state),
         "orders": json.loads(book.orders(conn, position_id).to_json(orient="records")),
         "plan": latest_plan(conn, position_id),
@@ -208,6 +248,8 @@ def build_pack(
         ),
         "triggers": trig_rows,
         "research": research,
+        "research_levels": research_levels(research),
+        "systematic_stops": systematic_stops(cards_now),
         "research_evidence_ids": json.loads(research["evidence_ids"])
         if research and research.get("evidence_ids")
         else [],

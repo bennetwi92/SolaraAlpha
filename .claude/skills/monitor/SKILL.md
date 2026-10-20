@@ -1,89 +1,123 @@
 ---
 name: monitor
-description: Daily monitor for open positions with a fired trigger (a new filing, a large gap). Reads the monitor pack (entry conditions then vs the toolkits now, thesis conditions, the filing text), decides whether something structural changed, and proposes one action (hold, tighten the stop, take a partial, exit, revise the target) as a plan revision the owner accepts or declines. Never changes orders. Use for "/monitor --run N" (every triggered position of a daily run) or "/monitor --position ID".
+description: Daily monitor for every open position and every pending entry (an approved or drafted entry order not yet filled). Reads the monitor pack (entry conditions then vs the toolkits now, thesis conditions, the day's filings, headlines and gaps, the research levels, the systematic stops as context), decides whether anything changed, sets the stop by judgement and records one action (open: hold, tighten the stop, take a partial, exit, revise the target; pending: hold, amend the entry / stop, cancel). The book applies it as it is recorded; the owner is notified and can undo it. Use for "/monitor --run N" (every position of a daily run) or "/monitor --position ID".
 ---
 
-# Monitor: structural change or noise?
+# Monitor: has anything changed?
 
-You review **open positions** when the daily job (ADR 0017) fired an agent trigger: a new
-regulatory filing or a gap of more than 2 ATR. You compare what the position was entered on
-(the frozen entry conditions and the research thesis) with what the toolkits say **now** and
-what the filing says, and you **propose** one action. **You never create, change or cancel an
-order**: the owner does, via `book.py accept|decline`. Churn is the failure mode: a position
-that is merely moving around inside its risk is `hold`.
+Every weekday the daily job (ADR 0017) gives each **open position** and each **pending entry**
+(a draft / approved position whose entry order has not filled) a `daily_review` (ADR 0024). You
+compare what the trade was planned on (the frozen entry conditions, the research thesis and its
+levels) with what the toolkits say **now** and what the day brought (filings, headlines, gaps,
+thesis conditions), and you record **one** action. **Your action is applied by the book as you
+record it** (the owner is told what to change at the broker and can undo it), so be right and
+be sparing: churn is the failure mode. Nothing changed → `hold`.
 
-Arguments: `--run N` (every position with an agent trigger in daily run N) or `--position ID`
-(one position, under the latest daily run).
+Arguments: `--run N` (every position the daily run put up for review) or `--position ID` (one
+position, under the latest daily run).
 
-## Structural change (the only reasons to propose anything but hold)
+## What counts as a change (the only reasons for anything but hold)
 
-A change is structural when it is one of:
-
-1. **Guidance or estimate change**: the company changed its guidance, or the filing moves
-   forward earnings (direction and line named).
+1. **Guidance or estimate change**: the company changed its guidance, or a filing moves forward
+   earnings (direction and line named).
 2. **A thesis kill criterion hit**: a `machine` condition in `thesis` has `hit: true`, or an
-   `agent` condition is met by the filing's content.
+   `agent` condition is met by a filing's or headline's content.
 3. **A capital event**: placing, rights issue, bid approach or offer, delisting notice.
-4. **A regulatory or legal event**: investigation, fine, licence, litigation that bears on
-   the business.
-5. **A weekly-trend break**: stage 2 → 3, the weekly close below a falling 40-week MA
-   (`now.technical.trend` turned negative with `now.position.action` `exit` or `review`).
+4. **A regulatory or legal event**: investigation, fine, licence, litigation that bears on the
+   business.
+5. **A weekly-trend break**: the weekly close below a falling 40-week MA (`now.technical.trend`
+   turned negative; for an open position `now.position.action` `exit` or `review`).
+6. **The stop no longer sits where the thesis is invalidated** (open positions: the stock has
+   moved on, a new higher low or a broken-out level now marks invalidation; see "The stop").
+7. **The pending entry no longer makes sense as planned** (pending entries only): the catalyst
+   is now priced in (the stock ran away from the entry without triggering it), the set-up
+   changed (a new level, the compression resolved down), or one of 1-5 above.
 
 Everything else is **noise**: no new information (a director's scheme award, a TR-1 with no
-message), or a move inside 2 ATR. Noise → `hold` with reason "no structural change", label
-`PASS`.
+message), a move inside the plan's risk, a headline about another company. Noise → `hold`
+with reason "no change", label `PASS`.
+
+## The stop (you set it; the rules are context)
+
+The stop goes **where the thesis is invalidated**, not at a fixed distance: below the higher
+low or the level the trade depends on, with room for the stock's normal daily range (the
+volatility is wanted: don't strangle a volatile winner). `systematic_stops` in the pack
+(`levels`: the level map's stop; `technical`: the ATR stop; `chandelier`: the trailing stop for
+an open position) and `research_levels.stop` (the research agent's, with its `stop_reason`) are
+inputs to your judgement, not answers.
+
+- **Open position:** never lower the stop (the book refuses it). Raise it when invalidation has
+  moved up: a new higher low, a breakout level that has held, a winner well past the first
+  target. Name the level and why in `reasons`.
+- **Pending entry:** the stop is part of the plan; you may move it either way while nothing is
+  filled, if the set-up says so (`amend_entry` with `stop`). The size is re-computed to the
+  plan's risk budget unless you give `qty`.
 
 ## Step 1: Build the pack
 
 ```
-uv run python scripts/monitor_pack.py --run <N>              # every triggered position
+uv run python scripts/monitor_pack.py --run <N>              # every position of the run
 uv run python scripts/monitor_pack.py --run <N> --position <ID>
 ```
 
 Read `pack.json` in the printed directory:
+- `status`: `open` or `pending`; `pending_entry`: the unfilled entry order (id, qty, price,
+  type, status `draft` / `approved` / `placed`).
 - `state`: shares, average cost, stop, risk at the stop, R unit; `orders`; `plan` (the trade
   plan the position was drafted from: entry, stop, targets, horizon, flags).
 - `entry_conditions`: the cards frozen when the position was drafted ("then").
-- `now`: fresh `technical` (and `position`: the chandelier stop, R so far, hold / review /
-  exit), `levels`, `relative_strength` cards; `now_labels` their band labels; `now_errors`.
+- `now`: fresh `technical` (and for an open position `position`: the chandelier stop, R so far,
+  hold / review / exit), `levels`, `relative_strength` cards; `now_labels`; `now_errors`.
 - `diff`: then → now for trend, momentum, entry, structure, reward:risk, rs, growth, quality.
 - `thesis`: each thesis condition; machine ones carry `hit` and the current `value`.
-- `triggers`: what fired (gap numbers; filing headline, type and **full text**).
-- `research`: the latest research verdict (reasons, kill criteria, note) and its evidence ids.
+- `triggers`: the day's triggers (`daily_review` with `fired`; gap numbers; filing headline,
+  type and **full text**; headlines; for a pending entry an `entry_break`).
+- `research`: the latest research verdict (reasons, kill criteria, note) and its evidence ids;
+  `research_levels`: the entry, stop and `stop_reason` it set (ADR 0023), when present.
+- `systematic_stops`: context for "The stop".
 
 ## Step 2: Decide
 
-1. Read the filing text (or the gap) against the thesis and kill criteria. Which structural
-   category, if any, applies? Quote the sentence that makes it so.
-2. Check `diff` and `now_labels`: has the set-up deteriorated since entry (which fields, by how
-   much), or is the move inside the plan?
-3. Propose **one** action:
-   - `hold`: no structural change (the default).
-   - `tighten_stop`: raise the stop to a named level (never lower it; at least the current
-     chandelier `now.position.stop` when it is higher than `state.stop`). Give `stop`.
-   - `take_partial`: sell `qty` shares (e.g. half) to bank gains or cut risk. Give `qty`.
-   - `exit`: the thesis is broken; a market exit order (`type` `market`, or `limit` with
-     `price`).
-   - `revise_target`: the levels moved; give the new `target` (and `target_2`).
-4. `label` encodes the urgency: `ACT` = act now (exit, tighten before tomorrow's open),
-   `WATCH` = keep an eye (partial, target revision, hold with a concern), `PASS` = no change.
-   `ERROR` if the pack could not be built.
+1. Read the day's filings, headlines and gaps against the thesis and kill criteria. Which
+   change above, if any, applies? Quote the sentence or the numbers that make it so.
+2. Check `diff` and `now_labels`: has the set-up deteriorated since it was planned, or is the
+   move inside the plan?
+3. Check the stop against "The stop".
+4. Record **one** action:
+   - **Open position:**
+     - `hold`: nothing changed (the default).
+     - `tighten_stop`: raise the stop to a named level. Give `stop`.
+     - `take_partial`: sell `qty` shares (e.g. half) to bank gains or cut risk. Give `qty`.
+     - `exit`: the thesis is broken; a market exit (`type` `market`, or `limit` with `price`).
+     - `revise_target`: the move sought changed; give the new `target` (and `target_2`).
+   - **Pending entry:**
+     - `hold`: the plan still stands (the default).
+     - `amend_entry`: a new entry `price` (the level to enter at or below, or the new breakout
+       trigger) and / or a new `stop`; optionally `qty`.
+     - `cancel`: the trade no longer makes sense (thesis broken, catalyst priced in, capital
+       event); the entry order is cancelled.
+5. `label` encodes the urgency: `ACT` = acted on something that matters before tomorrow's open
+   (exit, cancel, a stop raise), `WATCH` = a change worth the owner's eye (partial, amendment,
+   target revision, hold with a concern), `PASS` = no change. `ERROR` if the pack could not be
+   built.
 
 ## Step 3: Record
 
 Write `verdict.json` next to the pack per `uv run python scripts/record.py schema`, with
 `stage: "monitor"`, the position's `ticker`, `run_id` = the daily run id, your `label`,
-`confidence`, `reasons` (first line: the structural category or "no structural change"),
-`scores` (optional, e.g. `thesis_intact` in [-1, 1]), `evidence` (the filing: `kind`
-`filing`, its NSM `url`, `nsm_id` = the trigger's `id`; any page you fetched), `note_md`, and
-the proposal in `checks` **as strings**:
+`confidence`, `reasons` (first line: the change or "no change"; for a stop, the level and why
+it marks invalidation), `scores` (optional, e.g. `thesis_intact` in [-1, 1]), `evidence` (a
+filing: `kind` `filing`, its NSM `url`, `nsm_id` = the trigger's `id`; any page you fetched),
+`note_md`, and the action in `checks` **as strings**:
 
 ```json
-"checks": {"action": "tighten_stop", "stop": "1480", "structural": "guidance", "trigger": "filing NI-000012345678"}
+"checks": {"action": "tighten_stop", "stop": "1480", "structural": "invalidation", "trigger": "daily_review"}
 "checks": {"action": "take_partial", "qty": "50", "structural": "kill_criterion", "trigger": "gap -2.4 ATR"}
 "checks": {"action": "exit", "type": "market", "structural": "capital_event", "trigger": "filing NI-..."}
-"checks": {"action": "revise_target", "target": "1900", "structural": "none", "trigger": "gap +2.6 ATR"}
-"checks": {"action": "hold", "structural": "none", "trigger": "filing NI-..."}
+"checks": {"action": "revise_target", "target": "1900", "structural": "none", "trigger": "daily_review"}
+"checks": {"action": "amend_entry", "price": "805", "stop": "742", "structural": "setup", "trigger": "daily_review"}
+"checks": {"action": "cancel", "structural": "capital_event", "trigger": "filing NI-..."}
+"checks": {"action": "hold", "structural": "none", "trigger": "daily_review"}
 ```
 
 Then:
@@ -92,14 +126,18 @@ Then:
 uv run python scripts/record.py revision <dir>/verdict.json --position <ID> --actor agent:monitor
 ```
 
-This writes the `monitor` card and evidence and, unless the action is `hold`, a
-`revision_proposed` event the owner sees with `book.py revisions` and settles with
-`book.py accept <REV_ID>` (which drafts the orders) or `book.py decline <REV_ID> --reason`.
+This writes the `monitor` card and evidence and, unless the action is `hold`, the revision,
+which the book **applies at once** (ADR 0024): the orders it implies are drafted approved, the
+owner's inbox says what to change in Trading212, and `book.py undo REV_ID --reason` reverses
+it. If the book refuses it (a lower stop on an open position, an open-position action on a
+pending entry, a stop at or above the entry) it is recorded as declined with the reason and
+nothing changes: read the reason and record a corrected verdict only if it still matters.
 
 ## Standards
 
 - Cite the pack: the filing sentence, the field values then and now, the trigger numbers.
 - One action per position per run. If two apply, pick the more protective one and mention the
   other in `note_md`.
-- Never propose lowering a stop, adding to a loser, or anything outside the five actions.
+- Never lower an open position's stop, add to a loser, or act outside the actions above.
+- A quiet day is `hold`. Moving a stop or an entry a few pence is churn, not judgement.
 - If `now_errors` is non-empty, say which toolkit failed and judge on what is there.

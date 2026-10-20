@@ -133,9 +133,11 @@ POSITION_TRANSITIONS: dict[str, frozenset[str | None]] = {
     "opened": frozenset({"approved"}),
     "revised": frozenset({"open"}),
     "stop_raised": frozenset({"open"}),
-    "revision_proposed": frozenset({"open"}),
-    "revision_accepted": frozenset({"open"}),
-    "revision_declined": frozenset({"open"}),
+    # revisions: open positions, and pending entries (draft / approved) since ADR 0024
+    "revision_proposed": frozenset({"open", "draft", "approved"}),
+    "revision_accepted": frozenset({"open", "draft", "approved"}),
+    "revision_declined": frozenset({"open", "draft", "approved"}),
+    "revision_undone": frozenset({"open", "draft", "approved"}),
     "split": frozenset({"open"}),
     "closed": frozenset({"open"}),
 }
@@ -1447,7 +1449,74 @@ def corporate_close(
 
 # ---------------------------------------------------------------------------- revisions
 
-REVISION_ACTIONS = ("hold", "tighten_stop", "take_partial", "exit", "revise_target", "add")
+REVISION_ACTIONS = (
+    "hold",
+    "tighten_stop",
+    "take_partial",
+    "exit",
+    "revise_target",
+    "add",
+    "amend_entry",
+    "cancel",
+)
+OPEN_ACTIONS = frozenset({"hold", "tighten_stop", "take_partial", "exit", "revise_target", "add"})
+PENDING_ACTIONS = frozenset({"hold", "amend_entry", "cancel"})  # a draft / approved entry
+AGENT_PREFIX = "agent:"  # an agent's revision is applied as it is recorded (ADR 0024)
+
+
+def pending_entry(conn: Conn, position_id: int) -> dict[str, Any] | None:
+    """The latest open entry order of a position (``order_id``, ``qty``, ``price``, ``type``,
+    ``status``), None when there is none."""
+    od = orders(conn, position_id)
+    entry = od[(od["purpose"] == "entry") & od["status"].isin(OPEN_ORDER)]
+    if entry.empty:
+        return None
+    r = entry.iloc[-1]
+    price = None if r["price"] is None or pd.isna(r["price"]) else float(r["price"])
+    return {
+        "order_id": int(r["order_id"]),
+        "qty": int(r["qty"]),
+        "price": price,
+        "type": str(r["type"]),
+        "status": str(r["status"]),
+    }
+
+
+def entry_ever_placed(conn: Conn, position_id: int) -> bool:
+    """Whether any entry order of the position has reached the broker (a ``placed`` event, now
+    or before a replacement): then a change to the entry is also a change at the broker."""
+    od = orders(conn, position_id)
+    ids = [int(o) for o in od.loc[od["purpose"] == "entry", "order_id"]]
+    if not ids:
+        return False
+    marks = ", ".join("?" * len(ids))
+    row = conn.execute(
+        f"SELECT COUNT(*) FROM order_events WHERE status = 'placed' AND order_id IN ({marks})",
+        ids,
+    ).fetchone()
+    return bool(row and row[0])
+
+
+def _drafted_plan(conn: Conn, position_id: int) -> dict[str, Any]:
+    ev = position_events(conn, position_id)
+    payloads = list(ev.loc[ev["kind"] == "drafted", "payload"])
+    return dict(payloads[-1]) if payloads else {}
+
+
+def _old_values(conn: Conn, position_id: int, st: PositionState) -> dict[str, Any]:
+    if st.status in ("draft", "approved"):
+        pe = pending_entry(conn, position_id) or {}
+        return {
+            "entry": pe.get("price"),
+            "stop": _planned_stop(conn, position_id),
+            "qty": pe.get("qty"),
+        }
+    ev = position_events(conn, position_id)
+    payloads = [x for x in ev.loc[ev["kind"].isin(["drafted", "amended", "revised"]), "payload"]]
+    target = next(
+        (p.get("target") for p in reversed(payloads) if p.get("target") is not None), None
+    )
+    return {"stop": st.stop, "target": target, "qty": st.shares}
 
 
 def propose_revision(
@@ -1460,49 +1529,74 @@ def propose_revision(
     evidence_ids: list[int] | None = None,
     trigger: str = "",
     at: str | None = None,
+    auto_apply: bool | None = None,
 ) -> int:
     """Record a ``revision_proposed`` event (payload: action, old → new, reason, evidence,
-    trigger) and return its event id, the revision id the owner accepts or declines."""
+    trigger) and return its event id, the revision id.
+
+    Open positions take :data:`OPEN_ACTIONS`; pending entries (draft / approved positions)
+    take :data:`PENDING_ACTIONS` (``amend_entry``: a new entry ``price`` and / or ``stop``,
+    optionally ``qty``; ``cancel``). ``auto_apply`` (default: the actor is an agent,
+    ``agent:...``, ADR 0024) accepts it at once under the same actor; one the book refuses
+    (e.g. a stop not above the current one) is recorded as declined by the pipeline with the
+    reason, so the owner sees it, and nothing else changes."""
     if action not in REVISION_ACTIONS:
         raise ValueError(f"action must be one of {REVISION_ACTIONS}, got {action!r}")
     st = position_state(conn, position_id)
-    ev = position_events(conn, position_id)
-    payloads = [x for x in ev.loc[ev["kind"].isin(["drafted", "amended", "revised"]), "payload"]]
-    target = next(
-        (p.get("target") for p in reversed(payloads) if p.get("target") is not None), None
-    )
-    old = {"stop": st.stop, "target": target, "qty": st.shares}
     payload = {
         "action": action,
-        "old": old,
+        "old": _old_values(conn, position_id, st),
         "new": {k: v for k, v in new.items() if v is not None},
         "reason": reason,
         "evidence_ids": list(evidence_ids or []),
         "trigger": trigger,
     }
-    return position_event(conn, position_id, "revision_proposed", payload, actor, reason, at)
+    rid = position_event(conn, position_id, "revision_proposed", payload, actor, reason, at)
+    if auto_apply is None:
+        auto_apply = actor.startswith(AGENT_PREFIX)
+    if auto_apply and action != "hold":
+        try:
+            accept_revision(conn, rid, actor=actor, at=at)
+        except ValueError as e:
+            position_event(
+                conn,
+                position_id,
+                "revision_declined",
+                {"revision_id": rid},
+                PIPELINE,
+                f"auto-apply refused: {e}",
+                at,
+            )
+    return rid
 
 
 def revisions(
     conn: Conn, position_id: int | None = None, status: str | None = None
 ) -> pd.DataFrame:
-    """Proposed revisions with their decision (``proposed`` / ``accepted`` / ``declined``)."""
-    sql = "SELECT * FROM position_events WHERE kind IN ('revision_proposed', 'revision_accepted', 'revision_declined')"
+    """Proposed revisions with their decision (``proposed`` / ``accepted`` / ``declined`` /
+    ``undone``): ``decided_by`` is the decision's actor (an agent for an auto-applied one),
+    ``decision_reason`` its reason, ``done`` what accepting it did (order ids, old → new)."""
+    sql = "SELECT * FROM position_events WHERE kind IN ('revision_proposed', 'revision_accepted', 'revision_declined', 'revision_undone')"
     params: list[Any] = []
     if position_id is not None:
         sql += " AND position_id = ?"
         params.append(position_id)
     ev = query(sql + " ORDER BY event_id", conn, params)
     ev["payload"] = ev["payload"].map(json.loads)
-    decided = {
-        int(p["revision_id"]): (kind.removeprefix("revision_"), at)
-        for kind, p, at in zip(ev["kind"], ev["payload"], ev["at"], strict=True)
-        if kind != "revision_proposed" and "revision_id" in p
-    }
+    decided: dict[int, tuple[str, Any, Any, Any, dict[str, Any]]] = {}
+    for kind, p, at, by, why in zip(
+        ev["kind"], ev["payload"], ev["at"], ev["actor"], ev["reason"], strict=True
+    ):
+        if kind == "revision_proposed" or "revision_id" not in p:
+            continue
+        done = p.get("done") or decided.get(int(p["revision_id"]), ("", 0, 0, 0, {}))[4]
+        decided[int(p["revision_id"])] = (kind.removeprefix("revision_"), at, by, why, done)
     rows = []
     for r in ev[ev["kind"] == "revision_proposed"].to_dict("records"):
         p = r["payload"]
-        state, when = decided.get(int(r["event_id"]), ("proposed", None))
+        state, when, by, why, done = decided.get(
+            int(r["event_id"]), ("proposed", None, None, None, {})
+        )
         rows.append(
             {
                 "revision_id": int(r["event_id"]),
@@ -1516,6 +1610,9 @@ def revisions(
                 "trigger": p.get("trigger"),
                 "status": state,
                 "decided_at": when,
+                "decided_by": by,
+                "decision_reason": why,
+                "done": done,
             }
         )
     df = pd.DataFrame(
@@ -1532,6 +1629,9 @@ def revisions(
             "trigger",
             "status",
             "decided_at",
+            "decided_by",
+            "decision_reason",
+            "done",
         ],
     )
     if status is not None:
@@ -1550,29 +1650,77 @@ def _revision(conn: Conn, revision_id: int) -> dict[str, Any]:
     return rev
 
 
-def accept_revision(
-    conn: Conn, revision_id: int, actor: str = OWNER, at: str | None = None
-) -> dict[str, Any]:
-    """Accept a proposed revision: a ``revision_accepted`` event, then the orders it implies,
-    all ``approved`` (tighten_stop: replace the stop, ratchet only, + ``stop_raised``;
-    take_partial: an exit order for the qty; exit: an exit order with reason thesis_broken;
-    revise_target: a ``revised`` event; add: an ``add`` buy order for ``qty`` at ``entry`` and
-    the stop raised to ``stop`` (at least breakeven, never lower) for the whole position).
-    Returns what was done."""
-    rev = _revision(conn, revision_id)
-    pid, action, new = int(rev["position_id"]), str(rev["action"]), dict(rev["new"] or {})
-    t = iso(at)
-    position_event(
-        conn, pid, "revision_accepted", {"revision_id": revision_id, "action": action}, actor, "", t
-    )
-    done: dict[str, Any] = {"revision_id": revision_id, "action": action}
-    st = position_state(conn, pid)
+def _check_revision(conn: Conn, st: PositionState, action: str, new: dict[str, Any]) -> None:
+    """Refuse (``ValueError``) a revision the book cannot apply, before anything is written."""
+    pending = st.status in ("draft", "approved")
+    if pending and action not in PENDING_ACTIONS:
+        raise ValueError(
+            f"position {st.position_id} is a pending entry; {action!r} needs an open position"
+        )
+    if not pending and action not in OPEN_ACTIONS:
+        raise ValueError(
+            f"position {st.position_id} is {st.status}; {action!r} is for a pending entry"
+        )
     if action == "tighten_stop":
         price = float(new["stop"])
         if st.stop is not None and price <= st.stop:
             raise ValueError(
                 f"new stop {price} is not above the current stop {st.stop}: never lower a stop"
             )
+    elif action == "take_partial" and int(new.get("qty") or 0) <= 0:
+        raise ValueError("take_partial needs a positive qty")
+    elif action == "revise_target" and not any(k in new for k in ("target", "target_2")):
+        raise ValueError("revise_target needs a new target")
+    elif action == "add":
+        if int(new.get("qty") or 0) <= 0 or new.get("entry") is None:
+            raise ValueError("add needs a positive qty and an entry price")
+        if st.shares <= 0:
+            raise ValueError(f"position {st.position_id} is {st.status}; nothing to add to")
+    elif action == "amend_entry":
+        if not any(new.get(k) is not None for k in ("price", "stop", "qty")):
+            raise ValueError("amend_entry needs a new entry price, stop or qty")
+        pe = pending_entry(conn, st.position_id)
+        entry = new.get("price", pe["price"] if pe else None)
+        stop = new.get("stop", _planned_stop(conn, st.position_id))
+        if entry is not None and stop is not None and float(stop) >= float(entry):
+            raise ValueError(f"stop {stop} is not below the entry {entry}")
+
+
+def _resize(conn: Conn, st: PositionState, entry: float, stop: float) -> int | None:
+    """Shares for a moved entry / stop that keep the drafted plan's risk budget (its
+    ``risk_amount``), and its value when a cap other than risk bound it; None when the plan has
+    no budget to keep."""
+    plan = _drafted_plan(conn, st.position_id)
+    budget = plan.get("risk_amount")
+    if budget is None or entry <= stop:
+        return None
+    qty = math.floor(float(budget) / to_account(entry - stop, st.currency))
+    if plan.get("capped_by") not in (None, "risk") and plan.get("position_value"):
+        qty = min(qty, math.floor(float(plan["position_value"]) / to_account(entry, st.currency)))
+    return max(qty, 0)
+
+
+def accept_revision(
+    conn: Conn, revision_id: int, actor: str = OWNER, at: str | None = None
+) -> dict[str, Any]:
+    """Accept a revision: the orders it implies, all ``approved``, then a ``revision_accepted``
+    event carrying what was done (``done``, which :func:`undo_revision` reverses).
+
+    Open positions: tighten_stop: replace the stop, ratchet only, + ``stop_raised``;
+    take_partial: an exit order for the qty; exit: an exit order with reason thesis_broken;
+    revise_target: a ``revised`` event; add: an ``add`` buy order for ``qty`` at ``entry`` and
+    the stop raised to ``stop`` (at least breakeven, never lower) for the whole position.
+    Pending entries (ADR 0024): amend_entry: :func:`amend_position` with the new entry price /
+    stop / qty (qty re-sized to the plan's risk budget when not given); cancel: the position
+    ``cancelled`` and its open orders with it. Nothing is written when the book refuses it."""
+    rev = _revision(conn, revision_id)
+    pid, action, new = int(rev["position_id"]), str(rev["action"]), dict(rev["new"] or {})
+    t = iso(at)
+    st = position_state(conn, pid)
+    _check_revision(conn, st, action, new)
+    done: dict[str, Any] = {"revision_id": revision_id, "action": action}
+    if action == "tighten_stop":
+        price = float(new["stop"])
         od = orders(conn, pid)
         live = od[(od["purpose"] == "stop") & od["status"].isin(LIVE_ORDER)]
         if live.empty:
@@ -1583,6 +1731,7 @@ def accept_revision(
             done["stop_order_id"] = replace_order(
                 conn, int(live["order_id"].iloc[-1]), None, price, "revision accepted", actor, t
             )
+        done |= {"old_stop": st.stop, "new_stop": price}
         position_event(
             conn,
             pid,
@@ -1593,16 +1742,13 @@ def accept_revision(
             t,
         )
     elif action == "take_partial":
-        qty = int(new.get("qty") or 0)
-        if qty <= 0:
-            raise ValueError("take_partial needs a positive qty")
         done["exit_order_id"] = exit_position(
             conn,
             pid,
             "discretionary",
             str(new.get("type", "market")),
             new.get("price"),
-            qty,
+            int(new["qty"]),
             actor,
             t,
         )
@@ -1619,15 +1765,10 @@ def accept_revision(
         )
     elif action == "revise_target":
         payload = {k: new[k] for k in ("target", "target_2") if k in new}
-        if not payload:
-            raise ValueError("revise_target needs a new target")
+        done |= {"old_target": (rev["old"] or {}).get("target"), **payload}
         position_event(conn, pid, "revised", {**payload, "revision_id": revision_id}, actor, "", t)
     elif action == "add":
-        qty = int(new.get("qty") or 0)
-        if qty <= 0 or new.get("entry") is None:
-            raise ValueError("add needs a positive qty and an entry price")
-        if st.status != "open" or st.shares <= 0:
-            raise ValueError(f"position {pid} is {st.status}; nothing to add to")
+        qty = int(new["qty"])
         stop = float(new["stop"]) if new.get("stop") is not None else st.stop
         if stop is not None and (st.stop is None or stop > st.stop + 1e-9):
             od = orders(conn, pid)
@@ -1673,7 +1814,127 @@ def accept_revision(
             f"add accepted (revision {revision_id})",
             at=t,
         )
+    elif action == "amend_entry":
+        pe = pending_entry(conn, pid)
+        planned = _planned_stop(conn, pid)
+        to_price, to_stop, to_qty = new.get("price"), new.get("stop"), new.get("qty")
+        if to_qty is None and pe is not None and (to_price is not None or to_stop is not None):
+            entry_px = float(to_price) if to_price is not None else pe["price"]
+            stop_px = float(to_stop) if to_stop is not None else planned
+            if entry_px is not None and stop_px is not None:
+                to_qty = _resize(conn, st, float(entry_px), float(stop_px))
+        if to_qty is not None and pe is not None and int(to_qty) == pe["qty"]:
+            to_qty = None
+        if to_qty is not None and int(to_qty) <= 0:
+            raise ValueError("amend_entry leaves no shares at the plan's risk budget")
+        done["amended"] = amend_position(
+            conn,
+            pid,
+            int(to_qty) if to_qty is not None else None,
+            float(to_price) if to_price is not None else None,
+            float(to_stop) if to_stop is not None else None,
+            f"revision {revision_id} ({actor})",
+            actor,
+        )
+        done["was_placed"] = entry_ever_placed(conn, pid)
+    elif action == "cancel":
+        pe = pending_entry(conn, pid)
+        done["was_placed"] = entry_ever_placed(conn, pid)
+        od = orders(conn, pid)
+        done["cancelled_orders"] = [
+            int(o) for o in od.loc[od["status"].isin(OPEN_ORDER), "order_id"]
+        ]
+    accepted = {"revision_id": revision_id, "action": action, "done": done}
+    position_event(conn, pid, "revision_accepted", accepted, actor, "", t)
+    if action == "cancel":  # after the acceptance: a cancelled position takes no more events
+        cancel_open_orders(
+            conn, pid, reason=f"cancelled: revision {revision_id}", actor=actor, at=t
+        )
+        position_event(
+            conn, pid, "cancelled", {"revision_id": revision_id}, actor, str(rev["reason"]), t
+        )
     return done
+
+
+def undo_revision(
+    conn: Conn, revision_id: int, reason: str, actor: str = OWNER, at: str | None = None
+) -> dict[str, Any]:
+    """Reverse an accepted revision (the owner's undo of an auto-applied agent change, ADR
+    0024): tighten_stop: the stop order back at the old stop; revise_target: the old target;
+    amend_entry: the entry order and stop back as they were; take_partial / exit / add: the
+    order it created cancelled if it has not filled. A cancelled pending entry cannot be
+    reopened (re-plan it: ``plan.py --run N --replan``). Records ``revision_undone``."""
+    if not reason:
+        raise ValueError("an undo needs a reason")
+    df = revisions(conn)
+    row = df[df["revision_id"] == revision_id]
+    if row.empty:
+        raise ValueError(f"no revision {revision_id}")
+    rev = {str(k): v for k, v in row.iloc[0].items()}
+    if rev["status"] != "accepted":
+        raise ValueError(
+            f"revision {revision_id} is {rev['status']}; only an accepted one can be undone"
+        )
+    pid, action, done = int(rev["position_id"]), str(rev["action"]), dict(rev["done"] or {})
+    old = dict(rev["old"] or {})
+    t = iso(at)
+    out: dict[str, Any] = {"revision_id": revision_id, "action": action}
+    if action == "cancel":
+        raise ValueError(
+            "a cancelled entry cannot be reopened: re-plan it with `plan.py --run N --replan`"
+        )
+    if action == "tighten_stop":
+        if old.get("stop") is None:
+            raise ValueError("there was no stop before this revision to restore")
+        od = orders(conn, pid)
+        live = od[(od["purpose"] == "stop") & od["status"].isin(LIVE_ORDER)]
+        if live.empty:
+            raise ValueError(f"position {pid} has no live stop order to restore")
+        out["stop_order_id"] = replace_order(
+            conn,
+            int(live["order_id"].iloc[-1]),
+            None,
+            float(old["stop"]),
+            f"undo revision {revision_id}: {reason}",
+            actor,
+            t,
+        )
+        out["restored_stop"] = float(old["stop"])
+    elif action == "revise_target":
+        restored = {"target": old.get("target"), "target_2": None}
+        position_event(
+            conn, pid, "revised", {**restored, "revision_id": revision_id}, actor, reason, t
+        )
+        out["restored_target"] = old.get("target")
+    elif action == "amend_entry":
+        amended = done.get("amended") or {}
+        before = amended.get("old") or {}
+        out["amended"] = amend_position(
+            conn,
+            pid,
+            int(before["qty"]) if before.get("qty") is not None else None,
+            float(before["price"]) if before.get("price") is not None else None,
+            float(before["stop"]) if before.get("stop") is not None else None,
+            f"undo revision {revision_id}: {reason}",
+            actor,
+        )
+    else:  # take_partial / exit / add: cancel the order it created while it is unfilled
+        key = "add_order_id" if action == "add" else "exit_order_id"
+        oid = done.get(key)
+        if (
+            oid is None
+            or order_status(conn, int(oid)) not in OPEN_ORDER
+            or filled_qty(conn, int(oid))
+        ):
+            raise ValueError(f"the {action} order has filled (or is gone): nothing to undo")
+        order_event(
+            conn, int(oid), "cancelled", actor=actor, reason=f"undo revision {revision_id}", at=t
+        )
+        out["cancelled_order"] = int(oid)
+    position_event(
+        conn, pid, "revision_undone", {"revision_id": revision_id, "done": out}, actor, reason, t
+    )
+    return out
 
 
 def decline_revision(

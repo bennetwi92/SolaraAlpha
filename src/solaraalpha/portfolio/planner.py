@@ -1,7 +1,8 @@
 """Draft the week's positions from a saved scan run: final labels -> plans -> fit -> book.
 
 Reads one run from the results DB (its labels, cards and price snapshots), plans and sizes
-every ticker whose final label is ACT (:mod:`solaraalpha.portfolio.plan`), checks the plans
+every ticker whose final label is ACT at the research agent's entry and stop (its card's
+``trade_*`` fields, ADR 0023; no agent levels, no plan) (:mod:`solaraalpha.portfolio.plan`), checks the plans
 against the book (:mod:`solaraalpha.portfolio.fit`) and writes the accepted ones as draft
 positions with their entry order, the full plan in the ``drafted`` payload, every justifying
 card frozen as entry conditions and the research's kill criteria as thesis conditions. Re-running
@@ -19,6 +20,7 @@ from typing import Any
 import pandas as pd
 
 from solaraalpha import store
+from solaraalpha.agents import trade_levels
 from solaraalpha.data.clean import to_weekly
 from solaraalpha.log import get_logger
 from solaraalpha.pipeline import Condition
@@ -213,6 +215,11 @@ def plan_run(
         if "levels" not in cards or "technical" not in cards:
             errors.append((c.ticker, "no levels / technical card in the run"))
             continue
+        # ADR 0023: the research agent sets the entry and the stop; no rule-based plan.
+        agent = trade_levels(cards.get("research"))
+        if agent is None:
+            errors.append((c.ticker, "no agent levels (no research verdict with a trade)"))
+            continue
         daily = _prices(c.ticker, started, conn)
         liq = (cards.get("liquidity") or {}).get("adv_gbp_20")
         if liq is not None and not (isinstance(liq, float) and math.isnan(liq)):
@@ -231,6 +238,7 @@ def plan_run(
                 equity.cash,
                 None if adv is None or math.isnan(adv) else adv,
                 currency,
+                agent=agent,
             )
             if risk_off:  # the market regime (#142): every plan carries the flag while it lasts
                 plan = replace(plan, flags=(*plan.flags, "market risk_off"))

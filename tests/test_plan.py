@@ -134,3 +134,23 @@ def test_adv_gbp() -> None:
     df.attrs = {"currency": "GBp"}
     assert adv_gbp(df) == pytest.approx(1000 * 50_000 / 100)  # £500k
     assert math.isnan(adv_gbp(df.iloc[:0]))
+
+
+def test_agent_levels_set_the_entry_and_the_stop() -> None:
+    from solaraalpha.agents import TradeLevels
+
+    lim = TradeLevels(entry_type="limit", entry=1480.0, stop=1250.0, stop_reason="below the base")
+    p = make_plan("JET2.L", levels(), TECH, None, rules(), 1e4, 1e4, agent=lim)
+    assert (p.entry_type, p.entry, p.wait_for_break) == ("limit", 1480.0, False)
+    assert (p.stop, p.stop_source, p.stop_reason) == (1250.0, "agent", "below the base")
+    assert p.target == pytest.approx(1480 * 1.15) and p.valid_until == DATE + pd.Timedelta(days=7)
+    brk = TradeLevels(
+        entry_type="stop", entry=1600.0, stop=1450.0, stop_reason="failed break", valid_days=3
+    )
+    p = make_plan("JET2.L", levels(), TECH, None, rules(), 1e4, 1e4, agent=brk)
+    assert (p.entry_type, p.entry, p.stop) == ("stop", 1600.0, 1450.0)
+    assert p.valid_until == DATE + pd.Timedelta(days=3)
+    q = make_plan(
+        "JET2.L", levels(), TECH, None, rules(stop_entry_orders=False), 1e4, 1e4, agent=brk
+    )
+    assert (q.entry_type, q.wait_for_break) == ("limit", True)

@@ -18,9 +18,9 @@ a validate / research label may not be better than the previous stage's (ACT > W
 ERROR is always allowed. Violations and invalid files exit 2. --run N overrides the file's
 run_id; --new-run starts a run named after the stage (a standalone `/events JET2.L`) and
 records under it. revision records a monitor verdict (card + evidence) and proposes the plan
-revision in its `checks` (action hold / tighten_stop / take_partial / exit / revise_target
-with the new stop / target / qty) as a `revision_proposed` event the owner accepts or declines
-with `book.py accept|decline`; the agent never changes orders. prior prints the ticker's latest
+revision in its `checks` (action hold / tighten_stop / take_partial / exit / revise_target, or
+for a pending entry keep / amend_entry / cancel) as a `revision_proposed` event; an agent's
+revision is applied at once (ADR 0024) and the owner can reverse it with `book.py undo`. prior prints the ticker's latest
 verdicts (with their age in days and the latest evidence `retrieved` time, for the research
 skill's delta mode) and evidence and every filing already interpreted (nsm_id), so a run reuses
 earlier work instead of re-interpreting it. See docs/decisions/0016.
@@ -83,6 +83,14 @@ def _revision(args: argparse.Namespace) -> None:
             __import__("solaraalpha.portfolio.book", fromlist=["BOOK_SCHEMA"]).BOOK_SCHEMA
         )
         out = agents.record_revision(conn, verdict, args.position, actor)
+        status, why = "proposed", None
+        if out["revision_id"] is not None:
+            from solaraalpha.portfolio import book
+
+            revs = book.revisions(conn, args.position)
+            row = revs[revs["revision_id"] == out["revision_id"]]
+            if len(row):
+                status, why = str(row["status"].iloc[0]), row["decision_reason"].iloc[0]
     except ValueError as e:
         print(f"error: {e}")
         sys.exit(2)
@@ -93,9 +101,16 @@ def _revision(args: argparse.Namespace) -> None:
         f"recorded monitor {verdict.label} ({verdict.confidence:.2f}) for {verdict.ticker}, position {args.position}: {action}"
     )
     print(f"evidence ids: {', '.join(map(str, out['evidence_ids'])) or 'none'}")
-    if out["revision_id"] is not None:
+    rid = out["revision_id"]
+    if rid is not None and status == "accepted":  # an agent's revision is auto-applied (0024)
         print(
-            f"revision {out['revision_id']} proposed: `book.py accept {out['revision_id']}` or `book.py decline {out['revision_id']} --reason ...`"
+            f"revision {rid} applied to the book; the owner can reverse it: `book.py undo {rid} --reason ...`"
+        )
+    elif rid is not None and status == "declined":
+        print(f"revision {rid} not applied: {why}")
+    elif rid is not None:
+        print(
+            f"revision {rid} proposed: `book.py accept {rid}` or `book.py decline {rid} --reason ...`"
         )
 
 

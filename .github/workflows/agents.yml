@@ -1,6 +1,9 @@
 # Unattended agent stages (docs/decisions/0019). Runs after the weekly pipeline (validate ->
 # macro (one shared note per sector group, #140) -> research -> plan.py -> weekly_pack.py) and after the daily check (monitor, postmortem of
-# positions closed since the previous daily run), or by hand.
+# positions closed since the previous daily run), or by hand. The daily monitor reviews every
+# open position and pending entry each weekday (docs/decisions/0024; event-triggered first,
+# capped by max_agent_tickers) and its changes are applied by the book as they are recorded;
+# the inbox says what to change in Trading212 and how to undo it. No positions: no monitor job.
 #
 # Skipped when the triggering workflow did not succeed (a crashed scan leaves a partial run).
 # INERT UNTIL THE OWNER ADDS A CLAUDE SECRET: the gate job skips everything unless
@@ -402,7 +405,7 @@ jobs:
       - run: uv sync --no-default-groups
       - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage monitor | tee -a "$GITHUB_STEP_SUMMARY" || true
       - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage postmortem | tee -a "$GITHUB_STEP_SUMMARY" || true
-      - name: Notify the owner of new revision proposals and errors (GitHub inbox issue)
+      - name: Notify the owner of plan changes applied, revision proposals and errors (GitHub inbox issue)
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

@@ -165,15 +165,17 @@ def test_daily_renders_each_item_type(
         "scheduled event 2026-10-22 in 2 session(s) (position 1): policy **flag**",
         "ex-dividend 2026-10-20: £10.70 (position 1): `book.py cash dividend JET2.L 10.70 --at 2026-10-20`",
         "split 2:1 on 2026-10-21 (position 1): `book.py split 1 --ratio 2:1 --at 2026-10-21`",
-        "### Revision proposals",
-        f'agent:monitor proposes **tighten_stop** {{"stop": 1480.0}} — guidance cut: `book.py accept {rid}`',
+        "### Plan changes made by the agents",
+        "- **JET2.L** (position 1): stop raised 1,400p → 1,480p — amend the stop order in Trading212,"
+        " then `book.py placed",
+        f"Why: guidance cut. Undo: `book.py undo {rid} --reason ...`",
         "### Errors",
         "- X.L `validate`: pack failed",
         "- JET2.L `monitor`: claude-code-action failed (job 9)",
     ):
         assert needle in text, needle
     assert (
-        "gap" not in text.split("### Revision")[0] and "**hold**" not in text
+        "gap" not in text.split("### Plan changes")[0] and "**hold**" not in text
     )  # the older proposal
     # --only narrows the message; the script prints to stdout
     notify_cli.main(
@@ -181,7 +183,9 @@ def test_daily_renders_each_item_type(
     )
     out = capsys.readouterr().out
     assert (
-        "### Owner actions" not in out and "### Revision proposals" in out and "### Errors" in out
+        "### Owner actions" not in out
+        and "### Plan changes made by the agents" in out
+        and "### Errors" in out
     )
     with pytest.raises(ValueError, match="unknown channel"):
         notify.send("x", "pigeon")

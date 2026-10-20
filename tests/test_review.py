@@ -82,12 +82,15 @@ NOW = {
 def test_stop_ratchets_up_and_never_down() -> None:
     c = review(state(1400.0), THEN, {**NOW, "position": position(stop=1450.0)}, rules())
     assert (c.old_stop, c.new_stop, c.stop_moved) == (1400.0, 1450.0, True)
-    assert c.action == "hold" and "stop raised 1,400.0 → 1,450.0" in c.reason
+    assert c.action == "hold" and "trailing stop 1,450.0 is above the stop 1,400.0" in c.reason
     c = review(state(1400.0), THEN, {**NOW, "position": position(stop=1350.0)}, rules())
     assert (c.new_stop, c.stop_moved) == (1400.0, False)
     c = review(state(None), THEN, {**NOW, "position": position(stop=1350.0)}, rules())
     assert (
-        math.isnan(c.old_stop) and c.new_stop == 1350.0 and c.stop_moved and "stop set" in c.reason
+        math.isnan(c.old_stop)
+        and c.new_stop == 1350.0
+        and c.stop_moved
+        and "no stop set" in c.reason
     )
     c = review(state(1400.0), THEN, {**NOW, "position": position(stop=math.nan)}, rules())
     assert c.new_stop == 1400.0 and not c.stop_moved
@@ -274,7 +277,7 @@ def stubs(monkeypatch: pytest.MonkeyPatch) -> dict[str, float]:
     return chandelier
 
 
-def test_scan_reviews_open_positions_and_replaces_the_stop(
+def test_scan_reviews_open_positions_and_leaves_the_stop_to_the_monitor(
     stubs: dict[str, float],
     fake_turso: FakeTurso,
     tmp_path: Path,
@@ -292,21 +295,20 @@ def test_scan_reviews_open_positions_and_replaces_the_stop(
     report = tmp_path / "r.md"
     scan.main(["UP.L", "--save", "--report", str(report)])  # HELD.L is not in the scan's tickers
     out = capsys.readouterr().out
-    assert "HELD.L     review hold   set-up intact; stop raised 1,400.0 → 1,550.0" in out
+    assert (
+        "HELD.L     review hold   set-up intact; trailing stop 1,550.0 is above the stop 1,400.0"
+        in out
+    )
     md = report.read_text()
     assert "**Open positions (weekly review):**" in md
-    assert "- HELD.L (position 1): **hold**" in md and "new stop order 3 approved" in md
+    assert "- HELD.L (position 1): **hold**" in md and "context for the daily monitor" in md
     assert "| HELD.L |" not in md  # not a screen row
     conn = book.connect()
     st = book.position_state(conn, pid)
-    assert st.stop == 1550.0
+    assert st.stop == 1400.0  # ADR 0024: the trail is context; the monitor sets the stop
     od = book.orders(conn, pid)
-    stops = od[od["purpose"] == "stop"]
-    assert list(stops["status"]) == ["cancelled", "approved"] and list(stops["price"]) == [
-        1400.0,
-        1550.0,
-    ]
-    assert "stop_raised" in set(book.position_events(conn, pid)["kind"])
+    assert list(od.loc[od["purpose"] == "stop", "price"]) == [1400.0]
+    assert "stop_raised" not in set(book.position_events(conn, pid)["kind"])
     conn.close()
     steps = store.load_steps("HELD.L")
     assert set(steps["stage"]) == {"review"} and list(steps["toolkit"]) == [
@@ -327,16 +329,9 @@ def test_scan_reviews_open_positions_and_replaces_the_stop(
     )
     assert cards["review"]["deteriorated"] == ""  # the stub cards have no trend field to compare
 
-    # a second scan with an unchanged chandelier does not touch the stop (ratchet only)
+    # a second scan leaves the stop orders alone too
     scan.main(["UP.L", "--save"])
     capsys.readouterr()
     conn = book.connect()
-    assert len(book.orders(conn, pid)) == 3
-    conn.close()
-    # ... and a lower chandelier never lowers it
-    stubs["stop"] = 1500.0
-    scan.main(["UP.L", "--save"])
-    capsys.readouterr()
-    conn = book.connect()
-    assert book.position_state(conn, pid).stop == 1550.0
+    assert len(book.orders(conn, pid)) == 2 and book.position_state(conn, pid).stop == 1400.0
     conn.close()

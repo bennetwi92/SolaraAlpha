@@ -1,8 +1,9 @@
 """Owner notifications: say something only when something needs the owner (ADR 0021).
 
-:func:`daily_message` has content only when a daily run fired an owner-action trigger, a plan
-revision was proposed since the run started, or an agent recorded an ERROR; one line per item
-with the command to act on it. :func:`weekly_message` is the weekly pack's headline sections
+:func:`daily_message` has content only when a daily run fired an owner-action trigger, an
+agent changed a plan (applied as recorded, ADR 0024: each line says what to change at the broker,
+Trading212, and how to undo it), a plan revision was proposed and awaits the owner, or an agent
+recorded an ERROR; one line per item with the command to act on it. :func:`weekly_message` is the weekly pack's headline sections
 (new plans, open positions, portfolio, stale orders, errors) with a link to the job summary.
 Channels are one ``send(markdown)`` function each; only ``stdout`` and the GitHub ``inbox``
 issue (posted by the workflow with ``gh``) exist. Story map S7.8, S12.7.
@@ -83,6 +84,109 @@ def owner_actions(conn: Conn, run_id: int) -> list[str]:
     return lines
 
 
+BROKER = "Trading212"
+
+
+def _price(v: Any, ccy: str) -> str:
+    try:
+        return book.fmt_price(float(v), ccy)
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _change(r: dict[str, Any], ticker: str, ccy: str) -> str:
+    """What an applied revision changed and what the owner does at the broker."""
+    action, old, new = str(r["action"]), r["old"] or {}, r["new"] or {}
+    done = r["done"] or {}
+    rid = int(r["revision_id"])
+    if action == "tighten_stop":
+        oid = done.get("stop_order_id")
+        what = (
+            f"stop raised {_price(old.get('stop'), ccy)} → {_price(new.get('stop'), ccy)}"
+            f" — amend the stop order in {BROKER}, then `book.py placed {oid}`"
+        )
+    elif action == "take_partial":
+        oid = done.get("exit_order_id")
+        what = (
+            f"sell {new.get('qty')} shares ({new.get('type', 'market')}) in {BROKER} — then"
+            f" `book.py fill {oid} --qty N --price P`"
+        )
+    elif action == "exit":
+        oid = done.get("exit_order_id")
+        what = (
+            f"exit the whole position ({new.get('type', 'market')}) in {BROKER} and cancel its"
+            f" stop there — then `book.py fill {oid} --qty N --price P`"
+        )
+    elif action == "revise_target":
+        what = (
+            f"target revised {_price(old.get('target'), ccy)} → {_price(new.get('target'), ccy)}"
+            " (a review level: nothing to change at the broker)"
+        )
+    elif action == "amend_entry":
+        a = done.get("amended") or {}
+        was, now = a.get("old") or {}, a.get("new") or {}
+        parts = []
+        if was.get("price") != now.get("price"):
+            parts.append(f"entry {_price(was.get('price'), ccy)} → {_price(now.get('price'), ccy)}")
+        if was.get("stop") != now.get("stop"):
+            parts.append(f"stop {_price(was.get('stop'), ccy)} → {_price(now.get('stop'), ccy)}")
+        if was.get("qty") != now.get("qty"):
+            parts.append(f"qty {was.get('qty')} → {now.get('qty')}")
+        oid = now.get("order_id", was.get("order_id"))
+        broker = (
+            f"amend the entry order in {BROKER} (or cancel and re-place it), then `book.py placed {oid}`"
+            if done.get("was_placed")
+            else f"not placed yet: place it as amended (`book.py tickets`, order {oid})"
+        )
+        what = f"pending entry amended: {', '.join(parts) or 'no change'} — {broker}"
+    elif action == "cancel":
+        what = "pending entry cancelled — " + (
+            f"cancel the entry order in {BROKER}"
+            if done.get("was_placed")
+            else "nothing to do at the broker (it was not placed)"
+        )
+    elif action == "add":
+        oid = done.get("add_order_id")
+        what = f"add {new.get('qty')} shares at {_price(new.get('entry'), ccy)} — place order {oid} in {BROKER}"
+    else:
+        what = f"{action} {json.dumps(new, default=str)}"
+    return (
+        f"- **{ticker}** (position {int(r['position_id'])}): {what}. Why: {r['reason']}."
+        f" Undo: `book.py undo {rid} --reason ...`"
+    )
+
+
+def applied_changes(conn: Conn, since: str) -> list[str]:
+    """Plan changes an agent made at or after ``since`` (auto-applied, ADR 0024), each with the
+    broker action, and the ones the book refused (with why)."""
+    rv = book.revisions(conn)
+    if rv.empty:
+        return []
+    rv = rv[
+        rv["decided_at"].notna()
+        & (rv["decided_at"].astype(str) >= since)
+        & (rv["actor"].astype(str).str.startswith(book.AGENT_PREFIX))
+    ]
+    pos = book.positions(conn).set_index("position_id")
+    out = []
+    for rec in rv.to_dict("records"):
+        r = {str(k): v for k, v in rec.items()}
+        pid = int(r["position_id"])
+        ticker = str(pos["ticker"].get(pid, "?"))
+        ccy = str(pos["currency"].get(pid, "GBp")) if "currency" in pos else "GBp"
+        if r["status"] == "accepted":
+            out.append(_change(r, ticker, ccy))
+        elif r["status"] == "declined" and str(r["decision_reason"] or "").startswith(
+            "auto-apply refused"
+        ):
+            out.append(
+                f"- **{ticker}** (position {pid}): {r['actor']} asked for **{r['action']}**"
+                f" {json.dumps(r['new'], default=str)} but the book refused it"
+                f" ({str(r['decision_reason']).removeprefix('auto-apply refused: ')}): nothing changed"
+            )
+    return out
+
+
 def new_revisions(conn: Conn, since: str) -> list[str]:
     """Plan revisions proposed at or after ``since`` and still undecided."""
     rv = book.revisions(conn, status="proposed")
@@ -134,6 +238,9 @@ def daily_message(
         if acts:
             parts += ["### Owner actions", "", *acts, ""]
     if "revisions" in only:
+        changes = applied_changes(conn, started)
+        if changes:
+            parts += ["### Plan changes made by the agents", "", *changes, ""]
         revs = new_revisions(conn, started)
         if revs:
             parts += ["### Revision proposals", "", *revs, ""]

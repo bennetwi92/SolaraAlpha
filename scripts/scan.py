@@ -12,9 +12,9 @@ portfolio.toml), plus up to shortlist_catalysts more with a catalyst: shortliste
 screen label ACT and go to the agents, the rest keep their band label capped at WATCH, floor
 failures PASS. See solaraalpha.pipeline, docs/decisions/0014 (amendment #192) and 0022.
 After the pipeline, every **open position** in the book is reviewed (portfolio.review): all
-toolkits re-run with the position's entry, the stop ratcheted (a raised stop is drafted as an
-approved order with --save), deterioration since entry and the horizon rule judged into a
-`review` card; an exit is reported, never drafted. Add --save to record the scan as one run in
+toolkits re-run with the position's entry, the trailing stop (context for the daily monitor,
+which sets stops: ADR 0024, never drafted here), deterioration since entry and the horizon rule
+judged into a `review` card; an exit is reported, never drafted. Add --save to record the scan as one run in
 the results DB (every stock's cards, steps, a `labels` row per stock and input snapshots),
 --report FILE to append a markdown summary (GitHub Actions: "$GITHUB_STEP_SUMMARY") and
 --run-id-file FILE to write the saved run id. Exits 1 if any toolkit errored (after reporting

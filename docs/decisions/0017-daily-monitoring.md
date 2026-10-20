@@ -72,3 +72,10 @@ non-calm regime is a `market` trigger that heads the daily report ("consider tig
 and pausing new entries": advisory, nothing is drafted), the weekly pack shows the latest
 regime, and `plan.py` flags every plan `market risk_off` while it lasts. Realised volatility
 only: Yahoo has no free UK implied-volatility series (docs/data-sources.md).
+
+
+**Amendment (ADR 0024): a daily review of everything at risk.** Every weekday each open
+position and each pending entry (draft / approved with an unfilled entry order) gets a
+`daily_review` agent trigger with the day's other triggers as context, so the monitor
+re-evaluates all of them, not only the triggered ones; pending entries get the filing, headline,
+gap and thesis checks too (the entry-break check stays for unplaced break-waiting entries).

@@ -1,7 +1,9 @@
 """Trade plans: turn an ACT stock's cards into entry, stop, targets, size and review dates.
 
-Pure functions, no I/O. The levels card gives the entry (a breakout trigger when coiled, else
-the close), stop and the next level overhead (context only); the targets are the move the
+Pure functions, no I/O. The research agent's trade levels (``agent``: entry, entry type, stop,
+ADR 0023) give the entry and stop when present; without them the levels card gives the entry (a
+breakout trigger when coiled, else the close) and stop, a fallback the planner does not use.
+The levels card gives the next level overhead (context only); the targets are the move the
 strategy seeks (``rules.target_moves``, ADR 0022); the technical card the fallback stop; the events card the next
 scheduled event; the rules the risk budget and caps. Money is in the account currency (GBP) via
 :func:`solaraalpha.portfolio.book.to_account`; prices stay in the quote currency (pence for LSE).
@@ -33,7 +35,7 @@ class TradePlan:
     wait_for_break: bool  # limit at the trigger, to be placed once a daily close is above it
     valid_until: pd.Timestamp  # unfilled entry orders expire after this
     stop: float
-    stop_source: str  # levels / technical
+    stop_source: str  # agent / levels / technical
     target: float  # entry x (1 + rules.target_moves[0]): a review when hit, not a sell order
     target_2: float  # entry x (1 + rules.target_moves[1])
     reward_risk: float  # (target - entry) / (entry - stop)
@@ -47,6 +49,7 @@ class TradePlan:
     review_dates: tuple[pd.Timestamp, ...]
     flags: tuple[str, ...]
     next_level: float = math.nan  # the levels map's next target above the entry; NaN: blue sky
+    stop_reason: str = ""  # the agent's reason for the stop (ADR 0023)
 
 
 def _get(card: Any, field: str) -> Any:
@@ -69,15 +72,22 @@ def make_plan(
     cash_gbp: float,
     adv_gbp: float | None = None,
     currency: str = "GBp",
+    agent: Any | None = None,
 ) -> TradePlan:
     """Plan a long entry in ``ticker`` from its cards (dataclasses or dicts of their fields).
+
+    * **Agent levels.** ``agent`` (a :class:`solaraalpha.agents.TradeLevels`) sets the entry,
+      its type and the stop (``stop_source`` ``"agent"``, ADR 0023): a ``stop`` entry is a
+      buy-stop at the trigger (a ``limit`` with ``wait_for_break`` when
+      ``not rules.stop_entry_orders``), a ``limit`` is "at or below"; ``agent.valid_days``
+      overrides ``rules.entry_validity_days``. The rules below apply only without it.
 
     * **Entry.** If ``levels.coil_pending`` the entry is a breakout at ``levels.trigger``: a
       ``stop`` order when ``rules.stop_entry_orders``, else a ``limit`` at the trigger with
       ``wait_for_break`` (the daily job alerts when a close is above it). Otherwise a ``limit`` at
       ``close x (1 + rules.entry_limit_buffer)``.
-    * **Valid until** the cards' ``date`` + ``rules.entry_validity_days``.
-    * **Stop.** ``levels.stop`` if finite and below the entry, else ``technical.stop``;
+    * **Valid until** the cards' ``date`` + ``rules.entry_validity_days`` (or the agent's days).
+    * **Stop** (without ``agent``). ``levels.stop`` if finite and below the entry, else ``technical.stop``;
       ``ValueError`` if neither is below the entry.
     * **Size.** ``floor(equity x risk_per_trade / risk_per_share)`` in GBP terms, then capped
       by ``max_position_pct x equity / entry``, by ``max_adv_pct x adv_gbp / entry`` when
@@ -94,8 +104,19 @@ def make_plan(
     close = float(_get(levels, "close"))
     trigger = _get(levels, "trigger")
     flags: list[str] = []
+    validity = rules.entry_validity_days
 
-    if bool(_get(levels, "coil_pending")) and _finite(trigger):
+    if agent is not None:
+        entry, stop, source = float(agent.entry), float(agent.stop), "agent"
+        if agent.entry_type == "stop":
+            entry_type = "stop" if rules.stop_entry_orders else "limit"
+            wait = not rules.stop_entry_orders
+        else:
+            entry_type, wait = "limit", False
+        validity = agent.valid_days or validity
+        if not stop < entry:
+            raise ValueError(f"{ticker}: agent stop {stop:.2f} not below the entry {entry:.2f}")
+    elif bool(_get(levels, "coil_pending")) and _finite(trigger):
         entry = float(trigger)
         entry_type = "stop" if rules.stop_entry_orders else "limit"
         wait = not rules.stop_entry_orders
@@ -103,12 +124,13 @@ def make_plan(
         entry = close * (1 + rules.entry_limit_buffer)
         entry_type, wait = "limit", False
 
-    stop, source = _get(levels, "stop"), "levels"
-    if not (_finite(stop) and float(stop) < entry):
-        stop, source = _get(technical, "stop"), "technical"
-    if not (_finite(stop) and float(stop) < entry):
-        raise ValueError(f"{ticker}: no stop below the entry {entry:.2f} (levels/technical)")
-    stop = float(stop)
+    if agent is None:
+        stop, source = _get(levels, "stop"), "levels"
+        if not (_finite(stop) and float(stop) < entry):
+            stop, source = _get(technical, "stop"), "technical"
+        if not (_finite(stop) and float(stop) < entry):
+            raise ValueError(f"{ticker}: no stop below the entry {entry:.2f} (levels/technical)")
+        stop = float(stop)
     risk_ps = entry - stop
 
     overhead = [float(v) for v in (_get(levels, "target"), _get(levels, "target_2")) if _finite(v)]
@@ -147,7 +169,7 @@ def make_plan(
         entry_type=entry_type,
         entry=entry,
         wait_for_break=wait,
-        valid_until=date + pd.Timedelta(days=rules.entry_validity_days),
+        valid_until=date + pd.Timedelta(days=validity),
         stop=stop,
         stop_source=source,
         target=target,
@@ -163,6 +185,7 @@ def make_plan(
         review_dates=tuple(reviews),
         flags=tuple(flags),
         next_level=next_level,
+        stop_reason=agent.stop_reason if agent is not None else "",
     )
 
 
