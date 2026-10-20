@@ -160,7 +160,7 @@ def test_fit_rejection_is_reported_not_written(
     plan_cli.main(["--run", "1", "--db", str(scan_db)])
     out = capsys.readouterr().out
     assert (
-        "A.L: rejected_by_fit: no free slot: 0 open + 8 pending + 0 accepted >= max_positions 8"
+        "A.L: rejected_by_fit: no free slot: 0 open + 8 pending + 0 accepted >= max_positions 5"
         in out
     )
     assert "Drafted: none" in out

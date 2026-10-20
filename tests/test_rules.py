@@ -8,16 +8,17 @@ import pytest
 from solaraalpha.portfolio.rules import RULES, Rules, load_rules
 
 
-def test_default_file_loads_as_placeholders() -> None:
+def test_default_file_loads_as_confirmed() -> None:
     r = load_rules()
     assert isinstance(r, Rules)
-    assert r.confirmed is False
+    assert r.confirmed is True
     assert r.currency == "GBP"
     assert isinstance(r.capital, float) and r.capital > 0
     assert r.horizon_weeks == (2, 16)
     assert r.long_only is True
     assert (r.shortlist_size, r.shortlist_catalysts) == (7, 3) and r.min_adv_gbp > 0
-    assert r.warning is not None and "placeholder" in r.warning
+    assert r.warning is None
+    assert "placeholder" in (Rules(**{**r.__dict__, "confirmed": False}).warning or "")
 
 
 def _write(tmp_path: Path, **overrides: str) -> Path:

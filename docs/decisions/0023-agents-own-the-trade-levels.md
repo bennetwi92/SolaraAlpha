@@ -21,7 +21,7 @@ where the edge is the agents reading catalysts against the chart and the trade p
   `entry x (1 + target_moves)` (ADR 0015 amendment).
 - The levels and technical stops stay on the cards and in the packs as context for the agent.
   `make_plan` keeps the rule-based path for callers without agent levels; the planner no longer
-  uses it. Scaling (`add_plan`) is unchanged.
+  uses it. Scaling (`add_plan`) is unchanged (since ADR 0025: adds are the monitor's call).
 
 **Consequences.** No research, no plan: a run without the agents (no Claude secret) drafts
 nothing. Size absorbs a wide stop (risk per trade is fixed in money), so volatile set-ups are

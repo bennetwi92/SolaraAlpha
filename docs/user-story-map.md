@@ -100,7 +100,7 @@ Evidence (articles, filings, events) ──linked to── candidates, plans, re
 
 | # | Activity | Cadence | Actor | Today |
 |---|---|---|---|---|
-| A0 | Set up universe, reference data and portfolio rules | quarterly / ad hoc | Owner | 🟡 rules are placeholders (`confirmed = false`); sectors known for JET2.L only |
+| A0 | Set up universe, reference data and portfolio rules | quarterly / ad hoc | Owner | 🟡 rules set by the owner (`confirmed = true`, 2026-10-20); sectors known for JET2.L only |
 | A1 | **Screen**: technical, levels, relative strength, fundamentals → ranked shortlist (7 + 3 on a catalyst, ADR 0022) | Sunday | Pipeline | ✅ #192–#194; weights and bands are placeholders |
 | A2 | **Validate**: independent agent check of the labels | Sunday | Validator | ✅ |
 | A3 | **Research**: events, news, headwinds; log evidence and impact | Sunday | Strategist | ✅ |
@@ -138,7 +138,7 @@ Story format: *as <actor>, I want <capability> so that <outcome>*, then acceptan
 |---|---|---|---|
 | S0.1 | As the owner I want a watchlist universe so the scan knows which stocks to run. | R1 | ✅ `config/watchlist.toml` (FTSE AIM 100 + AIM UK 50, 104 stocks; `scripts/universe.py` refresh) |
 | S0.2 | As the owner I want per-stock benchmarks and peers so relative strength is meaningful. | R1 | ✅ `config/benchmarks.toml` |
-| S0.3 | As the owner I want **portfolio rules** in one config file (capital, risk per trade, max open positions, max per stock / sector, max portfolio heat, cash buffer, min liquidity) so sizing and checks are consistent and versioned. | R1 | ✅ `config/portfolio.toml`, `portfolio.rules` (placeholders, `confirmed = false`) · #105 |
+| S0.3 | As the owner I want **portfolio rules** in one config file (capital, risk per trade, max open positions, max per stock / sector, max portfolio heat, cash buffer, min liquidity) so sizing and checks are consistent and versioned. | R1 | ✅ `config/portfolio.toml`, `portfolio.rules` (set by the owner, `confirmed = true`, 2026-10-20) · #105 |
 | S0.4 | As the owner I want a reminder when the watchlist snapshot is older than the last quarterly FTSE review, so the universe doesn't drift. | R2 | ✅ `snapshot` in `watchlist.toml`; `scan.py` warns after the next FTSE review month · #124 |
 | S0.5 | As the owner I want each stock's sector / industry recorded so concentration can be checked. | R2 | ✅ `sector` (ICB sector from the LSE instrument data) for every watchlist stock in `benchmarks.toml`, with industry ETF and peers · #124 |
 | S0.6 | As the owner I want each stock's liquidity (median daily £ volume, spread proxy) so size is capped at what AIM names can absorb. | R2 | ✅ `liquidity` toolkit (`analysis/liquidity.py`); `plan.py` sizes on its `adv_gbp_20` · #124 |
@@ -253,7 +253,7 @@ labelled as such (no look-ahead in the record, and the live decision uses what's
 | S4.6 | As the owner I want every card that justified the trade (technical, levels, RS, fundamentals, validate, research) **linked to the position as its entry conditions**: run_id + ticker + model, plus a frozen copy of the key fields, so the monitor can compare "then" with "now". | R1 | ✅ `entry_conditions`: every card of the run frozen on the position · #114 |
 | S4.7 | As the owner I want the research's kill criteria stored as **thesis conditions** on the position (e.g. "FY guidance cut", "close < 40w MA", "fuel > $X"), each either machine-checkable (field op value) or agent-checked text. | R1 | ✅ `thesis_conditions` from the research card's `kill_criteria` (machine if it parses, else agent) · #114 |
 | S4.8 | As the owner I want a **weekly pack** (markdown / artifact): new ACT plans with size and orders, the WATCH list with what would trigger it, open-position actions, portfolio heat and cash. | R1 | ✅ `scripts/weekly_pack.py`, appended to the scan job summary and saved under `data/processed/packs/` · #115 |
-| S4.9 | As the owner I want scaling rules (add on a confirmed breakout or a pullback to a new support; never add to a loser) in the plan, so it can be "held longer while it keeps climbing". | R2 | ✅ `plan.add_plan` (≥ 1R, breakout or pullback to support, stop to breakeven, risk-capped); review proposes, `book.py accept` drafts · #128 |
+| S4.9 | As the owner I want scaling rules (add on a confirmed breakout or a pullback to a new support; never add to a loser) in the plan, so it can be "held longer while it keeps climbing". | R2 | ✅ the monitor agent's `add` (when and how much is its judgement; never to a loser), applied as recorded; the book refuses one over the position / sector / heat / cash limits · #128, ADR 0025 |
 
 ### A5 — Approve and place (owner)
 
@@ -374,7 +374,9 @@ filled) are new **event rows**, never updates, so the current state is the lates
 Nothing in this list has been assumed in the design above.
 
 1. **Capital and risk**: starting capital, risk per trade, max open positions, max per
-   position / sector, max portfolio heat.
+   position / sector, max portfolio heat. → **Answered 2026-10-20**: £5,000, 2%, 5 positions,
+   25% per position, 40% per sector, 10% heat, drawdown breaker on at 15%; adds are the
+   monitor agent's call (ADR 0025). `config/portfolio.toml`, `confirmed = true`.
 2. **Broker and account**: which broker, account type (ISA / SIPP / GIA: affects tax and
    whether shorts or CFDs are possible), can it export fills, which order types does it
    support on AIM (stop-entry orders often aren't available for AIM names)?
@@ -392,7 +394,8 @@ Nothing in this list has been assumed in the design above.
 7. **Weekly pack delivery**: email, artifact page, GitHub issue / PR comment, or Notion?
 8. **Entry timing**: place orders Sunday evening for Monday, or wait for Monday's open and
    use limits? Validity of an unfilled entry order: 1 week?
-9. **Event rule**: hold positions through results, or trim or exit before them?
+9. **Event rule**: hold positions through results, or trim or exit before them? →
+   **Answered 2026-10-20**: `flag`; the monitor agent decides hold / trim / exit.
 10. **Shorts**: the toolkits support `side=-1`; is the book long-only (as the strategy says)?
 
 ---

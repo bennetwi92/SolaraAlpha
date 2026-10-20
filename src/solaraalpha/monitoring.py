@@ -4,11 +4,12 @@ Every weekday each open position and each pending entry (a draft / approved posi
 unfilled entry order) has a ``daily_review`` in the daily run (ADR 0024), so every one gets a
 pack: the position's state (``status`` ``open`` / ``pending``), orders, plan and the pending
 entry order, the **entry conditions** frozen when it was drafted, the cards **now** (technical
-with the position's entry date and price when open, levels, relative strength, re-run on fresh
+with the position's entry date and price when open, levels, relative strength, liquidity, re-run on fresh
 data), a per-field then → now diff, the thesis conditions (machine ones evaluated now), the
 day's triggers with the filing's full text, the latest research verdict and the levels it set
-(``research_levels``), and the systematic stops (``systematic_stops``: levels, technical,
-chandelier) as context only: the agent sets the stop. The agent's revision is applied as it is
+(``research_levels``), the systematic stops (``systematic_stops``: levels, technical,
+chandelier) as context only: the agent sets the stop, and the limits an add must fit
+(``limits``, ADR 0025: the agent decides adds). The agent's revision is applied as it is
 recorded; the owner can undo it (``book.py undo``). See docs/decisions/0018, 0024.
 """
 
@@ -28,6 +29,7 @@ from solaraalpha.data.announcements import fetch_text
 from solaraalpha.log import get_logger
 from solaraalpha.pipeline import Condition, run_toolkit
 from solaraalpha.portfolio import book
+from solaraalpha.portfolio.rules import load_rules
 from solaraalpha.store import Conn, query
 from solaraalpha.toolkits import Inputs
 
@@ -45,7 +47,7 @@ DIFF_FIELDS = (
     ("fundamentals", "growth"),
     ("fundamentals", "quality"),
 )
-NOW_TOOLKITS = ("technical", "levels", "relative_strength")
+NOW_TOOLKITS = ("technical", "levels", "relative_strength", "liquidity")
 
 
 def positions_to_review(conn: Conn, run_id: int) -> list[int]:
@@ -98,7 +100,7 @@ def latest_plan(conn: Conn, position_id: int) -> dict[str, Any]:
 def now_cards(
     ticker: str, state: book.PositionState, inputs: Inputs | None = None
 ) -> dict[str, Any]:
-    """Fresh technical (with the position's entry), levels and relative-strength cards, plus
+    """Fresh technical (with the position's entry), levels, relative-strength and liquidity cards, plus
     each toolkit's label; a toolkit that fails is reported, not fatal."""
     x = inputs or Inputs(ticker)
     entry = pd.Timestamp(state.opened_at).strftime("%Y-%m-%d") if state.opened_at else None
@@ -203,6 +205,14 @@ def systematic_stops(cards_now: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def add_limits() -> dict[str, float]:
+    """The portfolio limits an add must fit (ADR 0025): the book refuses one that breaks the
+    position, sector, heat or cash limit; ``max_adv_pct`` is checked against the liquidity card."""
+    rules = load_rules()
+    keys = ("max_position_pct", "max_sector_pct", "max_heat", "cash_buffer", "max_adv_pct")
+    return {k: float(getattr(rules, k)) for k in keys}
+
+
 def build_pack(
     conn: Conn, position_id: int, run_id: int, inputs: Inputs | None = None, text: bool = True
 ) -> dict[str, Any]:
@@ -250,6 +260,7 @@ def build_pack(
         "research": research,
         "research_levels": research_levels(research),
         "systematic_stops": systematic_stops(cards_now),
+        "limits": add_limits(),
         "research_evidence_ids": json.loads(research["evidence_ids"])
         if research and research.get("evidence_ids")
         else [],

@@ -42,7 +42,7 @@ def test_pack_before_and_after_planning(
     text = render_pack(build_pack(conn, 1))
     conn.close()
     assert text.startswith("# Weekly pack — run 1 (2026-10-11T18:17 UTC)")
-    assert "placeholder portfolio rules" in text
+    assert "placeholder portfolio rules" not in text  # confirmed by the owner
     for h in HEADINGS:
         assert h in text
     # nothing drafted yet: the section says none, but the fit re-run shows no rejection either
@@ -51,7 +51,7 @@ def test_pack_before_and_after_planning(
     assert "- W.L: watch reason" in text
     assert "## Open positions\n\nnone" in text
     assert "- equity £10,000 = cash £10,000 + market value £0" in text
-    assert "- heat 0.0% of equity (max 6%); 0 of 8 positions" in text
+    assert "- heat 0.0% of equity (max 10%); 0 of 5 positions" in text
     assert "- E.L: technical ERROR: RuntimeError: no data" in text
 
     plan_cli.main(["--run", "1", "--db", str(scan_db)])
@@ -132,7 +132,7 @@ def test_open_position_with_review_card(scan_db: Path) -> None:
         in text
     )
     assert "book.py exit 1 --reason time" in text
-    assert "- equity £10,0" in text and "1 of 8 positions" in text
+    assert "- equity £10,0" in text and "1 of 5 positions" in text
 
 
 def test_market_regime_in_the_pack_and_plan_flags(scan_db: Path) -> None:
@@ -186,7 +186,7 @@ def test_circuit_breaker_line_and_rejections(
     on = Rules(**{**base.__dict__, "circuit_breaker": True, "max_drawdown_new_entries": 0.10})
     conn = book.connect(scan_db)
     text = render_pack(build_pack(conn, 1))
-    assert "- drawdown n/a vs circuit-breaker limit 10%; breaker off (owner to confirm)" in text
+    assert "- drawdown n/a vs circuit-breaker limit 15%; breaker on" in text
     # a book 15% below its high with the breaker on: every plan rejected, pack says ACTIVE
     monkeypatch.setattr(pack_mod, "drawdown_from_store", lambda conn, as_seen, rules: -0.15)
     monkeypatch.setattr(planner_mod, "load_rules", lambda: on)

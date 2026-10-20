@@ -142,7 +142,7 @@ def test_portfolio_script_offline(tmp_path: Path, capsys: pytest.CaptureFixture[
     assert "withdrawal £250.00 recorded; cash balance £9,750.00" in capsys.readouterr().out
     portfolio_cli.main(["--db", str(db), "--price", "JET2.L=1600", "--save"])
     out = capsys.readouterr().out
-    assert "placeholder portfolio rules" in out
+    assert "placeholder portfolio rules" not in out  # confirmed by the owner
     assert "JET2.L" in out and "£1,600" in out and "Travel & Leisure" in out
     assert "Equity £9,935" in out and "Heat 1.0%" in out and "Breaches: none" in out
     assert "saved run 1" in out

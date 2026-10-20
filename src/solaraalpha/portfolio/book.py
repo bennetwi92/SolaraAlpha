@@ -1676,6 +1676,9 @@ def _check_revision(conn: Conn, st: PositionState, action: str, new: dict[str, A
             raise ValueError("add needs a positive qty and an entry price")
         if st.shares <= 0:
             raise ValueError(f"position {st.position_id} is {st.status}; nothing to add to")
+        over = add_breaches(conn, st, int(new["qty"]), float(new["entry"]), new.get("stop"))
+        if over:
+            raise ValueError("add breaks the portfolio limits: " + "; ".join(over))
     elif action == "amend_entry":
         if not any(new.get(k) is not None for k in ("price", "stop", "qty")):
             raise ValueError("amend_entry needs a new entry price, stop or qty")
@@ -1684,6 +1687,63 @@ def _check_revision(conn: Conn, st: PositionState, action: str, new: dict[str, A
         stop = new.get("stop", _planned_stop(conn, st.position_id))
         if entry is not None and stop is not None and float(stop) >= float(entry):
             raise ValueError(f"stop {stop} is not below the entry {entry}")
+
+
+def add_breaches(
+    conn: Conn,
+    st: PositionState,
+    qty: int,
+    entry: float,
+    stop: float | None = None,
+    rules: Rules | None = None,
+) -> list[str]:
+    """The portfolio limits an add of ``qty`` at ``entry`` (the whole position's stop moved to
+    ``stop``, never lowered) would break, empty when it fits (ADR 0025). The book holds no live
+    prices: equity is cash plus the open positions at cost, and this position is valued at
+    ``entry`` after the add. Checks ``max_position_pct``, ``max_sector_pct``, ``max_heat`` and
+    the ``cash_buffer``; liquidity (``max_adv_pct``) is the agent's to check."""
+    from solaraalpha.portfolio.risk import sector_of  # local import: risk depends on book
+
+    rules = rules or load_rules()
+    states = [position_state(conn, int(p)) for p in positions(conn)["position_id"]]
+    held = [s for s in states if s.status == "open" and s.shares > 0]
+    cost = {s.position_id: to_account(s.avg_cost * s.shares, s.currency) for s in held}
+    realised = sum(s.realised_pnl for s in states)
+    cash_now = cash_balance(conn) + realised - sum(cost.values())
+    eq = cash_now + sum(cost.values())
+    if eq <= 0:
+        return [f"equity £{eq:,.0f}: nothing to size against"]
+    add_cost = to_account(entry * qty, st.currency)
+    shares = st.shares + qty
+    value = to_account(entry * shares, st.currency)
+    stops = [float(x) for x in (stop, st.stop) if x is not None]
+    new_stop = max(stops) if stops else None
+    avg = (st.avg_cost * st.shares + entry * qty) / shares
+    risk = (
+        max(0.0, to_account((avg - new_stop) * shares, st.currency))
+        if new_stop is not None
+        else value
+    )
+    others = [s for s in held if s.position_id != st.position_id]
+    sector = sector_of(st.ticker)
+    sector_value = value + sum(cost[s.position_id] for s in others if sector_of(s.ticker) == sector)
+    out = []
+    if value > rules.max_position_pct * eq:
+        out.append(
+            f"position {value / eq:.0%} of equity > max_position_pct {rules.max_position_pct:.0%}"
+        )
+    if sector_value > rules.max_sector_pct * eq:
+        out.append(
+            f"sector {sector} {sector_value / eq:.0%} > max_sector_pct {rules.max_sector_pct:.0%}"
+        )
+    heat = (risk + sum(s.risk_at_stop for s in others)) / eq
+    if heat > rules.max_heat:
+        out.append(f"heat {heat:.1%} > max_heat {rules.max_heat:.1%}")
+    if cash_now - add_cost < rules.cash_buffer * eq:
+        out.append(
+            f"cash £{cash_now - add_cost:,.0f} after the add < cash_buffer {rules.cash_buffer:.0%}"
+        )
+    return out
 
 
 def _resize(conn: Conn, st: PositionState, entry: float, stop: float) -> int | None:

@@ -42,7 +42,7 @@ def test_new_approve_tickets_placed_round_trip(
         capsys=capsys,
     )
     assert "position 1 drafted for JET2.L: entry order 1 (limit 100)" in out
-    assert "placeholder portfolio rules" in out
+    assert "placeholder portfolio rules" not in out  # confirmed by the owner
 
     out = run(db, "list", capsys=capsys)
     assert "JET2.L" in out and "draft" in out and "limit 100 @ 1,520p (draft)" in out
