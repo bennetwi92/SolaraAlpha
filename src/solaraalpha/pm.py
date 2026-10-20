@@ -1,12 +1,12 @@
 """The portfolio manager's pack: the whole book and the week's ideas on one page (ADR 0027).
 
 Built from the DB only, after the research stage: every research-ACT candidate (the research
-verdict, its trade levels, the plan at the rules' risk per trade and what each risk in the PM's
-band would buy after the caps), the research WATCH names (context: they cannot be funded), the
-open positions (P&L, R, stop, weeks held, next event, the latest monitor and review view) and the
-pending entries, the money (equity, cash, heat, sector exposure, drawdown and circuit breaker),
-the market regime, the run's macro notes, weekly-return correlations across candidates and
-holdings, the limits, and the week's agent failures. The PM decides the allocation and the
+verdict, its trade levels, the financing card, the plan at the rules' risk per trade and what
+each risk in the PM's band would buy after the caps), the research WATCH names (context: they
+cannot be funded), the open positions (P&L, R, stop, weeks held, next event, the latest monitor
+and review view) and the pending entries, the money (equity, cash, heat, sector exposure,
+drawdown and circuit breaker), the market regime, the run's macro notes, weekly-return
+correlations across candidates and holdings, the limits, and the week's agent failures. The PM decides the allocation and the
 rotations from it and records them through ``record.py verdict`` (:func:`agents.record_book`).
 """
 
@@ -70,6 +70,13 @@ def latest_card(conn: Conn, ticker: str, model: str) -> dict[str, Any] | None:
         return None
     card = store.load_cards(int(row[0]), ticker, conn=conn).get(model)
     return {"run_id": int(row[0]), **card} if card else None
+
+
+def financing(card: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The financing card (runway, dilution, raises; #218) as JSON-able context, or None."""
+    if not card:
+        return None
+    return {k: _clean(v) for k, v in card.items() if k != "date"}
 
 
 def sizing(
@@ -156,6 +163,7 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
                     "trade": lv.model_dump() if lv else None,
                 },
                 "next_event": _clean((cards.get("events") or {}).get("next_event")),
+                "financing": financing(cards.get("financing")),
                 "adv_gbp_20": _clean(adv),
                 "plan_at_default_risk": {
                     "shares": plan.shares,

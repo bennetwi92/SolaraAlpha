@@ -32,7 +32,14 @@ from solaraalpha.store import Conn, query
 
 log = get_logger(__name__)
 
-INDEPENDENT_MODELS = ("technical", "levels", "relative_strength", "fundamentals", "position")
+INDEPENDENT_MODELS = (
+    "technical",
+    "levels",
+    "relative_strength",
+    "fundamentals",
+    "financing",
+    "position",
+)
 WEEKS = 104
 SESSIONS = 60
 LARGEST_MOVES = 5

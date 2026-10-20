@@ -274,6 +274,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         stop/targets/reward:risk — see docs/decisions/0004
     fundamentals.py     fundamentals model (one stock): growth/value/quality scores,
                         point-in-time via publication lags — see docs/decisions/0005
+    financing.py        financing card (any stock): cash runway, dilution, equity raises and
+                        warrants / convertibles from NSM headlines; context only — 0005, #218
     relative_strength.py  relative strength (any stock) vs market, industry, peer basket:
                         vol-scaled excess returns, peer rank — see docs/decisions/0011
     liquidity.py        liquidity (any stock): median daily traded value (20 / 60 sessions),

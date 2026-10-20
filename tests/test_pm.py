@@ -172,6 +172,7 @@ def test_pm_pack_and_memo(
     assert cand["ticker"] == "A.L" and cand["research"]["trade"]["stop"] == 1380.0
     assert cand["plan_at_default_risk"]["shares"] == 111
     assert set(cand["sizing"]["at"]) == {"1.00%", "2.00%", "3.00%"}
+    assert cand["financing"] is None  # no financing card saved in this run
     assert pack["rank_note"].startswith("The screen rank is unvalidated")  # #210
     assert pack["money"]["slots_free"] == 5 and pack["limits"]["risk_per_trade_range"] == (
         0.01,
@@ -198,6 +199,12 @@ def test_pm_pack_and_memo(
     msg = notify.weekly_message(conn, 1)
     conn.close()
     assert msg is not None and "Your PM: fund A.L" in msg and "### From your PM" in msg
+
+
+def test_financing_section() -> None:
+    card = {"date": "2026-10-09", "runway_months": float("nan"), "raises_3y": 2.0}
+    assert pm.financing(card) == {"runway_months": None, "raises_3y": 2.0}
+    assert pm.financing(None) is None
 
 
 def test_risk_band_rule(tmp_path: Path) -> None:
