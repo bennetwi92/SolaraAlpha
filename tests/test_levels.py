@@ -136,11 +136,11 @@ def test_coil_is_tight_and_converging() -> None:
     assert not coil(_weekly(_range(n=76))).coiled  # mid-swing in a wide range
 
 
-def test_coiled_long_plans_a_breakout_from_the_trigger() -> None:
-    df = _triangle()
+def test_compressed_long_plans_a_breakout_from_the_trigger() -> None:
+    df = _triangle(volume=5e5)  # the year's tightest weeks on drying-up volume: compressed
     card = levels_card(df)
-    assert card.coiled and card.trigger > max(card.close, card.coil_upper)
-    assert card.coil_pending  # coiled and the trigger is above the close
+    assert card.compressed and card.trigger > max(card.close, card.coil_upper)
+    assert card.coil_pending  # compressed and the trigger is above the close
     assert card.trigger < card.resistance == card.target  # box top (~112) is above the coil
     assert card.box_atr > 0
     assert card.stop < card.support < card.close < card.trigger
@@ -148,14 +148,22 @@ def test_coiled_long_plans_a_breakout_from_the_trigger() -> None:
     assert card.reward_risk == pytest.approx((card.target - card.trigger) / risk)
     assert card.risk_pct == pytest.approx(risk / card.trigger)
     inside = levels_card(
-        _triangle(top=112.5, floor=103.0)
+        _triangle(top=112.5, floor=103.0, volume=5e5)
     )  # coil reaches the box top: clear it to enter
-    assert inside.coiled and inside.trigger > inside.resistance
+    assert inside.compressed and inside.trigger > inside.resistance
     assert inside.trigger > inside.high_5y  # nothing overhead once it clears the box
     assert np.isnan(inside.target) and inside.reward_risk == np.inf
     short = levels_card(df, side=-1)
     assert short.trigger < min(short.close, short.coil_lower)
     assert short.stop > short.close > short.trigger
+
+
+def test_coiled_but_not_compressed_enters_at_the_close() -> None:
+    # ADR 0004 amendment #210: a tight coil on usual volume is not a squeeze, so no trigger
+    card = levels_card(_triangle())
+    assert card.coiled and not card.compressed
+    assert np.isnan(card.trigger) and not card.coil_pending
+    assert card.reward_risk == pytest.approx((card.target - card.close) / (card.close - card.stop))
 
 
 def test_uncoiled_plan_enters_at_the_close() -> None:

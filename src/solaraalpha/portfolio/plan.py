@@ -2,7 +2,7 @@
 
 Pure functions, no I/O. The research agent's trade levels (``agent``: entry, entry type, stop,
 ADR 0023) give the entry and stop when present; without them the levels card gives the entry (a
-breakout trigger when coiled, else the close) and stop, a fallback the planner does not use.
+breakout trigger when compressed, else the close) and stop, a fallback the planner does not use.
 The levels card gives the next level overhead (context only); the targets are the move the
 strategy seeks (``rules.target_moves``, ADR 0022); the technical card the fallback stop; the events card the next
 scheduled event; the rules the risk budget and caps. Money is in the account currency (GBP) via
