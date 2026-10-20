@@ -71,20 +71,24 @@ Current state:
   amendment #194); relative strength is agent context (docs/research/0001). Stocks:
   `config/watchlist.toml` (hand snapshot with a `snapshot` date; the scan warns once a quarterly
   FTSE review month has passed since it). After the pipeline the scan **reviews every open position** (all
-  toolkits with the position's entry → a `review` card; the stop ratchets up and is drafted as
-  an approved order with `--save`; an exit is reported, never drafted; docs/decisions/0015).
+  toolkits with the position's entry → a `review` card; the trailing stop is context for the
+  daily monitor, never drafted (ADR 0024); an exit is reported, never drafted; docs/decisions/0015).
   GitHub Actions run it Sunday (`scan.yml`) or on demand for one stock (`stock.yml`). Bands are
   placeholders until backtested.
 - **Daily job** (docs/decisions/0017): `scripts/daily.py` / `daily.yml` run every weekday after
-  the close over open positions, the latest scan's WATCH tickers and pending breakout entries:
-  price triggers (stop closed through / touched, target hit, gap > 2 ATR), coil breaks and
-  pullbacks, entry breaks, machine thesis conditions re-evaluated on fresh cards (`thesis_hit`),
-  dividends and splits not yet booked, a scheduled event two sessions out, orders past their
-  validity, new filings and headlines since the last daily run, saved to the `triggers` table.
-  Owner actions and agent reviews are separated in the report; the **monitor agent**
-  (`/monitor`, docs/decisions/0018) runs only on agent triggers and *proposes* plan revisions
-  (`revision_proposed` events) that the owner accepts or declines in `book.py`; agents never
-  change orders. The **market regime** (`analysis/regime.py`: `^FTAS` drawdown, 1-day z, realised
+  the close over open positions, the latest scan's WATCH tickers and pending entries (draft /
+  approved positions with an unfilled entry order): price triggers (stop closed through /
+  touched, target hit, gap > 2 ATR), coil breaks and pullbacks, entry breaks, machine thesis
+  conditions re-evaluated on fresh cards (`thesis_hit`), dividends and splits not yet booked, a
+  scheduled event two sessions out, orders past their validity, new filings and headlines since
+  the last daily run, saved to the `triggers` table. **Every open position and pending entry
+  gets a `daily_review` every weekday** (docs/decisions/0024): the **monitor agent**
+  (`/monitor`, docs/decisions/0018) re-evaluates each one (queue capped by `max_agent_tickers`,
+  event-triggered first) and sets the stop by judgement (the levels / ATR / chandelier stops
+  are context). Its revision is **applied as it is recorded** (open: tighten_stop /
+  take_partial / exit / revise_target; pending: amend_entry / cancel; `hold` changes nothing);
+  the book refuses an impossible one (recorded as declined). The owner is told in the inbox
+  exactly what to change in Trading212 and can reverse it with `book.py undo REV_ID --reason`. The **market regime** (`analysis/regime.py`: `^FTAS` drawdown, 1-day z, realised
   vol percentile → calm / stressed / risk_off, placeholders) heads the daily report, is saved as a
   `regime` card, shows in the weekly pack and flags every plan `market risk_off` (advisory).
 - **Agents run unattended when the owner adds a Claude secret** (docs/decisions/0019):
@@ -151,8 +155,8 @@ Current state:
 | Research analyst (agent): 9-section pre-trade note with web search, evidence logged | `/research JET2.L --run N` or `/research --run N` in Claude Code |
 | Validator pack (DB only, independent of other agents) | `uv run python scripts/validate_pack.py JET2.L --run N` / `--run N --all` |
 | Validator (agent) | `/validate JET2.L --run N` or `/validate --run N` in Claude Code |
-| Monitor pack for a daily run's triggered positions (then vs now, thesis, filing text) | `uv run python scripts/monitor_pack.py --run N [--position ID]` |
-| Monitor (agent): structural change? propose hold / tighten / partial / exit / revise target | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions` / `accept REV_ID` / `decline REV_ID --reason` |
+| Monitor pack for a daily run's open positions and pending entries (then vs now, thesis, filing text, research levels, systematic stops) | `uv run python scripts/monitor_pack.py --run N [--position ID]` |
+| Monitor (agent): daily re-evaluation; open: hold / tighten / partial / exit / revise target; pending: hold / amend_entry / cancel — applied as recorded (ADR 0024) | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions --status all` / `undo REV_ID --reason` (pipeline proposals: `accept REV_ID` / `decline REV_ID --reason`) |
 | Validator disagreement log (toolkits not warranted, concerns, rate per run) | `uv run python scripts/validator_stats.py [--since D]` |
 | Post-mortem pack for a closed position (record + weekly bars, hindsight labelled) | `uv run python scripts/postmortem_pack.py POSITION_ID` / `--since ISO` |
 | Post-mortem (agent): set-up, what worked / failed, signal right or wrong, rule proposals | `/postmortem POSITION_ID` in Claude Code → `record.py verdict ... --position ID` |

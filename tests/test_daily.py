@@ -374,10 +374,23 @@ def test_run_daily_saves_triggers_and_reports(
             "dividend",
             "split",
             "watch_pullback",
+            # the pending E.L entry gets filings and headlines too, and each of the two
+            # positions its weekday agent review (ADR 0024)
+            "filing",
+            "news",
+            "daily_review",
+            "daily_review",
         ]
     )
     assert trig.loc[trig["kind"] == "watch_pullback", "detail"].iloc[0]["run_id"] == 1
-    assert set(trig.loc[trig["kind"] == "filing", "position_id"]) == {1}
+    assert set(trig.loc[trig["kind"] == "filing", "position_id"]) == {1, 2}
+    reviews = trig[trig["kind"] == "daily_review"]
+    detail = {int(p): d for p, d in zip(reviews["position_id"], reviews["detail"], strict=True)}
+    assert detail[1]["status"] == "open"
+    assert {"gap 2026-10-20", "stop_touched 2026-10-20"} <= set(detail[1]["fired"])
+    assert detail[2]["status"] == "pending" and "entry_break 2026-10-20" in detail[2]["fired"]
+    assert list(reviews.loc[reviews["position_id"] == 2, "order_id"]) == [3]
+    assert "### Daily agent review (ADR 0024)" in out and "position 2 (pending)" in out
     assert (
         trig.loc[trig["kind"] == "entry_break", "order_id"].iloc[0] == 3
     )  # 1 entry, 2 stop, 3 E.L

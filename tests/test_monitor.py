@@ -142,7 +142,7 @@ def test_pack_then_now_diff_and_thesis(
     db, pid, run = world
     monitor_pack.main(["--run", str(run), *(["--db", str(db)] if db else [])])
     out = capsys.readouterr().out
-    assert f"position {pid} JET2.L: 2 trigger(s)" in out and "written to" in out
+    assert f"position {pid} JET2.L (open): 2 trigger(s)" in out and "written to" in out
     from solaraalpha.config import settings
 
     pack = json.loads(
@@ -248,7 +248,7 @@ def test_revision_round_trip_each_action(
     book_cli.main([*dbargs, "revisions"])
     assert "(none)" in capsys.readouterr().out
 
-    # tighten_stop -> accepted: stop replaced, stop_raised
+    # tighten_stop -> applied as recorded (ADR 0024): stop replaced, stop_raised
     run2 = store.start_run("daily", {}, path=db)
     _record(
         tmp_path,
@@ -263,11 +263,9 @@ def test_revision_round_trip_each_action(
         },
         "tighten",
     )
-    out = capsys.readouterr().out
-    assert "revision" in out and "proposed" in out
+    capsys.readouterr()
     book_cli.main([*dbargs, "revisions"])
-    out = capsys.readouterr().out
-    assert "tighten_stop" in out and "proposed" in out and "agent:monitor" in out
+    assert "(none)" in capsys.readouterr().out  # nothing waits for the owner
     conn = book.connect(db)
     rev = book.revisions(conn)
     conn.close()
@@ -275,8 +273,9 @@ def test_revision_round_trip_each_action(
     assert rev.loc[0, "old"] == {"stop": 1400.0, "target": 1800.0, "qty": 100} and rev.loc[
         0, "new"
     ] == {"stop": 1480.0}
-    book_cli.main([*dbargs, "accept", str(rid)])
-    assert "accepted (tighten_stop)" in capsys.readouterr().out
+    assert rev.loc[0, "status"] == "accepted" and rev.loc[0, "decided_by"] == "agent:monitor"
+    done0 = rev["done"].iloc[0]
+    assert done0["old_stop"] == 1400.0 and done0["new_stop"] == 1480.0
     conn = book.connect(db)
     st = book.position_state(conn, pid)
     assert st.stop == 1480.0
@@ -288,24 +287,29 @@ def test_revision_round_trip_each_action(
     ]
     ev = book.position_events(conn, pid)
     assert "stop_raised" in set(ev["kind"]) and "revision_accepted" in set(ev["kind"])
-    assert book.revisions(conn).loc[0, "status"] == "accepted"
     conn.close()
     with pytest.raises(SystemExit):
         book_cli.main([*dbargs, "accept", str(rid)])  # already decided
     assert "already accepted" in capsys.readouterr().out
 
-    # a lower stop is refused on accept
+    # the owner's undo: the stop order back at 1400, then raised again by the agent
+    book_cli.main([*dbargs, "undo", str(rid), "--reason", "too tight"])
+    assert "undone" in capsys.readouterr().out
+    conn = book.connect(db)
+    assert book.position_state(conn, pid).stop == 1400.0
+    assert book.revisions(conn).loc[0, "status"] == "undone"
+    with conn:
+        book.propose_revision(conn, pid, "tighten_stop", {"stop": 1480.0}, "again", "agent:monitor")
+    assert book.position_state(conn, pid).stop == 1480.0
+    conn.close()
+
+    # a lower stop is refused as it is recorded: declined by the pipeline, nothing changes
     run3 = store.start_run("daily", {}, path=db)
     _record(tmp_path, db, pid, run3, {"action": "tighten_stop", "stop": "1300"}, "lower")
     conn = book.connect(db)
-    rid_low = int(str(book.revisions(conn, status="proposed").loc[0, "revision_id"]))
-    conn.close()
-    with pytest.raises(SystemExit):
-        book_cli.main([*dbargs, "accept", str(rid_low)])
-    assert "never lower a stop" in capsys.readouterr().out
-    book_cli.main([*dbargs, "decline", str(rid_low), "--reason", "no"])
-    conn = book.connect(db)
-    assert book.revisions(conn).set_index("revision_id").loc[rid_low, "status"] == "declined"
+    rv = book.revisions(conn).iloc[-1]
+    assert rv["status"] == "declined" and "never lower a stop" in str(rv["decision_reason"])
+    assert book.position_state(conn, pid).stop == 1480.0
     conn.close()
 
     # take_partial: exit order for 40, stop re-sized to 60 on fill
@@ -319,9 +323,8 @@ def test_revision_round_trip_each_action(
         "partial",
     )
     conn = book.connect(db)
-    rid_p = int(str(book.revisions(conn, status="proposed").loc[0, "revision_id"]))
+    done = book.revisions(conn).iloc[-1]["done"]
     with conn:
-        done = book.accept_revision(conn, rid_p)
         book.fill(conn, done["exit_order_id"], 40, 1600.0, at="2026-10-21T10:00:00+00:00")
     st = book.position_state(conn, pid)
     assert st.shares == 60 and st.stop == 1480.0
@@ -336,9 +339,6 @@ def test_revision_round_trip_each_action(
     run5 = store.start_run("daily", {}, path=db)
     _record(tmp_path, db, pid, run5, {"action": "revise_target", "target": "1900"}, "target")
     conn = book.connect(db)
-    rid_t = int(str(book.revisions(conn, status="proposed").loc[0, "revision_id"]))
-    with conn:
-        book.accept_revision(conn, rid_t)
     assert monitoring.latest_plan(conn, pid)["target"] == 1900.0
     n_orders = len(book.orders(conn, pid))
     conn.close()
@@ -354,9 +354,7 @@ def test_revision_round_trip_each_action(
         "exit",
     )
     conn = book.connect(db)
-    rid_x = int(str(book.revisions(conn, status="proposed").loc[0, "revision_id"]))
-    with conn:
-        done = book.accept_revision(conn, rid_x)
+    done = book.revisions(conn).iloc[-1]["done"]
     od = book.orders(conn, pid)
     assert len(od) == n_orders + 1
     assert (
@@ -369,7 +367,7 @@ def test_revision_round_trip_each_action(
     capsys.readouterr()
     book_cli.main([*dbargs, "revisions", "--status", "all"])
     out = capsys.readouterr().out
-    assert out.count("accepted") == 4 and out.count("declined") == 1
+    assert out.count("accepted") == 4 and out.count("declined") == 1 and out.count("undone") == 1
 
 
 def test_revision_rejects_other_stages(
@@ -385,3 +383,86 @@ def test_revision_rejects_other_stages(
             ["revision", str(f), "--position", str(pid), *(["--db", str(db)] if db else [])]
         )
     assert e.value.code == 2 and "needs stage 'monitor'" in capsys.readouterr().out
+
+
+def test_pending_entry_review_amend_cancel_and_undo(
+    world: tuple[Path | None, int, int], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ADR 0024: a pending entry gets a daily review and a pack; the agent's amend / cancel is
+    applied as recorded, re-sized to the plan's risk budget, and the owner can undo it."""
+    from solaraalpha import notify
+
+    db, open_pid, _ = world
+    conn = book.connect(db)
+    with conn:
+        pid, oid = book.draft_position(
+            conn,
+            "JET2.L",
+            1560.0,
+            1380.0,
+            100,
+            "stop",
+            payload={"risk_amount": 180.0, "capped_by": "risk", "wait_for_break": True},
+            at="2026-10-18T18:30:00+00:00",
+            actor="pipeline",
+        )
+        book.approve_position(conn, pid)
+        book.place_order(conn, oid, "T212-1")
+        run = store.start_run("daily", {}, conn=conn)
+        store.save_triggers(
+            run,
+            [
+                Trigger("JET2.L", "daily_review", pid, oid, {"status": "pending", "fired": []}),
+                Trigger("JET2.L", "daily_review", open_pid, None, {"status": "open", "fired": []}),
+                Trigger("JET2.L", "gap", open_pid, None, {"gap_atr": 2.4}, "2026-10-20"),
+            ],
+            conn=conn,
+        )
+    # event triggers first, then open positions, then pending entries
+    assert monitoring.positions_to_review(conn, run) == [open_pid, pid]
+    pack = monitoring.build_pack(conn, pid, run, text=False)
+    assert pack["status"] == "pending" and pack["pending_entry"]["order_id"] == oid
+    assert pack["pending_entry"]["status"] == "placed"
+    assert set(pack["systematic_stops"]) == {"levels", "technical", "chandelier"}
+    assert pack["research_levels"] is None  # the fixture's research has no levels
+    open_pack = monitoring.build_pack(conn, open_pid, run, text=False)
+    assert open_pack["systematic_stops"]["chandelier"] is not None
+
+    # an open-position action on a pending entry is refused, nothing changes
+    with conn:
+        bad = book.propose_revision(
+            conn, pid, "tighten_stop", {"stop": 1400.0}, "x", "agent:monitor"
+        )
+    rv = book.revisions(conn).set_index("revision_id")
+    assert rv.loc[bad, "status"] == "declined"
+    assert "pending entry" in str(rv.loc[bad, "decision_reason"])
+
+    # amend_entry: stop raised to 1470 -> qty re-sized to the 180 budget: 180 / 0.90 = 200
+    with conn:
+        rid = book.propose_revision(
+            conn, pid, "amend_entry", {"stop": 1470.0}, "tighter invalidation", "agent:monitor"
+        )
+    rv = book.revisions(conn).set_index("revision_id")
+    assert rv.loc[rid, "status"] == "accepted" and rv["done"].loc[rid]["was_placed"] is True
+    entry = book.pending_entry(conn, pid)
+    assert entry is not None and entry["qty"] == 200 and entry["price"] == 1560.0
+    assert entry["status"] == "approved"  # the replacement has to be placed again
+    assert book.position_state(conn, pid).initial_stop == 1470.0
+    lines = notify.applied_changes(conn, "2000-01-01")
+    want = "pending entry amended: stop 1,380p → 1,470p, qty 100 → 200 — amend the entry order in Trading212"
+    assert any(want in line for line in lines), lines
+    with conn:
+        book.undo_revision(conn, rid, "keep the wider stop")
+    entry = book.pending_entry(conn, pid)
+    assert entry is not None and entry["qty"] == 100
+    assert book.position_state(conn, pid).initial_stop == 1380.0
+
+    # cancel: the position cancelled with its open orders; cannot be undone
+    with conn:
+        cid = book.propose_revision(conn, pid, "cancel", {}, "placing announced", "agent:monitor")
+    assert book.position_status(conn, pid) == "cancelled" and book.pending_entry(conn, pid) is None
+    with pytest.raises(ValueError, match="re-plan"):
+        book.undo_revision(conn, cid, "oops")
+    lines = notify.applied_changes(conn, "2000-01-01")
+    assert any("pending entry cancelled — cancel the entry order in Trading212" in x for x in lines)
+    conn.close()

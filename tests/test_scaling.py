@@ -180,7 +180,7 @@ def test_accept_drafts_the_add_and_raises_the_stop(
     st = book.position_state(conn, pid)
     assert st.stop == 1500.0 and st.shares == 100
     ev = book.position_events(conn, pid)
-    assert "stop_raised" in set(ev["kind"]) and ev["kind"].iloc[-1] == "stop_raised"
+    assert list(ev["kind"].iloc[-2:]) == ["stop_raised", "revision_accepted"]
     assert adds_so_far(conn, pid) == 1  # live add counts towards max_adds
     # the fill of the add increases the shares and re-sizes the protective stop to 150 at 1500
     with conn:

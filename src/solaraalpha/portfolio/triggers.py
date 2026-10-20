@@ -3,7 +3,9 @@
 Pure functions over daily bars (checked, cleaned, trimmed by the caller), the book's stops and
 targets, and the day's filings and headlines. Each returns :class:`Trigger` rows whose
 ``detail`` carries the numbers that fired. Owner triggers need the owner; agent triggers wake
-the monitor (:mod:`.claude/skills/monitor`). Thresholds are placeholders (docs/decisions/0017).
+the monitor (:mod:`.claude/skills/monitor`); every open position and pending entry gets a
+``daily_review`` each weekday whether or not anything fired (ADR 0024), carrying what fired as
+context. Thresholds are placeholders (docs/decisions/0017).
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ OWNER_KINDS = (
     "order_stale",
 )
 EVENT_DUE_SESSIONS = 2  # warn when a scheduled event is this many sessions away (#129)
-AGENT_KINDS = ("gap", "filing", "thesis_hit")
+AGENT_KINDS = ("gap", "filing", "thesis_hit", "daily_review")
 REPORT_KINDS = ("watch_break", "watch_pullback", "news", "market")
 PULLBACK_ATR = (
     1.0  # a WATCH stock is "back at the 10w MA" within this many daily ATRs (placeholder)
@@ -172,6 +174,27 @@ def entry_break(
             _session(daily),
         )
     return None
+
+
+def daily_review(
+    ticker: str,
+    position_id: int,
+    status: str,
+    fired: list[Trigger],
+    at: str,
+    order_id: int | None = None,
+) -> Trigger:
+    """The weekday agent review of one open position (``status`` ``open``) or pending entry
+    (``pending``: a draft / approved position with an unfilled entry order ``order_id``), ADR
+    0024. ``detail.fired`` lists the day's other triggers on it (kind and date) as context."""
+    return Trigger(
+        ticker,
+        "daily_review",
+        position_id,
+        order_id,
+        {"status": status, "fired": [f"{t.kind} {t.at[:10]}".strip() for t in fired]},  # noqa: PD008
+        at,
+    )
 
 
 def filing_triggers(

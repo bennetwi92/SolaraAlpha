@@ -18,9 +18,10 @@ uv run python scripts/book.py cash deposit|withdraw AMOUNT [--at ISO] [--note TE
 uv run python scripts/book.py cash dividend TICKER AMOUNT [--at ISO] [--position ID]   # GBP received
 uv run python scripts/book.py split POSITION_ID --ratio NEW:OLD [--at ISO]      # split / consolidation
 uv run python scripts/book.py corporate-close POSITION_ID --price P --reason takeover|delisting [--at ISO]
-uv run python scripts/book.py revisions [--status proposed|accepted|declined]   # agent proposals
+uv run python scripts/book.py revisions [--status proposed|accepted|declined|undone|all]   # plan changes
 uv run python scripts/book.py accept REV_ID          # drafts the orders the revision implies
 uv run python scripts/book.py decline REV_ID --reason TEXT
+uv run python scripts/book.py undo REV_ID --reason TEXT   # reverse an applied (agent) change
 uv run python scripts/book.py stats [--since DATE]   # drafted / approved / amended / rejected by deciding stage
 uv run python scripts/book.py exit POSITION_ID --reason stop|trailing_stop|target|thesis_broken|time|discretionary|corporate_action
                                  [--type market|limit] [--price P] [--qty N]
@@ -362,6 +363,7 @@ def _revisions(conn: Conn, a: argparse.Namespace) -> None:
                 "new",
                 "reason",
                 "status",
+                "decided_by",
             ],
         )
     )
@@ -381,6 +383,16 @@ def _accept(conn: Conn, a: argparse.Namespace) -> None:
 def _decline(conn: Conn, a: argparse.Namespace) -> None:
     book.decline_revision(conn, a.revision_id, a.reason)
     print(f"revision {a.revision_id} declined")
+
+
+@command("undo")
+def _undo(conn: Conn, a: argparse.Namespace) -> None:
+    done = book.undo_revision(conn, a.revision_id, a.reason)
+    extra = ", ".join(f"{k} {v}" for k, v in done.items() if k not in ("revision_id", "action"))
+    print(
+        f"revision {a.revision_id} undone ({done['action']})"
+        + (f": {extra}; see `tickets`" if extra else "")
+    )
 
 
 @command("exit")
@@ -504,13 +516,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     rv = sub.add_parser("revisions", help="plan revisions proposed by the monitor")
     rv.add_argument(
-        "--status", choices=("proposed", "accepted", "declined", "all"), default="proposed"
+        "--status",
+        choices=("proposed", "accepted", "declined", "undone", "all"),
+        default="proposed",
     )
     ac = sub.add_parser("accept", help="accept a proposed revision and draft its orders")
     ac.add_argument("revision_id", type=int)
     dc = sub.add_parser("decline", help="decline a proposed revision")
     dc.add_argument("revision_id", type=int)
     dc.add_argument("--reason", required=True)
+    ud = sub.add_parser("undo", help="reverse an accepted (e.g. auto-applied agent) revision")
+    ud.add_argument("revision_id", type=int)
+    ud.add_argument("--reason", required=True)
 
     xo = sub.add_parser("exit", help="draft an exit order with a tagged reason")
     xo.add_argument("position_id", type=int)
