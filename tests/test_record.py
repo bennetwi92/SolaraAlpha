@@ -306,7 +306,7 @@ def test_events_recorded_twice_prior_lists_first_runs_filings(
 
 def test_skills_reference_the_schema_and_record() -> None:
     root = Path(__file__).resolve().parents[1] / ".claude" / "skills"
-    for name in ("events", "research", "validate"):
+    for name in ("events", "research", "validate", "pm"):
         text = (root / name / "SKILL.md").read_text()
         assert "record.py schema" in text and "record.py verdict" in text, name
     research = (root / "research" / "SKILL.md").read_text()

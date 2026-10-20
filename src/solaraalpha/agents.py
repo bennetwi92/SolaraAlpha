@@ -12,6 +12,12 @@ run and ticker (ACT > WATCH > PASS); ERROR is always allowed. See docs/decisions
 A research ACT carries the **trade levels** (:class:`TradeLevels`: entry, entry type, stop and
 why the stop sits there), saved on its card as ``trade_*`` fields; the planner sizes from them
 and never sets a stop by rule (docs/decisions/0023).
+
+The **portfolio manager** (stage ``pm``, pseudo-ticker ``_BOOK``) records one verdict per scan
+run carrying the week's ``allocation`` (which research-ACT tickers get capital, at what risk per
+trade inside ``risk_per_trade_range``, in priority order) and ``rotations`` (open positions to
+exit, pending entries to cancel, to make room); :func:`record_book` checks it against the run
+and the book and applies the rotations (docs/decisions/0027).
 """
 
 from __future__ import annotations
@@ -29,8 +35,9 @@ from solaraalpha.pipeline import SCREEN_TOOLKITS
 from solaraalpha.store import Conn, query
 
 Label = Literal["ACT", "WATCH", "PASS", "ERROR"]
-Stage = Literal["validate", "research", "events", "monitor", "postmortem", "macro"]
+Stage = Literal["validate", "research", "events", "monitor", "postmortem", "macro", "pm"]
 SECTOR_PREFIX = "_SECTOR:"  # pseudo-ticker of a shared sector / macro note (#140)
+BOOK = "_BOOK"  # pseudo-ticker of the portfolio manager's verdict (ADR 0027)
 LABEL_STAGES = ("events", "validate", "research")  # stages that write a labels row
 RANK = {"ACT": 3, "WATCH": 2, "PASS": 1}  # ERROR is outside the order
 PREVIOUS = {"validate": ("screen",), "research": ("validate", "screen")}
@@ -100,6 +107,27 @@ def trade_levels(card: dict[str, Any] | None) -> TradeLevels | None:
     )
 
 
+class Allocation(BaseModel):
+    """One research-ACT ticker the PM funds, at a risk per trade inside the rules' band."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ticker: str
+    risk_pct: float = Field(gt=0, le=0.05)  # fraction of equity lost at the agent's stop
+    reason: str = Field(min_length=1)
+
+
+class Rotation(BaseModel):
+    """A position the PM closes to make room: an open one is exited at market, a pending entry
+    cancelled."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    position_id: int
+    reason: str = Field(min_length=1)
+    funds: str | None = None  # the ticker the room is for, if any
+
+
 class Verdict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -115,11 +143,31 @@ class Verdict(BaseModel):
     note_md: str = ""
     checks: dict[str, str] = Field(default_factory=dict)
     trade: TradeLevels | None = None  # required on a research ACT (ADR 0023)
+    allocation: list[Allocation] | None = None  # the PM's, in priority order (ADR 0027)
+    rotations: list[Rotation] = Field(default_factory=list)  # the PM's
 
     @model_validator(mode="after")
     def _act_has_trade(self) -> Verdict:
         if self.stage == "research" and self.label == "ACT" and self.trade is None:
             raise ValueError("a research ACT must give `trade` (entry, entry_type, stop, reason)")
+        return self
+
+    @model_validator(mode="after")
+    def _pm_has_allocation(self) -> Verdict:
+        if self.stage != "pm":
+            if self.allocation is not None or self.rotations:
+                raise ValueError("only the pm stage gives `allocation` / `rotations`")
+            return self
+        if self.ticker != BOOK:
+            raise ValueError(f"a pm verdict is about the book: ticker must be {BOOK!r}")
+        if self.label != "ERROR" and self.allocation is None:
+            raise ValueError("a pm verdict must give `allocation` (an empty list funds nothing)")
+        tickers = [a.ticker for a in self.allocation or []]
+        if len(set(tickers)) != len(tickers):
+            raise ValueError("each ticker appears once in `allocation`")
+        ids = [r.position_id for r in self.rotations]
+        if len(set(ids)) != len(ids):
+            raise ValueError("each position appears once in `rotations`")
         return self
 
     @field_validator("scores")
@@ -240,6 +288,9 @@ def record_verdict(
             "actor": actor,
             "evidence_ids": json.dumps(ids),
         }
+        if v.allocation is not None:
+            fields["allocation"] = json.dumps([a.model_dump() for a in v.allocation])
+            fields["rotations"] = json.dumps([r.model_dump() for r in v.rotations])
         if v.trade is not None:
             fields |= {
                 f"{TRADE_PREFIX}{k}": val
@@ -377,6 +428,96 @@ def record_revision(conn: Conn, verdict: Verdict, position_id: int, actor: str) 
     return out
 
 
+def check_book(conn: Conn, verdict: Verdict, rules: Any) -> None:
+    """Refuse (``ValueError``) a pm verdict the run or the book cannot honour: an allocated
+    ticker that is not final-ACT in the run with research trade levels, a ``risk_pct`` outside
+    ``rules.risk_per_trade_range``, a rotation of a position that is not open or pending."""
+    from solaraalpha.portfolio import book
+    from solaraalpha.portfolio.planner import final_labels
+
+    final = {c.ticker: c for c in final_labels(conn, verdict.run_id)}
+    lo, hi = rules.risk_per_trade_range
+    for a in verdict.allocation or []:
+        c = final.get(a.ticker)
+        if c is None or c.label != "ACT":
+            got = "not in the run" if c is None else f"{c.label} (decided by {c.stage})"
+            raise ValueError(f"{a.ticker} is {got}: the PM funds only final-ACT tickers")
+        cards = store.load_cards(verdict.run_id, a.ticker, conn=conn)
+        if trade_levels(cards.get("research")) is None:
+            raise ValueError(f"{a.ticker} has no research trade levels: nothing to size")
+        if not lo <= a.risk_pct <= hi:
+            raise ValueError(
+                f"{a.ticker}: risk_pct {a.risk_pct} outside risk_per_trade_range [{lo}, {hi}]"
+            )
+    for r in verdict.rotations:
+        status = book.position_status(conn, r.position_id)
+        if status not in ("open", "draft", "approved"):
+            raise ValueError(
+                f"position {r.position_id} is {status or 'unknown'}: only an open position or a"
+                " pending entry can be rotated out"
+            )
+
+
+def record_book(
+    conn: Conn, verdict: Verdict, actor: str = "agent:pm", rules: Any = None
+) -> dict[str, Any]:
+    """Record the PM's verdict (card + evidence) after :func:`check_book`, then apply its
+    rotations as agent revisions (ADR 0024): ``exit`` at market for an open position,
+    ``cancel`` for a pending entry. Returns the record result plus ``rotations``: one
+    ``{position_id, action, revision_id, status, reason}`` per rotation (``declined`` when the
+    book refused it)."""
+    from solaraalpha.portfolio import book
+    from solaraalpha.portfolio.rules import load_rules
+
+    if verdict.stage != "pm":
+        raise ValueError(f"record_book needs stage 'pm', got {verdict.stage!r}")
+    if verdict.label != "ERROR":
+        check_book(conn, verdict, rules or load_rules())
+    out = record_verdict(conn, verdict, actor)
+    done = []
+    for r in verdict.rotations if verdict.label != "ERROR" else []:
+        status = book.position_status(conn, r.position_id)
+        action = "exit" if status == "open" else "cancel"
+        why = f"rotation: {r.reason}" + (f" (room for {r.funds})" if r.funds else "")
+        with conn:
+            rid = book.propose_revision(
+                conn,
+                r.position_id,
+                action,
+                {"type": "market"} if action == "exit" else {},
+                why,
+                actor,
+                out["evidence_ids"],
+                f"pm run {verdict.run_id}",
+            )
+        row = book.revisions(conn, r.position_id)
+        row = row[row["revision_id"] == rid]
+        done.append(
+            {
+                "position_id": r.position_id,
+                "action": action,
+                "revision_id": rid,
+                "status": str(row["status"].iloc[0]) if len(row) else "proposed",
+                "reason": row["decision_reason"].iloc[0] if len(row) else None,
+            }
+        )
+    out["rotations"] = done
+    return out
+
+
+def pm_decision(conn: Conn, run_id: int) -> dict[str, Any] | None:
+    """The PM's verdict card for ``run_id`` with ``allocation`` and ``rotations`` parsed, or
+    None when there is none or it is an ERROR (the planner then falls back to the owner)."""
+    card = store.load_cards(run_id, BOOK, conn=conn).get("pm")
+    if not card or card.get("label") == "ERROR" or card.get("allocation") is None:
+        return None
+    return {
+        **card,
+        "allocation": json.loads(str(card["allocation"])),
+        "rotations": json.loads(str(card.get("rotations") or "[]")),
+    }
+
+
 def error_verdict(ticker: str, run_id: int, stage: str, reason: str) -> Verdict:
     """The ERROR verdict the unattended runner records when a skill invocation failed."""
     return Verdict(
@@ -497,9 +638,9 @@ def sector_members(conn: Conn, run_id: int, sector: str) -> list[str]:
 
 
 def outcome(conn: Conn, run_id: int, stage: str) -> dict[str, int]:
-    """Counts of labels for ``stage`` in ``run_id`` (``total`` and ``errors``); for ``monitor``
-    ``postmortem`` and ``macro`` the cards instead of labels."""
-    if stage in ("monitor", "postmortem", "macro"):
+    """Counts of labels for ``stage`` in ``run_id`` (``total`` and ``errors``); for ``monitor``,
+    ``postmortem``, ``macro`` and ``pm`` the cards instead of labels."""
+    if stage in ("monitor", "postmortem", "macro", "pm"):
         df = query(
             "SELECT ticker, text FROM results WHERE run_id = ? AND model = ? AND field = 'label'",
             conn,

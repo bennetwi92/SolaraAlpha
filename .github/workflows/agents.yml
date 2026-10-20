@@ -1,5 +1,6 @@
 # Unattended agent stages (docs/decisions/0019). Runs after the weekly pipeline (validate ->
-# macro (one shared note per sector group, #140) -> research -> plan.py -> weekly_pack.py) and after the daily check (monitor, postmortem of
+# macro (one shared note per sector group, #140) -> research -> pm (the portfolio manager: the
+# week's allocation and rotations, ADR 0027) -> plan.py -> weekly_pack.py) and after the daily check (monitor, postmortem of
 # positions closed since the previous daily run), or by hand. The daily monitor reviews every
 # open position and pending entry each weekday (docs/decisions/0024; event-triggered first,
 # capped by max_agent_tickers) and its changes are applied by the book as they are recorded;
@@ -303,8 +304,54 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  plan:
+  pm:
+    # the portfolio manager: one invocation over the whole book (ADR 0027); its allocation and
+    # rotations are recorded before plan.py, which follows them and needs no owner approval
     needs: [gate, research, research-agents]
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'weekly' && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - id: agent
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}  # the action otherwise wants an OIDC token (id-token: write)
+          prompt: "/pm --run ${{ needs.gate.outputs.run }}"
+          claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
+      - name: Record agent usage
+        if: always() && steps.agent.outcome != 'skipped'
+        run: >
+          uv run --no-sync python scripts/record.py usage --run "${{ needs.gate.outputs.run }}"
+          --ticker _BOOK --stage pm
+          --file "${{ steps.agent.outputs.execution_file }}"
+          --status "${{ steps.agent.outcome == 'success' && 'success' || 'failure' }}" || true
+      - name: ERROR if the agent failed or ended without recording a verdict (plans then wait for the owner)
+        if: always() && steps.agent.outcome != 'skipped'
+        run: >
+          uv run --no-sync python scripts/record.py error _BOOK
+          --run "${{ needs.gate.outputs.run }}" --stage pm --if-missing
+          --reason "${{ steps.agent.outcome == 'failure' && 'claude-code-action failed or hit the turn limit' || 'the agent ended without recording a verdict' }} (job ${{ github.run_id }})" || true
+      - uses: actions/upload-artifact@v4  # the agent's transcript, to see why it failed
+        if: always() && steps.agent.outputs.execution_file != ''
+        with:
+          name: transcript-pm
+          path: ${{ steps.agent.outputs.execution_file }}
+          if-no-files-found: ignore
+          retention-days: 14
+
+  plan:
+    needs: [gate, research, research-agents, pm]
     if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'weekly' && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -334,6 +381,7 @@ jobs:
         run: |
           uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage validate
           uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage research
+          uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage pm
       - uses: actions/upload-artifact@v4
         if: always()
         with:

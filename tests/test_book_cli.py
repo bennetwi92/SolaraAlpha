@@ -194,36 +194,26 @@ def test_full_fill_opens_and_drafts_stop(db: Path, capsys: pytest.CaptureFixture
     assert "shares 100" in out and "+1.00R" in out and "unrealised £118.00" in out
 
 
-def test_two_part_fills_resize_the_stop(db: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    _approved_entry(db, capsys)
-    out = run(db, "fill", "1", "--qty", "40", "--price", "1510", "--commission", "5", capsys=capsys)
-    assert "part_filled; position holds 40 shares; position opened" in out
-    out = run(db, "fill", "1", "--qty", "60", "--price", "1530", "--commission", "5", capsys=capsys)
-    assert "order 1 filled; position holds 100 shares;" in out and "opened" not in out
-    conn = book.connect(db)
-    od = book.orders(conn, 1)
-    stops = od[od["purpose"] == "stop"]
-    assert list(stops["status"]) == ["cancelled", "approved"]
-    assert list(stops["qty"]) == [40, 100]
-    st = book.position_state(conn, 1)
-    assert st.avg_cost == pytest.approx((40 * 1510 + 60 * 1530) / 100)
-    assert st.costs == 10.0
-    assert st.stop == 1400.0 and st.entry_shares == 100
-    conn.close()
-
-
-def test_part_fill_then_cancel_keeps_position_open(
+def test_part_fill_cancels_the_rest_and_protects_what_is_held(
     db: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    # Trading212 holds one order per stock (ADR 0026): the stop replaces the rest of the entry
     _approved_entry(db, capsys)
-    run(db, "fill", "1", "--qty", "30", "--price", "1500", capsys=capsys)
-    out = run(db, "cancel", "1", "--reason", "rest unfilled", capsys=capsys)
-    assert out.strip() == "order 1 cancelled"
+    out = run(db, "fill", "1", "--qty", "40", "--price", "1510", "--commission", "5", capsys=capsys)
+    assert "order 1 part filled, the rest cancelled (one order per stock); position holds 40" in out
+    assert "position opened" in out
+    assert "protective stop order 2 approved" in out
     conn = book.connect(db)
-    assert book.position_status(conn, 1) == "open"
-    assert book.position_state(conn, 1).shares == 30
-    assert book.orders(conn, 1).loc[1, "status"] == "approved"  # the stop stays
+    od = book.orders(conn, 1)
+    assert list(od["purpose"]) == ["entry", "stop"]
+    assert list(od["status"]) == ["cancelled", "approved"] and od.loc[1, "qty"] == 40
+    st = book.position_state(conn, 1)
+    assert book.position_status(conn, 1) == "open" and st.shares == 40
+    assert st.stop == 1400.0 and st.entry_shares == 40 and st.costs == 5.0
     conn.close()
+    with pytest.raises(SystemExit):
+        run(db, "fill", "1", "--qty", "60", "--price", "1530", capsys=capsys)
+    assert "order 1 is cancelled; cannot fill" in capsys.readouterr().out
 
 
 def test_no_fill_then_unfilled_cancels_position(

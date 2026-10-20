@@ -60,8 +60,10 @@ Kept as written (lightly tidied); everything below expands them.
 | **Strategist agent** | Claude with web search: catalysts, news, headwinds, scored and logged | Sunday, shortlist only; daily on triggers |
 | **Monitor agent** | Claude: daily review of open positions, proposes plan revisions | daily, open positions only |
 
-Agents **propose**; only the owner changes orders or positions. Every agent output is
-written to the DB with its evidence.
+Nothing waits for the owner's approval (ADR 0024, 0026): plans are approved as they are drafted,
+and agents' and the pipeline's revisions are applied as recorded. The owner places the orders in
+Trading212 as the inbox lists them, reports placements and fills, and can undo any automatic
+change. Every agent output is written to the DB with its evidence.
 
 ### Outcome labels (every stage, every stock)
 
@@ -105,7 +107,7 @@ Evidence (articles, filings, events) ──linked to── candidates, plans, re
 | A2 | **Validate**: independent agent check of the labels | Sunday | Validator | ✅ |
 | A3 | **Research**: events, news, headwinds; log evidence and impact | Sunday | Strategist | ✅ |
 | A4 | **Plan and size**: trade plan, size, portfolio fit; draft orders and positions | Sunday | Pipeline | ✅ |
-| A5 | **Approve and place**: owner reviews the week's pack, places orders at the broker | Sun eve / Mon | Owner | ✅ pack + `book.py approve` / `placed` |
+| A5 | **Place**: owner places the orders the inbox lists (no approval, ADR 0026) | Sun eve / Mon | Owner | ✅ inbox steps + `book.py placed` |
 | A6 | **Record fills**: fill, part-fill, not filled; open positions | daily | Owner | ✅ by hand (`book.py fill`); broker reconciliation open (#141) |
 | A7 | **Monitor daily**: prices vs stops/triggers, announcements, news, volatility | daily | Pipeline + Monitor | ✅ |
 | A8 | **Review weekly**: re-run toolkits on open positions; hold / trail / add / exit | Sunday | Pipeline + Monitor | ✅ |
@@ -253,13 +255,14 @@ labelled as such (no look-ahead in the record, and the live decision uses what's
 | S4.6 | As the owner I want every card that justified the trade (technical, levels, RS, fundamentals, validate, research) **linked to the position as its entry conditions**: run_id + ticker + model, plus a frozen copy of the key fields, so the monitor can compare "then" with "now". | R1 | ✅ `entry_conditions`: every card of the run frozen on the position · #114 |
 | S4.7 | As the owner I want the research's kill criteria stored as **thesis conditions** on the position (e.g. "FY guidance cut", "close < 40w MA", "fuel > $X"), each either machine-checkable (field op value) or agent-checked text. | R1 | ✅ `thesis_conditions` from the research card's `kill_criteria` (machine if it parses, else agent) · #114 |
 | S4.8 | As the owner I want a **weekly pack** (markdown / artifact): new ACT plans with size and orders, the WATCH list with what would trigger it, open-position actions, portfolio heat and cash. | R1 | ✅ `scripts/weekly_pack.py`, appended to the scan job summary and saved under `data/processed/packs/` · #115 |
+| S4.10 | As the owner I want a **portfolio manager** who sees the whole book and decides the week's allocation (which ideas, at what risk by conviction, in what order), rotates out the weakest holding for a clearly better idea, and writes me one memo, so the book is run holistically with no approval from me. | R2 | ✅ `/pm` (`scripts/pm_pack.py`, `agents.record_book`): allocation at 1-3% risk, rotations applied as recorded, the planner follows it and the PM approves its drafts; the PM memo heads the pack · ADR 0027 |
 | S4.9 | As the owner I want scaling rules (add on a confirmed breakout or a pullback to a new support; never add to a loser) in the plan, so it can be "held longer while it keeps climbing". | R2 | ✅ the monitor agent's `add` (when and how much is its judgement; never to a loser), applied as recorded; the book refuses one over the position / sector / heat / cash limits · #128, ADR 0025 |
 
 ### A5 — Approve and place (owner)
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S5.1 | As the owner I want to approve, amend (size, price) or reject each draft position with a reason, recorded in the DB. | R1 | ✅ `book.py approve / amend / reject` · #107 |
+| S5.1 | As the owner I want to approve, amend (size, price) or reject each draft position with a reason, recorded in the DB. | R1 | ✅ `book.py approve / amend / reject` · #107; since ADR 0026 / 0027 nothing waits for the owner: the PM approves the drafts it allocates, the pipeline the rest |
 | S5.2 | As the owner I want approved orders listed as broker-ready tickets (ticker, side, type, qty, limit/stop price, validity) to place by hand. | R1 | ✅ `book.py tickets` · #107 |
 | S5.3 | As the owner I want to mark orders as **placed**, with the broker reference. | R1 | ✅ `book.py placed ORDER_ID --ref` · #107 |
 | S5.4 | As the owner I want rejections and amendments counted, so I can see where the system and I disagree (A11). | R2 | ✅ `book.py stats` (`approval_stats` by deciding stage, rejection reasons, amendment size) · #130 |
@@ -377,13 +380,15 @@ Nothing in this list has been assumed in the design above.
    position / sector, max portfolio heat. → **Answered 2026-10-20**: £5,000, 2%, 5 positions,
    25% per position, 40% per sector, 10% heat, drawdown breaker on at 15%; adds are the
    monitor agent's call (ADR 0025). `config/portfolio.toml`, `confirmed = true`.
-2. **Broker and account**: which broker, account type (ISA / SIPP / GIA: affects tax and
+2. *(answered: Trading212 Stocks & Shares ISA; market, limit, stop, stop-limit; one open order
+   per stock; ADR 0026)* **Broker and account**: which broker, account type (ISA / SIPP / GIA: affects tax and
    whether shorts or CFDs are possible), can it export fills, which order types does it
    support on AIM (stop-entry orders often aren't available for AIM names)?
 3. **Label bands**: are the ACT / WATCH bands in A1 the right definition of "uptrend, not
    overextended, growth potential"? Should fundamentals be able to give ACT on its own, or
    only veto?
-4. **Agents' authority**: may the validator only downgrade (proposed), or also upgrade? Should
+4. *(answered: agents' and pipeline revisions apply without approval, ADR 0024, 0026)*
+   **Agents' authority**: may the validator only downgrade (proposed), or also upgrade? Should
    the monitor ever act without approval (e.g. cancel an unfilled entry after a profit
    warning)? Proposed: never.
 5. **Where agents run**: Actions with an API key (cost), a scheduled Claude Code session

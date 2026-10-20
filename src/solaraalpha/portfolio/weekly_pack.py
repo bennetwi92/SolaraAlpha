@@ -231,6 +231,30 @@ def render_pack(pack: Pack) -> str:
             f"Market regime ({rg.get('index')}, {str(rg.get('date'))[:10]}): {mark}{rg.get('regime')}{mark} — {rg.get('reason', '')}",
             "",
         ]
+    lines += ["## PM memo", ""]
+    pm = pack.plan.pm
+    if pm:
+        alloc = (
+            ", ".join(f"{a['ticker']} at {float(a['risk_pct']):.1%} risk" for a in pm["allocation"])
+            or "nothing funded"
+        )
+        rot = "; ".join(f"position {r['position_id']} out ({r['reason']})" for r in pm["rotations"])
+        lines += [
+            f"**{pm.get('label')}** ({float(pm.get('confidence') or 0):.2f}) — allocation: {alloc}"
+            + (f"; rotations: {rot}" if rot else ""),
+            "",
+            str(pm.get("note_md") or pm.get("reasons") or ""),
+            "",
+        ]
+    elif any(c.stage != "screen" for c in pack.plan.candidates):
+        lines += [
+            "> **The PM did not decide this run** (no verdict, or it errored): plans were sized"
+            " at the rules' risk per trade in screen-rank order and approved by the pipeline.",
+            "",
+        ]
+    else:
+        lines += ["none (no agents this run)", ""]
+
     lines += ["## New plans", ""]
     if pack.new_positions:
         for p in pack.new_positions:
@@ -272,13 +296,15 @@ def render_pack(pack: Pack) -> str:
                 )
             if p["thesis"]:
                 lines.append(f"- thesis: {p['thesis']}")
+            by = (
+                "approved by the PM (ADR 0027)"
+                if pack.plan.pm
+                else "approved as planned (ADR 0026)"
+            )
             lines += [
                 "",
-                f"- **Approve / reject** (Actions → Book → Run workflow): `approve {pid}` or"
-                f' `reject {pid} --reason "..."`',
-                "",
-                f"    uv run python scripts/book.py approve {pid}",
-                f'    uv run python scripts/book.py reject {pid} --reason "..."',
+                f"- {by}: the inbox lists the steps to take in"
+                f' Trading212; to skip it: `book.py reject {pid} --reason "..."`',
                 "",
             ]
     else:
@@ -330,13 +356,11 @@ def render_pack(pack: Pack) -> str:
                     f"; {rv.get('reason', '')}"
                 )
                 if rv.get("action") == "exit":
-                    lines.append(
-                        f"  - `uv run python scripts/book.py exit {st.position_id} --reason time`"
-                    )
+                    lines.append("  - exit signal: the daily monitor decides the exit (ADR 0024)")
                 if rv.get("event_due"):
                     lines.append(
                         f"  - **event due {str(rv.get('event_due'))[:10]}** ({rv.get('event_status') or 'estimated'}):"
-                        f" policy **{rv.get('event_action') or 'flag'}** (decided in advance; `book.py revisions` for a proposed trim / exit)"
+                        f" policy **{rv.get('event_action') or 'flag'}** (decided in advance; a trim / exit is applied, `book.py revisions`)"
                     )
     else:
         lines.append("none")
