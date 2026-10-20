@@ -1,0 +1,48 @@
+# Book from GitHub, without a local checkout: one scripts/book.py command against the hosted
+# results DB (Turso), e.g. `cash deposit 5000 --note "paper start"`, `approve 3`, `tickets`.
+# The book view (scripts/portfolio.py) follows in the job summary.
+name: Book
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: book.py arguments, e.g. cash deposit 5000 --note "paper start"
+        required: true
+
+concurrency:
+  group: book  # shared with scan.yml and daily.yml: never write the book at the same time
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  book:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - name: book.py
+        env:
+          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+          COMMAND: ${{ inputs.command }}
+        # The input is split by shlex in Python, never interpolated into the shell.
+        run: |
+          uv run --no-sync python -c 'import os, runpy, shlex, sys
+          sys.argv = ["book.py", *shlex.split(os.environ["COMMAND"])]
+          runpy.run_path("scripts/book.py", run_name="__main__")' | tee book.txt
+          { echo '### book.py'; echo '```'; cat book.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Portfolio
+        if: always()
+        env:
+          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+        run: |
+          uv run --no-sync python scripts/portfolio.py | tee portfolio.txt
+          { echo '### Portfolio'; echo '```'; cat portfolio.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
