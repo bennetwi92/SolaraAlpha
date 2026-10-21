@@ -116,12 +116,13 @@ Current state:
   yet placed, the order it replaces cancelled first, what to place once it fills, price alerts
   for the targets, why, what to tell back), then checks to report back (stop should have sold,
   order past its date, dividend), alert changes, information, errors, undo commands.
-- **Desk errors** (docs/decisions/0031): every failure goes to the GitHub issue labelled
+- **Desk errors** (docs/decisions/0032): every failure goes to the GitHub issue labelled
   `desk-errors` (what failed, what it means, what happened, the re-run command; repeats marked):
   the pipeline's ERRORs from `scan.yml` / `daily.yml`, the agents' ERRORs and unreviewed positions
   from `agents.yml`, and a whole workflow failing from `desk-errors.yml` (no DB read). The serious
-  ones (PM ERROR, a position unreviewed, a workflow failed) also head the inbox. ADR 0031 is the
-  PM's review → delegate → approve loop (#239), built in slices; slice 1 (desk errors) is built.
+  ones (PM ERROR, a position unreviewed, a workflow failed) also head the inbox. ADR 0032 is the
+  PM's review → delegate → approve loop (#239), built in slices; slices 1 (desk errors) and 2
+  (the PM pack's "Must" cards) are built.
 - **No owner approval** (docs/decisions/0026): plans are approved as they are drafted and the
   pipeline's revisions (pre-results trims / exits) are applied like the agents'; the owner only
   places orders, sets alerts and reports placements and fills (`book.py reject` / `undo` override).
@@ -262,9 +263,11 @@ src/solaraalpha/        importable package — all reusable code lives here
   catalysts.py          fresh_catalysts: ticker -> tier-tagged one-line reason (new material filings,
                         headlines, a scheduled event in the window); a stock with one can join the
                         shortlist, best tier first
-  pm.py                 the portfolio manager's pack: research-ACT candidates (verdict, levels, sizing
-                        across the risk band, financing, results-day gap cost), open / pending positions, money, regime, macro,
-                        correlations, limits — docs/decisions/0027
+  pm.py                 the portfolio manager's pack: research-ACT candidates (verdict, note, validator,
+                        last close vs entry, levels, sizing across the risk band, financing, results-day
+                        gap cost), open / pending positions (kill criteria now, validity, placed),
+                        money, regime, macro, correlations, limits; desk-wide failures, scan coverage,
+                        broker differences, results calendar, code changes — 0027, 0032
   value_models.py       register of per-stock value models (config/value_models.toml) for research
   dashboard.py          render_dashboard: one self-contained HTML page from the DB (inline CSS,
                         base64 PNG charts, md_to_html for the pack) — #136

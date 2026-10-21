@@ -316,6 +316,8 @@ jobs:
       SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the pack's `changes` card reads the git log since the previous scan
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
@@ -377,7 +379,7 @@ jobs:
           rc=$?
           set -e
           if [ "$rc" = "3" ]; then echo "nothing to notify" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
-      - name: Desk errors (agents failures of the run, ADR 0031)
+      - name: Desk errors (agents failures of the run, ADR 0032)
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -510,7 +512,7 @@ jobs:
           rc=$?
           set -e
           if [ "$rc" = "3" ]; then echo "nothing to notify" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
-      - name: Desk errors (agents failures of the run, ADR 0031)
+      - name: Desk errors (agents failures of the run, ADR 0032)
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}

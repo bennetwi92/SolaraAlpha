@@ -51,7 +51,7 @@ jobs:
           rc=$?
           set -e
           if [ "$rc" = "3" ]; then echo "nothing to notify" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
-      - name: Desk errors (pipeline failures of the run, ADR 0031)
+      - name: Desk errors (pipeline failures of the run, ADR 0032)
         if: always() && hashFiles('run_id.txt') != ''
         env:
           GH_TOKEN: ${{ github.token }}

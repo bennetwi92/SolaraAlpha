@@ -1,7 +1,8 @@
-# 0031 — The PM reviews the desk's cards, delegates follow-ups, then approves
+# 0032 — The PM reviews the desk's cards, delegates follow-ups, then approves
 
-**Status:** accepted (owner, 2026-10-21, issue #239). Built in slices; slice 1 (desk errors) is
-built, the rest is to come. Amends 0027 (the PM's phases and its fallback) and 0021 (a second
+**Status:** accepted (owner, 2026-10-21, issue #239). Built in slices; slices 1 (desk errors)
+and 2 (the PM pack's "Must" cards) are built, 3 and 4 are to come. Numbered 0032 because
+0031 (order execution, #240) merged first. Amends 0027 (the PM's phases and its fallback) and 0021 (a second
 notification issue). Leaves 0024 unchanged.
 
 **Context.** The PM (ADR 0027) runs once on Sunday, reads one pack and records one verdict,
@@ -79,6 +80,27 @@ nobody assumes it. The PM's requirements are on #239 and the owner signed them o
 - Inbox headline: when the PM recorded an ERROR (weekly), or a position went unreviewed or its
   monitor errored (daily), the inbox message opens with one line pointing to the `desk-errors`
   issue.
+
+**As built (slice 2).** `pm.build_pack` carries the "Must" cards, all from the DB:
+
+- **Per candidate:** `validator` (label, reasons, checks), `research.note_md`, and `last_close`
+  (`date`, `close`, `vs_entry`).
+- **Per open position:** `kill_criteria_now`. Each thesis condition, with `hit` from the latest
+  daily run's `thesis_hit` triggers for machine ones, and None for agent ones.
+- **Per pending entry:** `valid_until` / `days_left`, `placed`, `waits_for`, and `last_close`
+  against the entry.
+- **Desk-wide:**
+  - `failures`: every ERROR of the run by item, with turns and minutes.
+  - `coverage`: tickers scanned, toolkit errors by item, and `stale_prices`, a latest bar more
+    than 5 days before the run.
+  - `broker`: the latest daily run's Trading212 differences, with their commands.
+  - `results_calendar`: events in the next 4 weeks across candidates, holdings and pending
+    entries.
+  - `changes`: one line per commit since the previous scan, tagged `rules` / `ADR` / `skill` /
+    `bands` / `rank`. The PM job checks out the full history for it.
+
+  A failed reconcile isn't recorded in the DB yet, so `broker` shows only the differences
+  found. Its failure reaches the owner through the daily report.
 
 **Consequences.** The owner gets a second issue, which stays silent while nothing fails. Until
 slice 3 the PM still runs once on Sunday, and ADR 0027's fallback still applies.
