@@ -27,6 +27,16 @@ from solaraalpha.store import Conn, query
 
 INBOX_LABEL = "inbox"
 INBOX_TITLE = "Solara inbox"
+INBOX_BODY = (
+    "Notifications from the weekly pipeline and the daily check (ADR 0021). Each comment is"
+    " something that needs the owner."
+)
+DESK_LABEL = "desk-errors"
+DESK_TITLE = "Solara desk errors"
+DESK_BODY = (
+    "Every failure of the pipeline, the daily check and the agents (ADR 0031): what failed, what"
+    " it means, what happened automatically, the command to re-run it. Silent while nothing fails."
+)
 BROKER = broker.BROKER
 ONE_ORDER = "Do each stock's steps in order: Trading212 holds one order per stock."
 HOW_TO_REPLY = (
@@ -208,6 +218,180 @@ def errors(conn: Conn, run_id: int) -> list[str]:
     return out
 
 
+AGENT_STAGES = ("validate", "macro", "research", "events", "pm", "monitor", "postmortem")
+# per stage: what the failure means and what happened automatically (ADR 0031)
+MEANS = {
+    "screen": "the stock was left out of this week's screen and shortlist",
+    "fundamentals": "the stock was left out of this week's screen and shortlist",
+    "events": "no events note for the stock this week",
+    "validate": "the stock's screen label was not checked, so it is not researched or funded"
+    " this week",
+    "macro": "no shared sector note: research on this group goes ahead without it",
+    "research": "the stock has no research note, so it is not funded this week",
+    "pm": "the PM did not decide: plans fell back to the rules' risk per trade in rank order"
+    " (ADR 0027)",
+    "monitor": "the position was not reviewed today: nothing changed, its stop order stands",
+    "postmortem": "the closed trade has no post-mortem yet",
+}
+UNREVIEWED = "not reviewed today (never reached: the `max_agent_tickers` cap or the run ended)"
+
+
+def _rerun(stage: str, ticker: str, run_id: int, position_id: int | None = None) -> str:
+    """The command that re-runs a failed stage."""
+    if stage in ("screen", "fundamentals") or (stage == "events" and position_id is None):
+        return f"`uv run python scripts/scan.py {ticker}` (or Actions → Run one stock)"
+    if stage == "macro":
+        return f"`/macro --run {run_id}` in Claude Code"
+    if stage == "pm":
+        return f"`/pm --run {run_id}` in Claude Code"
+    if stage in ("monitor", "postmortem") and position_id is not None:
+        arg = f"--position {position_id}" if stage == "monitor" else str(position_id)
+        return f"`/{stage} {arg}` in Claude Code"
+    return f"`/{stage} {ticker} --run {run_id}` in Claude Code"
+
+
+def _error_rows(conn: Conn, run_id: int, part: str) -> list[dict[str, str]]:
+    """The run's ERROR labels and agent ERROR cards as ``{ticker, stage, reason}``; ``part``
+    ``pipeline`` (labels by the pipeline), ``agents`` (agents' labels and cards) or ``all``."""
+    lab = query(
+        "SELECT ticker, stage, reason, actor FROM labels WHERE run_id = ? AND label = 'ERROR'",
+        conn,
+        [run_id],
+    )
+    rows = [
+        {"ticker": str(r["ticker"]), "stage": str(r["stage"]), "reason": str(r["reason"] or "")}
+        for r in lab.to_dict("records")
+        if part == "all" or (part == "pipeline") == (str(r["actor"]) == "pipeline")
+    ]
+    if part == "pipeline":
+        return rows
+    marks = ", ".join("?" * len(AGENT_STAGES))
+    cards = query(
+        "SELECT x.ticker, x.model, y.text AS reason FROM results x LEFT JOIN results y"
+        " ON y.run_id = x.run_id AND y.ticker = x.ticker AND y.model = x.model AND y.field = 'reasons'"
+        f" WHERE x.run_id = ? AND x.field = 'label' AND x.text = 'ERROR' AND x.model IN ({marks})",
+        conn,
+        [run_id, *AGENT_STAGES],
+    )
+    seen = {(r["ticker"], r["stage"]) for r in rows}
+    rows += [
+        {"ticker": str(r["ticker"]), "stage": str(r["model"]), "reason": str(r["reason"] or "")}
+        for r in cards.to_dict("records")
+        if (str(r["ticker"]), str(r["model"])) not in seen
+    ]
+    return rows
+
+
+def unreviewed(conn: Conn, run_id: int) -> list[tuple[int, str]]:
+    """``(position_id, ticker)`` due a daily review in ``run_id`` that got no monitor card, once
+    monitors ran for the run (none ran: the agents are off, nothing is reported)."""
+    from solaraalpha.monitoring import positions_to_review
+
+    ran = conn.execute(
+        "SELECT 1 FROM agent_runs WHERE run_id = ? AND stage = 'monitor' LIMIT 1", (run_id,)
+    ).fetchone()
+    if not ran:
+        return []
+    done = set(
+        query(
+            "SELECT DISTINCT ticker FROM results WHERE run_id = ? AND model = 'monitor'",
+            conn,
+            [run_id],
+        )["ticker"]
+    )
+    tickers = book.positions(conn).set_index("position_id")["ticker"]
+    return [
+        (pid, str(tickers.get(pid, "?")))
+        for pid in positions_to_review(conn, run_id)
+        if str(tickers.get(pid, "?")) not in done
+    ]
+
+
+def _failed_before(conn: Conn, run_id: int, part: str) -> tuple[int | None, set[str]]:
+    """The previous run of the same script and the stages that failed in it."""
+    row = conn.execute(
+        "SELECT run_id FROM runs WHERE script = (SELECT script FROM runs WHERE run_id = ?)"
+        " AND run_id < ? ORDER BY run_id DESC LIMIT 1",
+        (run_id, run_id),
+    ).fetchone()
+    if not row:
+        return None, set()
+    prev = int(row[0])
+    return prev, {r["stage"] for r in _error_rows(conn, prev, part)}
+
+
+def serious(conn: Conn, run_id: int) -> list[str]:
+    """The failures that also head the inbox (ADR 0031): the PM's ERROR, a position whose
+    monitor errored or that went unreviewed."""
+    rows = _error_rows(conn, run_id, "agents")
+    out = ["the PM did not decide" for r in rows if r["stage"] == "pm"]
+    out += [f"{r['ticker']} not reviewed" for r in rows if r["stage"] == "monitor"]
+    return out + [f"{t} not reviewed" for _, t in unreviewed(conn, run_id)]
+
+
+def _headline(conn: Conn, run_id: int) -> list[str]:
+    s = serious(conn, run_id)
+    if not s:
+        return []
+    return [f"> **Desk error:** {'; '.join(s)}. Details on the `{DESK_LABEL}` issue.", ""]
+
+
+def desk_errors(conn: Conn, run_id: int, part: str = "all") -> str | None:
+    """Markdown for the ``desk-errors`` issue: every failure of the run (``part``: ``pipeline``,
+    ``agents`` or ``all``) in plain words, what it means and happened, and the command to
+    re-run it; repeats of the previous run's failures marked. None when nothing failed."""
+    try:
+        info = store.run_info(run_id, conn=conn)
+    except ValueError:
+        return None
+    rows = _error_rows(conn, run_id, part)
+    gone = unreviewed(conn, run_id) if part != "pipeline" else []
+    if not (rows or gone):
+        return None
+    prev, before = _failed_before(conn, run_id, part)
+    pos = book.positions(conn)
+    last_pid = {  # the stock's latest position (the one a monitor or post-mortem is about)
+        str(r["ticker"]): int(r["position_id"])
+        for r in pos.to_dict("records")
+        if r["status"] not in ("rejected", "cancelled")
+    }
+    lines = [
+        f"## {info['script']} run {run_id} — {_day(str(info['started_at']))}",
+        "",
+    ]
+    for r in rows:
+        stage, ticker = r["stage"], r["ticker"]
+        pid = last_pid.get(ticker) if stage in ("monitor", "postmortem") else None
+        rep = f" **Repeat:** {stage} also failed in run {prev}." if stage in before else ""
+        lines.append(
+            f"- **{ticker}** `{stage}` failed: {r['reason']}. Means: {MEANS.get(stage, 'see the reason')}."
+            f" Re-run: {_rerun(stage, ticker, run_id, pid)}.{rep}"
+        )
+    for pid, ticker in gone:
+        lines.append(
+            f"- **{ticker}** (position {pid}) {UNREVIEWED}. Means: {MEANS['monitor']}."
+            f" Re-run: {_rerun('monitor', ticker, run_id, pid)}."
+        )
+    return "\n".join(lines) + "\n"
+
+
+JOB_FAILED = {
+    "Weekly pipeline": "the scan did not finish: no plan this week until it is re-run",
+    "Daily check": "today's prices, triggers and broker fills were not checked",
+    "Agents": "some agents did not run or record: see the desk errors above it, or the run",
+    "Book": "the book command did not complete: nothing changed unless the run says so",
+}
+
+
+def job_failed_message(workflow: str, conclusion: str, url: str) -> str:
+    """One line for a workflow that ended in failure (no DB needed: a Turso outage too)."""
+    means = JOB_FAILED.get(workflow, "see the run")
+    return (
+        f"> **Desk error:** the **{workflow}** workflow ended `{conclusion}`. Means: {means}."
+        f" Run: {url}\n"
+    )
+
+
 def _todo(tasks: list[broker.Task]) -> list[str]:
     if not tasks:
         return []
@@ -257,9 +441,10 @@ def daily_message(
     checks, info = owner_items(conn, run_id) if "actions" in only else ([], [])
     alerts, more, undo = changes(conn, started) if "revisions" in only else ([], [], [])
     errs = errors(conn, run_id) if "errors" in only else []
-    if not (todo or checks or info or alerts or more or errs):
+    head = _headline(conn, run_id) if "errors" in only else []
+    if not (todo or checks or info or alerts or more or errs or head):
         return None
-    parts = [f"## Solara — {_day(started)}", ""]
+    parts = [f"## Solara — {_day(started)}", "", *head]
     parts += _todo(todo) or [f"Nothing to place in {BROKER} today.", ""]
     if checks:
         parts += _section("Check and tell me", checks)
@@ -289,7 +474,7 @@ def weekly_message(conn: Conn, run_id: int, summary_url: str | None = None) -> s
     eq = pack.plan.equity
     assert eq is not None
     new = [p for p in pack.new_positions if p.get("status") in ("approved", "open")]
-    parts = [f"# Solara — week of {_day(pack.started_at)}", ""]
+    parts = [f"# Solara — week of {_day(pack.started_at)}", "", *_headline(conn, run_id)]
     if pack.rules.warning:
         parts += [f"> {pack.rules.warning}", ""]
     n = len(new)
@@ -366,8 +551,10 @@ def send_stdout(markdown: str) -> None:
     print(markdown)
 
 
-def send_github_issue(markdown: str) -> None:
-    """Comment on the open issue labelled ``inbox`` (created if missing) with ``gh``; needs
+def send_github_issue(
+    markdown: str, label: str = INBOX_LABEL, title: str = INBOX_TITLE, body: str = INBOX_BODY
+) -> None:
+    """Comment on the open issue labelled ``label`` (created if missing) with ``gh``; needs
     ``GH_TOKEN`` / ``GITHUB_TOKEN`` with ``issues: write`` and ``GH_REPO`` (or a checkout)."""
     env = {**os.environ}
     found = subprocess.run(
@@ -376,7 +563,7 @@ def send_github_issue(markdown: str) -> None:
             "issue",
             "list",
             "--label",
-            INBOX_LABEL,
+            label,
             "--state",
             "open",
             "--json",
@@ -393,30 +580,12 @@ def send_github_issue(markdown: str) -> None:
         number = str(numbers[0]["number"])
     else:
         subprocess.run(
-            [
-                "gh",
-                "label",
-                "create",
-                INBOX_LABEL,
-                "--force",
-                "--description",
-                "owner notifications",
-            ],
+            ["gh", "label", "create", label, "--force", "--description", title],
             capture_output=True,
             env=env,
         )
         created = subprocess.run(
-            [
-                "gh",
-                "issue",
-                "create",
-                "--title",
-                INBOX_TITLE,
-                "--label",
-                INBOX_LABEL,
-                "--body",
-                "Notifications from the weekly pipeline and the daily check (ADR 0021). Each comment is something that needs the owner.",
-            ],
+            ["gh", "issue", "create", "--title", title, "--label", label, "--body", body],
             capture_output=True,
             text=True,
             check=True,
@@ -426,9 +595,14 @@ def send_github_issue(markdown: str) -> None:
     subprocess.run(["gh", "issue", "comment", number, "--body", markdown], check=True, env=env)
 
 
+def send_desk_errors(markdown: str) -> None:
+    send_github_issue(markdown, DESK_LABEL, DESK_TITLE, DESK_BODY)
+
+
 CHANNELS: dict[str, Callable[[str], None]] = {
     "stdout": send_stdout,
     "github-issue": send_github_issue,
+    "github-errors": send_desk_errors,
 }
 
 

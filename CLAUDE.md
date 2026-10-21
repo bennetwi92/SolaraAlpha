@@ -116,6 +116,12 @@ Current state:
   yet placed, the order it replaces cancelled first, what to place once it fills, price alerts
   for the targets, why, what to tell back), then checks to report back (stop should have sold,
   order past its date, dividend), alert changes, information, errors, undo commands.
+- **Desk errors** (docs/decisions/0031): every failure goes to the GitHub issue labelled
+  `desk-errors` (what failed, what it means, what happened, the re-run command; repeats marked):
+  the pipeline's ERRORs from `scan.yml` / `daily.yml`, the agents' ERRORs and unreviewed positions
+  from `agents.yml`, and a whole workflow failing from `desk-errors.yml` (no DB read). The serious
+  ones (PM ERROR, a position unreviewed, a workflow failed) also head the inbox. ADR 0031 is the
+  PM's review → delegate → approve loop (#239), built in slices; slice 1 (desk errors) is built.
 - **No owner approval** (docs/decisions/0026): plans are approved as they are drafted and the
   pipeline's revisions (pre-results trims / exits) are applied like the agents'; the owner only
   places orders, sets alerts and reports placements and fills (`book.py reject` / `undo` override).
@@ -208,6 +214,7 @@ Current state:
 | Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `revision FILE --position ID` / `prior JET2.L [--stage research]` / `schema`; runner: `error TICKER --run N --stage S --reason ...` / `queue --run N --stage S` / `latest-run` / `outcome --run N --stage S` / `usage --run N --ticker T --stage S --file execution.json` |
 | Daily check: prices, triggers (stops, targets, gaps, breaks), new filings and headlines | `uv run python scripts/daily.py [--save] [--report FILE]` |
 | Notify the owner only when something needs them (exit 3 = nothing) | `uv run python scripts/notify.py --mode daily\|weekly --run N [--channel stdout\|github-issue]` |
+| Desk errors for a run / a failed workflow (exit 3 = nothing) | `uv run python scripts/notify.py --mode errors --run N --part pipeline\|agents [--channel github-errors]` / `--mode job-failed --workflow NAME --url URL` |
 | Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
@@ -345,7 +352,8 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
 .github/workflows/      ci.yml (checks), scan.yml (weekly pipeline + weekly pack, Sunday), daily.yml
                         (weekday daily check), agents.yml (unattended agents after both; inert
                         without a Claude secret), stock.yml (one stock), book.yml (book.py, plan.py,
-                        weekly_pack.py against Turso, from GitHub)
+                        weekly_pack.py against Turso, from GitHub), desk-errors.yml (a failed run →
+                        the desk-errors issue and the inbox)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
 .claude/skills/validate/  agent skill: re-checks a run's screen labels against the pack; downgrade only
