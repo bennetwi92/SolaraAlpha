@@ -1,7 +1,7 @@
 # 0031 — Orders through the Trading212 API, by an execution agent, on the practice account
 
-**Status:** proposed (owner, 2026-10-21: the direction, the practice-only rule, the key and the
-execution agent are decided; the open questions below wait for the owner). Amends 0026 (the
+**Status:** accepted (owner, 2026-10-21; the answers to the open questions are under "Owner's
+answers"), not built yet. Amends 0026 (the
 owner places every order), 0030 ("never an order") and the one-open-order rule of 0026 / 0030.
 
 **Context.** Since ADR 0026 the owner places every order the book approves, from the inbox.
@@ -57,7 +57,7 @@ for the owner, a rotation needs the sale placed, then the buy, by hand. Trading2
   - the per-unit rule above; never sell more than is held;
   - the price within a band of the last trade (placeholder 10%) and, for a buy, inside the
     position cap and the free cash (`daily.free_cash`);
-  - a cap on orders a day and on money committed a day (placeholders);
+  - a cap on orders a day and on money committed a day (none on practice; set before live);
   - nothing new while the drawdown circuit breaker is on.
 - **No duplicates.** The intent is written to the book (`sending`, with a time) before the call.
   After a timeout or an error the script never sends again blind: it lists the working orders
@@ -68,28 +68,34 @@ for the owner, a rotation needs the sale placed, then the buy, by hand. Trading2
   placed only after `GET /equity/orders/{id}` no longer shows the old order working. If the old
   one filled meanwhile, the replacement is dropped and the fill is booked.
 - **An execution job in market hours.** Besides the evening run, a short job runs through the
-  London session (cadence an open question): book the fills (ADR 0030 amendment), put the stop
+  London session every 15 minutes: book the fills (ADR 0030 amendment), put the stop
   on new shares, release and send rotation buys (ADR 0027 amendment), send what the agents
   approved. The evening run prepares the next open.
 - **The inbox reports instead of instructing.** It says what was sent, filled, cancelled or
   refused, and how to reverse it (`undo` now cancels at the broker too). It still asks for the
   owner when a guard refused an order, the broker rejected one, or reconcile finds a difference.
 
-**Open questions (owner).**
+**Owner's answers (2026-10-21).**
 
-1. **The stop after a fill.** Should the protective stop go out from code at once (seconds, no
-   agent turn, no token cost), with the agent reviewing it afterwards, or wait for the agent's
-   next turn like every other order? Recommended: at once, from code.
-2. **Cadence** of the market-hours job (every 15 or 30 minutes; GitHub's schedule is not
-   exact) and whether a turn calls the agent only when there is something to send.
-3. **Targets.** With the per-unit rule a target could be a working limit sell on part of the
-   holding (say half at the first target, the stop on the other half) instead of a price alert.
-   Wanted, or keep targets as alerts the system watches?
-4. **Stop or stop-limit** on thin AIM stocks (a stop triggers on one odd trade; a stop-limit
-   may not fill at all).
-5. **The guards' numbers**: price band, orders a day, money a day.
-6. **Orders placed by hand** in the app: still allowed (reconcile reports them) or not?
-7. **What the agent may do without asking** once on live (not needed while on practice).
+1. **The stop after a fill goes out from code at once**, in the job turn that sees the fill (no
+   agent turn); the execution agent reviews it afterwards.
+2. **Every 15 minutes** through the London session (about 08:00-16:30). The agent is called only
+   when a turn has something for it; the other turns are code only.
+3. **Targets stay price levels, not orders.** Reaching one is information for the monitor and
+   the PM. When a position is to be closed (target, thesis, rotation, any exit), the execution
+   agent swaps the protection for the exit: cancel the stop, confirm, send the exit sell. It does
+   the swap **only while the market is open**: an exit decided out of hours keeps its stop
+   overnight and is swapped after the open, so a gap down never meets an unprotected holding. An
+   exit that hasn't filled by the agent's deadline in the session (a limit not reached) is
+   cancelled and the stop put back before the close. The holding is never left without a stop
+   across a close.
+4. **Stops are stop (market) orders**, on every stock; the thin-stock gap risk is accepted.
+5. **Guards**: price band 10% of the last trade; **no daily caps on the practice account** (the
+   practice run shows what a real week needs; caps are set before live).
+6. **No orders by hand.** Everything goes through the system; an order or fill reconcile finds
+   that the book didn't send is an error for the owner to resolve, never adopted.
+7. **On live, the agent sends everything the book approved without asking**, as on practice.
+   Live itself still waits for the owner's instruction.
 
 **Consequences.** The owner leaves the order loop; a decision reaches the broker within one
 job turn, and the book and the broker agree by construction, with reconcile as the check. The
