@@ -154,6 +154,10 @@ Current state:
   ended, dividends paid; actor `broker`, ADR 0030 amendment) and raises the rest as `broker` owner
   triggers with the `book.py` command to run; the scan drops stocks
   Trading212 doesn't offer in GBX from the shortlist. Skipped silently without the keys.
+  **Order placement (ADR 0031, accepted, not built)**: an execution agent sends every order
+  through one guarded script, practice account only until the owner says otherwise; one order
+  per **unit** of stock (no OCO: live sells never exceed the shares held); stops swapped for an
+  exit only while the market is open; no orders by hand.
 - **Portfolio rules** (capital, risk per trade, position / sector / heat limits, entry validity,
   long-only, the pre-results event policy, the drawdown circuit breaker) live in `config/portfolio.toml`, read through `portfolio.rules.load_rules`. The owner
   set them on 2026-10-20 (`confirmed = true`: £5,000, 2% risk (1-3% by the PM's conviction, ADR 0027), 5 positions, 25% / 40% position
