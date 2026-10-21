@@ -40,3 +40,10 @@ open question (§6 Q7); nothing may cost money or need a new secret.
 - The inbox issue grows one comment per event; the owner closes and the workflow recreates it
   if they want a fresh one (it looks up the *open* issue with the label).
 - Permissions stay minimal: `contents: read`, `issues: write` on the posting jobs only.
+
+## Amendment: a second issue for desk errors (ADR 0031, #239)
+
+Failures no longer only sit in the inbox's errors section. Each one goes to its own issue,
+labelled `desk-errors`, which the owner subscribes to. The serious ones (the PM didn't decide, a
+position went unreviewed, a whole workflow failed) also head the inbox message. The
+`github-errors` channel uses the same `gh` lookup and create as the inbox.

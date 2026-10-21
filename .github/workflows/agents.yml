@@ -377,6 +377,19 @@ jobs:
           rc=$?
           set -e
           if [ "$rc" = "3" ]; then echo "nothing to notify" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
+      - name: Desk errors (agents failures of the run, ADR 0031)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+        run: |
+          set +e
+          uv run --no-sync python scripts/notify.py --mode errors --part agents --run "${{ needs.gate.outputs.run }}" --channel github-errors
+          rc=$?
+          set -e
+          if [ "$rc" = "3" ]; then echo "no desk errors" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
       - name: Fail only if every agent errored
         run: |
           uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage validate
@@ -497,6 +510,19 @@ jobs:
           rc=$?
           set -e
           if [ "$rc" = "3" ]; then echo "nothing to notify" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
+      - name: Desk errors (agents failures of the run, ADR 0031)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+        run: |
+          set +e
+          uv run --no-sync python scripts/notify.py --mode errors --part agents --run "${{ needs.gate.outputs.run }}" --channel github-errors
+          rc=$?
+          set -e
+          if [ "$rc" = "3" ]; then echo "no desk errors" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
       - name: Fail only if every agent errored
         run: |
           uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage monitor

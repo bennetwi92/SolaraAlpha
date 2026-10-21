@@ -1,0 +1,37 @@
+# Desk errors (docs/decisions/0031): when a workflow that runs the desk ends in failure, say so on
+# the `desk-errors` issue and at the top of the inbox. Reads no DB, so a Turso outage is reported
+# too. Per-item failures (an agent ERROR, a stock's toolkit ERROR) are posted by the workflows
+# themselves (notify.py --mode errors).
+name: Desk errors
+
+on:
+  workflow_run:
+    workflows: ["Weekly pipeline", "Daily check", "Agents", "Book"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    if: github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'timed_out'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      WORKFLOW: ${{ github.event.workflow_run.name }}
+      CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      URL: ${{ github.event.workflow_run.html_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - run: |
+          for channel in github-errors github-issue; do
+            uv run --no-sync python scripts/notify.py --mode job-failed --workflow "$WORKFLOW" \
+              --conclusion "$CONCLUSION" --url "$URL" --channel "$channel"
+          done
