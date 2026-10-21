@@ -20,7 +20,7 @@ for the owner, a rotation needs the sale placed, then the buy, by hand. Trading2
   order is already in the process of being filled."
 - **Not idempotent**: "Sending the same request multiple times may result in duplicate orders";
   no client order id.
-- **Rate limits per account** (shared with the read key): limit / stop / stop-limit 1 per 2 s,
+- **Rate limits per account** (shared by every key on the account): limit / stop / stop-limit 1 per 2 s,
   market and cancel 50 a minute, the order list 1 per 5 s, `GET /{id}` 1 per s.
 - Scope `orders:execute` to place and cancel; no price alerts; no fill notifications (poll);
   stops trigger on the last traded price; up to 50 pending orders per ticker.
@@ -31,9 +31,13 @@ for the owner, a rotation needs the sale placed, then the buy, by hand. Trading2
   otherwise. The code refuses to send to `live` unless a separate setting
   (`SOLARA_T212_TRADING=live`) is set, and that setting is the owner's to add, never an agent's
   or a workflow default. `SOLARA_T212_TRADING=off` (the default) sends nothing.
-- **A second key** with `orders:execute` (`SOLARA_T212_TRADE_KEY` / `SOLARA_T212_TRADE_SECRET`),
-  separate from the read-only one, allowed from all IP addresses (the owner accepts this; GitHub's
-  runners have no fixed address). Only the execution workflow gets it.
+- **One key with every permission** (the read scopes and `orders:execute`), in the existing
+  `SOLARA_T212_KEY` / `SOLARA_T212_SECRET`, replacing the read-only key (owner, 2026-10-21),
+  allowed from all IP addresses (GitHub's runners have no fixed address). Trade-off accepted for
+  the practice account: every workflow holding the key, agent runs included, *could* place an
+  order by calling the API directly, past `execute.py`; only `SOLARA_T212_TRADING` (set in the
+  execution job alone) keeps ordinary code from sending. **Before live**, the order permission
+  goes back to a key only the execution job gets, the other workflows keeping a read-only one.
 - **One order per unit of stock, not per stock** (the owner's rule, restated). Trading212 has no
   one-cancels-other orders, so the sell orders working on a holding never add up to more shares
   than it holds: a stop and a target sell are never both live on the same shares. Buys don't
@@ -100,7 +104,8 @@ for the owner, a rotation needs the sale placed, then the buy, by hand. Trading2
 **Consequences.** The owner leaves the order loop; a decision reaches the broker within one
 job turn, and the book and the broker agree by construction, with reconcile as the check. The
 cost: an unattended agent and code now trade, so the guards, the duplicate check and the
-practice-only rule carry the risk; the API is beta and may change under us; a leaked trading
+practice-only rule carry the risk, and with one key on practice those guards are a convention
+any run holding the key could bypass; the API is beta and may change under us; a leaked trading
 key could place orders on the practice account (no withdrawal endpoint is documented). Work
 starts on the practice account: check an order in pence-quoted AIM lines is accepted in a GBP
 account, how a limit / stop order behaves out of hours, and the order states a cancel passes
