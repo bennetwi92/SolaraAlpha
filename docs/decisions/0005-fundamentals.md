@@ -90,8 +90,17 @@ first after the period end and within 12 months of it. A trading update (`TST`) 
 results (`NOR`) never counts, because it can come before the statements and would make them
 known too early. A late filer keeps its real (later) date. With no such filing (no LEI, NSM
 history too short, quarterly codes we don't map) the statutory lag stays. The toolkit and
-`scripts/backtest.py` pass the filings; `scripts/fundamentals.py` and the validator's pack keep
-the statutory lags (conservative).
+`scripts/backtest.py` pass the filings, and so does `scripts/fundamentals.py --as-of`; the
+validator's pack keeps the statutory lags (conservative: the DB snapshot has no `published`).
+
+**Companies House considered, not used** (2026-10-20). Its free API (600 requests / 5 min,
+reuse unrestricted) was assessed as a source for the dates and the accounts. It doesn't fit:
+accounts reach it weeks after the results RNS (Jet2 FY26: prelims 8 Jul, filed 14 Sep), annual
+only (no interims), mostly PDF for plc groups until software-only iXBRL filing from April 2028,
+no market data or forecasts, and nothing for the ~16-18 non-UK-incorporated stocks in the
+universe (Jersey, Guernsey, BVI, Bermuda, Canada, Australia, Ireland, US). Anything it adds for a
+listed company (charges, share capital, officers) the RNS feed announces first. Revisit after
+April 2028.
 
 **Restated figures.** Yahoo serves figures as restated, not as first reported: a mild
 look-ahead in any backtest. The `--save` snapshots of `fetch_fundamentals` build the

@@ -15,7 +15,9 @@ from solaraalpha.analysis.fundamentals import (
     fx_ticker,
     known,
     reporting_currency,
+    with_publication,
 )
+from solaraalpha.data.announcements import fetch_announcements, resolve_issuer
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.fundamentals import fetch_fundamentals
 from solaraalpha.data.prices import fetch_daily
@@ -35,6 +37,11 @@ def main() -> None:
         print(f"{len(issues)} data-quality issues; run scripts/stock_prices.py to review.")
     weekly = to_weekly(trim_to_consistent(clean_prices(daily), issues))
     fund = fetch_fundamentals(args.ticker)
+    if args.as_of:  # past date: figures count from their results filing (#221), else the lag
+        try:
+            fund = with_publication(fund, fetch_announcements(resolve_issuer(args.ticker).lei))
+        except Exception as e:
+            print(f"Filings unavailable ({e}); statutory lags used.")
     shown = known(fund, args.as_of) if args.as_of else fund
     print(f"{args.ticker}: {len(fund)} fundamental observations, {len(weekly)} weeks of prices\n")
 
