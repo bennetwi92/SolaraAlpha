@@ -1,4 +1,4 @@
-# Desk errors (docs/decisions/0031): when a workflow that runs the desk ends in failure, say so on
+# Desk errors (docs/decisions/0032): when a workflow that runs the desk ends in failure, say so on
 # the `desk-errors` issue and at the top of the inbox. Reads no DB, so a Turso outage is reported
 # too. Per-item failures (an agent ERROR, a stock's toolkit ERROR) are posted by the workflows
 # themselves (notify.py --mode errors).

@@ -9,7 +9,7 @@ daily: owner-action triggers of the daily run, revision proposals since it start
 weekly: the weekly pack's headline sections plus the job-summary link. Writes the markdown to
 the channel (default stdout) and exits 3 when there is nothing to send, so a workflow step can
 skip posting. The github-issue channel comments on the open issue labelled `inbox` with `gh`.
-errors: the run's failures for the `desk-errors` issue (ADR 0031; channel github-errors);
+errors: the run's failures for the `desk-errors` issue (ADR 0032; channel github-errors);
 job-failed: one line for a workflow that ended in failure (no DB read).
 """
 

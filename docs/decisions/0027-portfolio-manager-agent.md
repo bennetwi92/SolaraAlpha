@@ -80,8 +80,8 @@ cancelled when nothing is left (`daily.release_rotations`, actor `pipeline`), an
 it as an ordinary order to place. A sale that never fills leaves the buy waiting until its
 validity runs out.
 
-**Amendment (owner, 2026-10-21): review, delegate, then approve (ADR 0031, #239).** The PM's
-phases are now ADR 0031's loop. It reviews the desk's cards, may delegate a few follow-up tasks
+**Amendment (owner, 2026-10-21): review, delegate, then approve (ADR 0032, #239).** The PM's
+phases are now ADR 0032's loop. It reviews the desk's cards, may delegate a few follow-up tasks
 (capped), and records an explicit approval before `plan.py` runs, by Monday 06:00 UK. The daily
 review is phase B. The fallback above (rules' risk in rank order when the PM didn't decide) is
-replaced by "no plan this week" once slice 3 of ADR 0031 is built. Until then it stands.
+replaced by "no plan this week" once slice 3 of ADR 0032 is built. Until then it stands.

@@ -41,7 +41,7 @@ open question (§6 Q7); nothing may cost money or need a new secret.
   if they want a fresh one (it looks up the *open* issue with the label).
 - Permissions stay minimal: `contents: read`, `issues: write` on the posting jobs only.
 
-## Amendment: a second issue for desk errors (ADR 0031, #239)
+## Amendment: a second issue for desk errors (ADR 0032, #239)
 
 Failures no longer only sit in the inbox's errors section. Each one goes to its own issue,
 labelled `desk-errors`, which the owner subscribes to. The serious ones (the PM didn't decide, a

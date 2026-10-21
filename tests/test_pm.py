@@ -13,6 +13,7 @@ from solaraalpha import agents, notify, pm, store
 from solaraalpha.portfolio import book
 from solaraalpha.portfolio.planner import plan_run
 from solaraalpha.portfolio.rules import load_rules
+from solaraalpha.portfolio.triggers import Trigger
 from solaraalpha.portfolio.weekly_pack import build_pack, render_pack
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -281,3 +282,84 @@ def test_rotation_buy_waits_for_the_sale_then_fits_the_cash(scan_db: Path) -> No
     assert task.steps[0].startswith("Place ")
     assert release_rotations(conn, rules) == []  # once it fits, nothing more
     conn.close()
+
+
+def test_pm_pack_must_cards(scan_db: Path) -> None:
+    conn = book.connect(scan_db)
+    with conn:
+        store.save_label(
+            1, "A.L", "validate", "ACT", "levels hold", 0.7, "agent:validate", conn=conn
+        )
+        store._save_card(
+            conn, 1, "A.L", "validate", {"date": "2026-10-09", "label": "ACT", "reasons": "ok"}
+        )
+        store._save_card(
+            conn, 1, "A.L", "research", {"date": "2026-10-09", "note_md": "## 1. Scene"}
+        )
+        conn.execute(
+            "INSERT INTO steps VALUES (1, 'X.L', 'screen', 'technical', 'error', 'no bars')"
+        )
+        store.save_label(
+            1, "B.L", "research", "ERROR", "turn limit", 0.0, "agent:research", conn=conn
+        )
+        held = _open(conn, "W.L")
+        kc = book.add_thesis_condition(conn, held, "trend < 0", "machine")
+        book.add_thesis_condition(conn, held, "guidance cut", "agent")
+        pid, _ = book.draft_position(conn, "P.L", 290.0, 270.0, 10, valid_days=10)
+        book.approve_position(conn, pid)
+        daily = store.start_run("daily", {}, conn=conn)
+        store.save_triggers(
+            daily,
+            [
+                Trigger("W.L", "thesis_hit", held, None, {"condition_id": kc}, "2026-10-12"),
+                Trigger(
+                    "W.L",
+                    "broker",
+                    held,
+                    None,
+                    {"what": "fill", "text": "sold 10 at 95p", "command": "fill 9 --qty 10"},
+                    "2026-10-12",
+                ),
+            ],
+            conn=conn,
+        )
+    pack = pm.build_pack(conn, 1)
+    conn.close()
+    (cand,) = pack["candidates"]
+    assert cand["validator"]["label"] == "ACT" and cand["validator"]["reasons"] == "ok"
+    assert cand["research"]["note_md"] == "## 1. Scene"
+    assert cand["last_close"]["date"] == "2026-10-09" and cand["last_close"]["close"] == 1500.0
+    assert "vs_entry" in cand["last_close"]
+    (pos,) = pack["open_positions"]
+    assert pos["kill_criteria_now"] == [
+        {"condition": "trend < 0", "kind": "machine", "hit": True},
+        {"condition": "guidance cut", "kind": "agent", "hit": None},
+    ]
+    (pend,) = pack["pending_entries"]
+    assert pend["placed"] is False and pend["waits_for"] == []
+    assert pend["last_close"]["vs_entry"] == round(300.0 / 290.0 - 1, 4)
+    assert {"ticker": "B.L", "stage": "research", "reason": "turn limit"}.items() <= next(
+        f for f in pack["failures"] if f["ticker"] == "B.L"
+    ).items()
+    assert pack["coverage"]["errors"] == [
+        {"ticker": "X.L", "toolkit": "technical", "reason": "no bars"}
+    ]
+    assert pack["coverage"]["stale_prices"] == {}
+    assert pack["broker"]["differences"] == [
+        {"ticker": "W.L", "text": "sold 10 at 95p", "command": "fill 9 --qty 10"}
+    ]
+    assert {"date": "2026-10-18", "ticker": "A.L", "role": "candidate"} in pack["results_calendar"]
+    assert pack["changes"] == []  # no previous scan
+
+
+def test_parse_log_tags_rule_changes() -> None:
+    text = (
+        "@abc1234 Raise heat cap (#250)\nconfig/portfolio.toml\nCLAUDE.md\n\n"
+        "@def5678 Fix typo (#251)\nREADME.md\n\n"
+        "@0a1b2c3 New ADR and skill (#252)\ndocs/decisions/0033-x.md\n.claude/skills/pm/SKILL.md\n"
+    )
+    assert pm.parse_log(text) == [
+        "abc1234 Raise heat cap (#250) [rules]",
+        "def5678 Fix typo (#251)",
+        "0a1b2c3 New ADR and skill (#252) [ADR, skill]",
+    ]

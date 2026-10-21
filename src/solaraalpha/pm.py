@@ -7,7 +7,11 @@ WATCH names (context: they cannot be funded), the open positions (P&L, R, stop, 
 next event, the latest monitor and review view) and the pending entries, the money (equity,
 cash, heat, sector exposure, drawdown and circuit breaker), the market regime, the run's macro
 notes, weekly-return correlations across candidates and holdings, the limits, and the week's
-agent failures. The PM decides the allocation and the rotations from it and records them
+agent failures. ADR 0032's "Must" cards: per candidate the validator's view, the research note
+and the last close against the entry; per holding its kill criteria as the latest daily run found
+them; per pending entry its validity, whether it was placed, what it waits for and the last close;
+for the desk the run's failures by item, the scan's coverage, the book against Trading212, the
+results calendar and what changed in the code since the previous scan. The PM decides the allocation and the rotations from it and records them
 through ``record.py verdict`` (:func:`agents.record_book`).
 """
 
@@ -15,6 +19,7 @@ from __future__ import annotations
 
 import json
 import math
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +43,8 @@ from solaraalpha.store import Conn
 CORRELATION_WEEKS = 26
 CORRELATION_SHOW = 0.5  # pairs at or above this go in the pack
 MIN_EVENT_MOVES = 4  # fewer past results days than this: the gap estimate is a small sample
+STALE_DAYS = 5  # a saved bar older than this before the run: the stock was not seen
+CALENDAR_WEEKS = 4  # the results calendar looks this far ahead
 LIMIT_KEYS = (
     "risk_per_trade",
     "risk_per_trade_range",
@@ -158,6 +165,193 @@ def sizing(
     return out
 
 
+def last_close(conn: Conn, ticker: str, entry: float | None = None) -> dict[str, Any] | None:
+    """The latest saved daily close (``date``, ``close``) and, given an ``entry``, how far the
+    close is from it (``vs_entry``, a fraction: + = above the entry). None without prices."""
+    px = store.load_prices(ticker, conn=conn)
+    if px.empty:
+        return None
+    close = float(px["close"].iloc[-1])
+    out: dict[str, Any] = {"date": px.index[-1].strftime("%Y-%m-%d"), "close": close}
+    if entry:
+        out["vs_entry"] = round(close / float(entry) - 1, 4)
+    return out
+
+
+def validator(cards: dict[str, Any], label: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The validator's view of a candidate (its label row, the card's reasons and checks)."""
+    card = cards.get("validate")
+    if not card and not label:
+        return None
+    card = card or {}
+    return {
+        "label": (label or {}).get("label") or card.get("label"),
+        "confidence": _clean(card.get("confidence")),
+        "reasons": card.get("reasons") or (label or {}).get("reason"),
+        "checks": json.loads(str(card.get("checks") or "{}")),
+    }
+
+
+def coverage(conn: Conn, run_id: int, started: str) -> dict[str, Any]:
+    """What the scan saw: tickers scanned, each toolkit ERROR by item, and tickers whose latest
+    saved bar is more than :data:`STALE_DAYS` older than the run (an idea nobody saw)."""
+    steps = store.query(
+        "SELECT ticker, toolkit, status, reason FROM steps WHERE run_id = ?", conn, [run_id]
+    )
+    errs = steps[steps["status"] == "error"]
+    last = store.query(
+        "SELECT ticker, MAX(date) AS last FROM prices WHERE run_id = ? GROUP BY ticker",
+        conn,
+        [run_id],
+    )
+    cut = (_naive(started) - pd.Timedelta(days=STALE_DAYS)).strftime("%Y-%m-%d")
+    return {
+        "scanned": int(steps["ticker"].nunique()) if len(steps) else 0,
+        "errors": [
+            {"ticker": str(r["ticker"]), "toolkit": str(r["toolkit"]), "reason": str(r["reason"])}
+            for r in errs.to_dict("records")
+        ],
+        "stale_prices": {
+            str(r["ticker"]): str(r["last"])[:10]
+            for r in last.to_dict("records")
+            if str(r["last"])[:10] < cut
+        },
+    }
+
+
+def failures(conn: Conn, run_id: int) -> list[dict[str, Any]]:
+    """Every ERROR of the run by item (stage, ticker, reason; ADR 0032), with the agent's turns
+    and minutes when its usage was recorded."""
+    from solaraalpha.notify import error_rows
+
+    runs = store.query(
+        "SELECT ticker, stage, turns, seconds FROM agent_runs WHERE run_id = ?", conn, [run_id]
+    )
+    use = {(str(r["ticker"]), str(r["stage"])): r for r in runs.to_dict("records")}
+    out = []
+    for e in error_rows(conn, run_id, "all"):
+        u = use.get((e["ticker"], e["stage"])) or {}
+        out.append(
+            {
+                **e,
+                "turns": _clean(u.get("turns")),
+                "minutes": round(float(u["seconds"]) / 60, 1) if _clean(u.get("seconds")) else None,
+            }
+        )
+    return out
+
+
+def latest_daily(conn: Conn) -> int | None:
+    row = conn.execute("SELECT MAX(run_id) FROM runs WHERE script = 'daily'").fetchone()
+    return int(row[0]) if row and row[0] is not None else None
+
+
+def broker_check(conn: Conn) -> dict[str, Any]:
+    """The book against Trading212 as of the latest daily run (ADR 0030): the differences it
+    could not book itself, with the command to fix each. ``daily_run`` None: no daily run yet."""
+    run = latest_daily(conn)
+    if run is None:
+        return {"daily_run": None, "differences": []}
+    trig = store.load_triggers(run, conn=conn)
+    rows = trig[trig["kind"] == "broker"].to_dict("records") if len(trig) else []
+    return {
+        "daily_run": run,
+        "at": str(store.run_info(run, conn=conn)["started_at"]),
+        "differences": [
+            {"ticker": str(r["ticker"]), **{k: r["detail"].get(k) for k in ("text", "command")}}
+            for r in rows
+        ],
+    }
+
+
+def kill_criteria_now(conn: Conn, position_id: int, daily_run: int | None) -> list[dict[str, Any]]:
+    """The position's thesis conditions and whether the latest daily run found them hit
+    (``machine`` ones only: the daily job checks them on fresh cards; ``agent`` ones are the
+    monitor's call, ``hit`` None)."""
+    hit: set[int] = set()
+    if daily_run is not None:
+        trig = store.load_triggers(daily_run, kind="thesis_hit", conn=conn)
+        hit = {
+            int(r["detail"]["condition_id"])
+            for r in (trig.to_dict("records") if len(trig) else [])
+            if r["position_id"] == position_id
+        }
+    return [
+        {
+            "condition": str(r["condition"]),
+            "kind": str(r["kind"]),
+            "hit": int(r["condition_id"]) in hit if r["kind"] == "machine" else None,
+        }
+        for r in book.thesis_conditions(conn, position_id).to_dict("records")
+    ]
+
+
+def results_calendar(
+    events: list[tuple[str, str, Any]], started: str, weeks: int = CALENDAR_WEEKS
+) -> list[dict[str, Any]]:
+    """Scheduled events in the next ``weeks`` across the book and the candidates: ``events`` is
+    ``(ticker, role, next_event)`` (role candidate / open / pending), soonest first."""
+    start = _naive(started)
+    end = start + pd.Timedelta(weeks=weeks)
+    out = [
+        {"date": str(_clean(nxt))[:10], "ticker": t, "role": role}
+        for t, role, nxt in events
+        if nxt and start <= _naive(nxt) <= end
+    ]
+    return sorted(out, key=lambda r: (r["date"], r["ticker"]))
+
+
+WATCHED_PATHS = {  # a change under one of these is flagged: the rules or an agent changed
+    "config/portfolio.toml": "rules",
+    "docs/decisions/": "ADR",
+    ".claude/skills/": "skill",
+    "src/solaraalpha/toolkits.py": "bands",
+    "src/solaraalpha/portfolio/fit.py": "rank",
+}
+
+
+def parse_log(text: str) -> list[str]:
+    """``git log --format=@%h %s --name-only`` output as one line per commit, with what it
+    touched among :data:`WATCHED_PATHS` in brackets."""
+    out: list[str] = []
+    for block in text.split("\n@"):
+        lines = [x for x in block.removeprefix("@").splitlines() if x.strip()]
+        if not lines:
+            continue
+        tags = sorted(
+            {tag for f in lines[1:] for p, tag in WATCHED_PATHS.items() if f.startswith(p)}
+        )
+        out.append(lines[0] + (f" [{', '.join(tags)}]" if tags else ""))
+    return out
+
+
+def changes_since(since: str | None) -> list[str] | None:
+    """What changed in the code since ``since`` (one line per commit on the checkout), None
+    when git or the history isn't available."""
+    if since is None:
+        return []
+    try:
+        res = subprocess.run(
+            ["git", "log", f"--since={since}", "--format=@%h %s", "--name-only"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=Path(__file__).resolve().parents[2],
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return parse_log(res.stdout)
+
+
+def previous_scan(conn: Conn, run_id: int) -> str | None:
+    row = conn.execute(
+        "SELECT started_at FROM runs WHERE script = 'scan' AND run_id < ?"
+        " ORDER BY run_id DESC LIMIT 1",
+        (run_id,),
+    ).fetchone()
+    return str(row[0]) if row else None
+
+
 def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str, Any]:
     """The PM's pack for scan ``run_id`` (DB only; nothing is written)."""
     rules = rules or load_rules()
@@ -176,6 +370,14 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
         if r["status"] not in ("rejected", "cancelled")
     }
 
+    vlab = store.query(
+        "SELECT ticker, label, reason FROM labels WHERE run_id = ? AND stage = 'validate'",
+        conn,
+        [run_id],
+    )
+    validated = {
+        str(r["ticker"]): {str(k): v for k, v in r.items()} for r in vlab.to_dict("records")
+    }
     candidates: list[dict[str, Any]] = []
     watch: list[dict[str, Any]] = []
     for c in base.candidates:
@@ -221,7 +423,10 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
                     "reasons": res.get("reasons"),
                     "kill_criteria": json.loads(str(res.get("kill_criteria") or "[]")),
                     "trade": lv.model_dump() if lv else None,
+                    "note_md": res.get("note_md"),
                 },
+                "validator": validator(cards, validated.get(c.ticker)),
+                "last_close": last_close(conn, c.ticker, lv.entry if lv else None),
                 "next_event": _clean((cards.get("events") or {}).get("next_event")),
                 "financing": financing(cards.get("financing")),
                 "adv_gbp_20": _clean(adv),
@@ -246,6 +451,7 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
         )
 
     reviews = latest_review_cards(conn)
+    daily_run = latest_daily(conn)
     open_rows = []
     for row in held.to_dict("records"):
         pid = int(row["position_id"])
@@ -267,6 +473,7 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
                 "review": {"action": rev.get("action"), "reason": rev.get("reason")}
                 if rev
                 else None,
+                "kill_criteria_now": kill_criteria_now(conn, pid, daily_run),
             }
         )
     pend = pending_positions(conn)
@@ -274,11 +481,18 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
     for row in pend.to_dict("records"):
         pid = int(row["position_id"])
         pe = book.pending_entry(conn, pid)
+        od = book.orders(conn, pid).set_index("order_id")
+        valid = od["valid_until"].get(pe["order_id"]) if pe else None
         pending_rows.append(
             {
                 **{str(k): _clean(v) for k, v in row.items()},
                 "status": book.position_status(conn, pid),
                 "entry_order": pe,
+                "valid_until": _clean(valid),
+                "days_left": (_naive(valid) - _naive(started)).days if _clean(valid) else None,
+                "placed": book.entry_ever_placed(conn, pid),
+                "waits_for": book.waiting_on(conn, pid),
+                "last_close": last_close(conn, str(row["ticker"]), (pe or {}).get("price")),
                 "opened_from_run_id": _clean(
                     positions.loc[positions["position_id"] == pid, "opened_from_run_id"].iloc[0]
                 ),
@@ -354,6 +568,19 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
             "rejected": {p.ticker: why for p, why in base.report.rejected},
         },
         "agents_this_week": agent_week(conn, started),
+        "failures": failures(conn, run_id),
+        "coverage": coverage(conn, run_id, started),
+        "broker": broker_check(conn),
+        "results_calendar": results_calendar(
+            [(c["ticker"], "candidate", c["next_event"]) for c in candidates]
+            + [(str(r["ticker"]), "open", r.get("next_event")) for r in open_rows]
+            + [
+                (str(t), "pending", (latest_card(conn, str(t), "events") or {}).get("next_event"))
+                for t in pend["ticker"]
+            ],
+            started,
+        ),
+        "changes": changes_since(previous_scan(conn, run_id)),
     }
 
 

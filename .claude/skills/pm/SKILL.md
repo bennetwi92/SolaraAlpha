@@ -63,6 +63,21 @@ Read `pack.json` in the printed directory:
 - `rules_only_fit`: what the rules alone would fund (your baseline to beat).
 - `agents_this_week`: invocations, cost, **failures** (a failure is an idea or position nobody
   looked at: say so in the memo).
+- Per candidate also `validator` (the validator's label, reasons and checks: a toolkit "not
+  warranted" or a data artefact sizes down or passes), `research.note_md` (the note itself) and
+  `last_close` (`date`, `close`, `vs_entry`: a limit entry far below the price may never fill,
+  a stop entry already through is stale). Per open position `kill_criteria_now` (each thesis
+  condition; `hit` from the latest daily run for machine ones, None for agent ones). Per
+  pending entry `valid_until` / `days_left`, `placed` (reached Trading212), `waits_for` (open
+  positions whose sale pays for it) and `last_close` against its entry.
+- Desk-wide (ADR 0032): `failures` (every ERROR of the run by item, with turns and minutes),
+  `coverage` (tickers scanned, toolkit errors by item, `stale_prices`), `broker` (the book
+  against Trading212 at the latest daily run: differences it could not book, with the command),
+  `results_calendar` (scheduled events in the next 4 weeks across candidates, holdings and
+  pending entries) and `changes` (one line per commit since the previous scan, tagged `rules`,
+  `ADR`, `skill`, `bands` or `rank` when it touched them; None when the history isn't
+  available). Name in the memo what wasn't looked at, an unresolved broker difference, results
+  clustering and any change that moved the rules under you.
 
 For each candidate read the research note itself (`record.py prior <TICKER> --stage research
 --limit 1`): the note's own caveats are where conviction is decided. Read a holding's latest

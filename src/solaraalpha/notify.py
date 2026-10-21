@@ -34,7 +34,7 @@ INBOX_BODY = (
 DESK_LABEL = "desk-errors"
 DESK_TITLE = "Solara desk errors"
 DESK_BODY = (
-    "Every failure of the pipeline, the daily check and the agents (ADR 0031): what failed, what"
+    "Every failure of the pipeline, the daily check and the agents (ADR 0032): what failed, what"
     " it means, what happened automatically, the command to re-run it. Silent while nothing fails."
 )
 BROKER = broker.BROKER
@@ -219,7 +219,7 @@ def errors(conn: Conn, run_id: int) -> list[str]:
 
 
 AGENT_STAGES = ("validate", "macro", "research", "events", "pm", "monitor", "postmortem")
-# per stage: what the failure means and what happened automatically (ADR 0031)
+# per stage: what the failure means and what happened automatically (ADR 0032)
 MEANS = {
     "screen": "the stock was left out of this week's screen and shortlist",
     "fundamentals": "the stock was left out of this week's screen and shortlist",
@@ -250,7 +250,7 @@ def _rerun(stage: str, ticker: str, run_id: int, position_id: int | None = None)
     return f"`/{stage} {ticker} --run {run_id}` in Claude Code"
 
 
-def _error_rows(conn: Conn, run_id: int, part: str) -> list[dict[str, str]]:
+def error_rows(conn: Conn, run_id: int, part: str) -> list[dict[str, str]]:
     """The run's ERROR labels and agent ERROR cards as ``{ticker, stage, reason}``; ``part``
     ``pipeline`` (labels by the pipeline), ``agents`` (agents' labels and cards) or ``all``."""
     lab = query(
@@ -317,13 +317,13 @@ def _failed_before(conn: Conn, run_id: int, part: str) -> tuple[int | None, set[
     if not row:
         return None, set()
     prev = int(row[0])
-    return prev, {r["stage"] for r in _error_rows(conn, prev, part)}
+    return prev, {r["stage"] for r in error_rows(conn, prev, part)}
 
 
 def serious(conn: Conn, run_id: int) -> list[str]:
-    """The failures that also head the inbox (ADR 0031): the PM's ERROR, a position whose
+    """The failures that also head the inbox (ADR 0032): the PM's ERROR, a position whose
     monitor errored or that went unreviewed."""
-    rows = _error_rows(conn, run_id, "agents")
+    rows = error_rows(conn, run_id, "agents")
     out = ["the PM did not decide" for r in rows if r["stage"] == "pm"]
     out += [f"{r['ticker']} not reviewed" for r in rows if r["stage"] == "monitor"]
     return out + [f"{t} not reviewed" for _, t in unreviewed(conn, run_id)]
@@ -344,7 +344,7 @@ def desk_errors(conn: Conn, run_id: int, part: str = "all") -> str | None:
         info = store.run_info(run_id, conn=conn)
     except ValueError:
         return None
-    rows = _error_rows(conn, run_id, part)
+    rows = error_rows(conn, run_id, part)
     gone = unreviewed(conn, run_id) if part != "pipeline" else []
     if not (rows or gone):
         return None
