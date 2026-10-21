@@ -180,7 +180,7 @@ def _relative_strength(x: Inputs) -> Cards:
 @toolkit(
     "fundamentals",
     act=("growth > 0", "quality > -0.5", "eps_revision >= 0 or eps_revision is nan"),
-    watch=("quality > -0.5", "eps_revision > 0"),
+    watch=("quality > -0.5", "eps_revision > 0 or eps_revision is nan"),
 )
 def _fundamentals(x: Inputs, as_of: str | None = None) -> Cards:
     """Growth / value / quality scores, point-in-time via publication lags; the financing card
