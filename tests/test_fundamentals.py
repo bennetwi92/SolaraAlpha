@@ -10,17 +10,15 @@ import pytest
 from solaraalpha.analysis.fundamentals import (
     eps_ttm,
     fundamentals_card,
+    fx_ticker,
     known,
-    stamp_published,
     usable_from,
+    with_publication,
     yoy,
 )
-from solaraalpha.data.announcements import COLUMNS as FILING_COLUMNS
-from solaraalpha.data.announcements import parse_nsm
 from solaraalpha.data.fundamentals import parse_timeseries
 
 FIXTURE = Path(__file__).parent / "fixtures" / "yahoo_timeseries_jet2.json"
-NSM_FIXTURE = Path(__file__).parent / "fixtures" / "nsm_jet2.json"
 SCORES = ("growth", "value", "quality")
 
 
@@ -63,42 +61,6 @@ def test_publication_lags() -> None:
     assert _ts("2025-03-31") not in set(k.loc[k["field"] == "annualNetIncome", "date"])
 
 
-def test_results_dates_replace_lags() -> None:
-    fund = stamp_published(_fund(), parse_nsm(json.loads(NSM_FIXTURE.read_text())))
-    by = fund.assign(usable=usable_from(fund)).set_index(["field", "date"])["usable"]
-    # FY26 (to 31 March 2026): preliminary results on 8 July, not the 6-month deadline (30 Sep)
-    assert by["annualNetIncome", _ts("2026-03-31")] == pd.Timestamp("2026-07-08 06:00:04Z")
-    assert by["trailingDilutedEPS", _ts("2026-03-31")] == pd.Timestamp("2026-07-08 06:00:04Z")
-    # H1 to 30 Sep 2025: half-year report on 19 November (the 3-month lag said 30 December)
-    assert by["trailingDilutedEPS", _ts("2025-09-30")] == pd.Timestamp("2025-11-19 07:00:04Z")
-    # no filing in the fixture for older periods: statutory lag; market rows: observation date
-    assert by["annualNetIncome", _ts("2025-03-31")] == _ts("2025-09-30")
-    assert by["trailingPeRatio", _ts("2025-08-20")] == _ts("2025-08-20")
-    k = known(fund, "2026-07-10")
-    assert _ts("2026-03-31") in set(k.loc[k["field"] == "annualNetIncome", "date"])
-    assert _ts("2026-03-31") not in set(known(_fund(), "2026-07-10")["date"])  # lag alone
-
-
-def test_results_dates_need_the_right_announcement() -> None:
-    fund = _synthetic([1.0, 1.2], [100, 120])  # fiscal years to 31 March 2022 and 2023
-    filings = pd.DataFrame(
-        [
-            ("2022-06-01", "TST"),  # a trading statement publishes no accounts
-            ("2022-06-20", "IR"),  # a half-year report is not the annual figures
-            ("2022-07-05", "PRE"),  # matched
-            ("2022-08-01", "ACS"),  # the annual report comes later: first wins
-            ("2024-01-15", "FR"),  # FY23 results 9.5 months late: matched, not assumed at 6
-        ],
-        columns=["published", "type_code"],
-    ).reindex(columns=FILING_COLUMNS)
-    filings["published"] = pd.to_datetime(filings["published"], utc=True)
-    out = usable_from(stamp_published(fund, filings))
-    assert set(out[fund["date"] == _ts("2022-03-31")]) == {_ts("2022-07-05")}
-    assert set(out[fund["date"] == _ts("2023-03-31")]) == {_ts("2024-01-15")}
-    empty = stamp_published(fund, pd.DataFrame(columns=FILING_COLUMNS))
-    assert usable_from(empty).equals(usable_from(fund))
-
-
 def test_no_look_ahead() -> None:
     fund, weekly = _fund(), _weekly()
     as_of = "2025-06-30"
@@ -130,6 +92,49 @@ def test_currency_mismatch_skips_valuation() -> None:
     assert not np.isnan(card.growth) and not np.isnan(card.quality)
 
 
+def _usd(fund: pd.DataFrame) -> pd.DataFrame:
+    return fund.assign(currency=fund["currency"].where(fund["currency"] == "", "USD"))
+
+
+def test_fx_converts_a_usd_reporter_priced_in_pence() -> None:
+    fund, weekly = _usd(_fund()), _weekly()
+    assert fx_ticker("USD", "GBp") == "GBPUSD=X" and fx_ticker("GBP", "GBp") is None
+    fx = pd.Series(1.25, index=pd.date_range("2020-01-01", "2026-10-09", freq="D", tz="UTC"))
+    usd = fundamentals_card(fund, weekly, fx=fx)
+    gbp = fundamentals_card(_fund(), weekly)
+    assert usd.pe == pytest.approx(gbp.pe * 1.25)  # price in USD = pence / 100 * 1.25
+    assert usd.market_cap == pytest.approx(gbp.market_cap * 1.25)
+    assert usd.ey_percentile == pytest.approx(gbp.ey_percentile)  # a constant rate
+    assert np.isnan(fundamentals_card(fund, weekly).pe)  # no FX: skipped, not wrong
+
+
+def test_fx_is_point_in_time() -> None:
+    fund, weekly = _usd(_fund()), _weekly()
+    idx = pd.date_range("2020-01-01", "2026-10-09", freq="D", tz="UTC")
+    fx = pd.Series(np.where(idx <= _ts("2025-06-30"), 1.25, 9.0), index=idx)
+    then = fundamentals_card(fund, weekly, "2025-06-30", fx)
+    flat = fundamentals_card(fund, weekly, "2025-06-30", pd.Series(1.25, index=idx))
+    assert repr(then) == repr(flat)  # a later rate changes nothing
+
+
+def test_growth_n_counts_the_inputs() -> None:
+    weekly = _weekly()
+    thin = fundamentals_card(_synthetic([1.0, 1.2], [100, 100]), weekly)
+    assert thin.growth_n == 2  # eps growth and revenue growth only
+    assert 1 <= fundamentals_card(_fund(), weekly).growth_n <= 5
+
+
+def test_zero_equity_and_negative_ebitda() -> None:
+    fund = _fund()
+    eq = fund["field"] == "annualStockholdersEquity"
+    last = fund.loc[eq, "date"].max()
+    fund.loc[eq & (fund["date"] == last), "value"] = 0.0
+    eb = fund["field"] == "annualEBITDA"
+    fund.loc[eb, "value"] = -1e6
+    card = fundamentals_card(fund, _weekly())  # #213: used to raise ZeroDivisionError
+    assert np.isnan(card.roe) and np.isnan(card.net_debt_ebitda)
+
+
 def test_growth_direction() -> None:
     weekly = _weekly()
     up = fundamentals_card(_synthetic([1.0, 1.2, 1.5], [100, 120, 150]), weekly)
@@ -152,3 +157,42 @@ def test_yoy_and_eps_series() -> None:
 def test_errors() -> None:
     with pytest.raises(ValueError):
         fundamentals_card(_fund(), _weekly(), "2010-01-01")
+
+
+def _filings(rows: list[tuple[str, str]]) -> pd.DataFrame:
+    return pd.DataFrame({"published": [_ts(d) for _, d in rows], "type_code": [c for c, _ in rows]})
+
+
+def test_real_publication_dates() -> None:
+    fund = _fund()  # fiscal years to 31 March, half-years to 30 September
+    ann = _filings(
+        [
+            ("TST", "2025-04-20 07:00"),  # pre-close trading update: not the statements
+            ("PRE", "2025-07-10 07:00"),  # FY25 results
+            ("ACS", "2025-08-01 07:00"),  # annual report: later, the prelims count
+            ("IR", "2025-11-20 07:00"),  # H1 FY26
+        ]
+    )
+    pub = with_publication(fund, ann)
+    use = usable_from(pub).set_axis(pd.MultiIndex.from_frame(fund[["field", "date"]]))
+    assert use["annualNetIncome", _ts("2025-03-31")] == _ts("2025-07-10 07:00")
+    assert use["trailingDilutedEPS", _ts("2025-09-30")] == _ts("2025-11-20 07:00")
+    assert use["trailingPeRatio", _ts("2025-08-20")] == _ts("2025-08-20")  # market: own date
+    # the trading update never makes FY25 known: not on 2025-05-01, but by the results
+    assert _ts("2025-03-31") not in set(known(pub, "2025-05-01")["date"])
+    assert _ts("2025-03-31") in set(known(pub, "2025-07-11")["date"])
+    # ...and earlier than the statutory 6-month lag
+    assert _ts("2025-03-31") not in set(known(fund, "2025-07-11")["date"])
+
+
+def test_publication_falls_back_to_statutory_lag() -> None:
+    fund = _fund()
+    lag = usable_from(fund)
+    assert usable_from(with_publication(fund, None)).equals(lag)
+    only_tst = _filings([("TST", "2025-04-20"), ("NOR", "2025-06-01")])
+    assert usable_from(with_publication(fund, only_tst)).equals(lag)
+    fy25 = (fund["field"] == "annualNetIncome") & (fund["date"] == _ts("2025-03-31"))
+    late = _filings([("FR", "2026-01-15")])  # a late filer: its real date, past the 6-month lag
+    assert usable_from(with_publication(fund, late))[fy25].iloc[0] == _ts("2026-01-15")
+    stray = _filings([("FR", "2026-05-01")])  # over a year on: another period's, not FY25's
+    assert usable_from(with_publication(fund, stray))[fy25].iloc[0] == _ts("2025-09-30")

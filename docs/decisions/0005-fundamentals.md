@@ -29,8 +29,8 @@ model, which needs every input).
 
 Market observations older than 13 weeks are ignored (Yahoo samples them only a few times a
 year, so forward growth / revisions are often NaN). Valuation converts the price from its
-minor unit (GBp → GBP) and is skipped (NaN) if the listing and reporting currencies differ —
-no FX conversion yet. `next_period` is the expected end of the next reporting period, with
+minor unit (GBp → GBP) and, when the accounts are in another currency, through the Yahoo FX
+rate as of each week (`fx_ticker`, e.g. `GBPUSD=X`; #220); without the rate it is NaN. `next_period` is the expected end of the next reporting period, with
 results typically 1-3 months later. Treat a results date inside the holding window as both a
 catalyst and gap risk.
 
@@ -51,19 +51,57 @@ lagged EPS. Tested by changing every not-yet-public value and checking the card 
   reliable free source yet). Earnings dates and surprise vs consensus would be the most
   valuable additions for this horizon if a free source turns up.
 
-**Amendment (2026-10-20): results dates instead of the statutory lag.** The lag is the latest a
-company may report, so a past card saw results weeks late (Jet2's FY26 prelims came out on 8
-July 2026; the 6-month lag said 30 September) — exactly the post-results window the strategy
-trades. `stamp_published(fund, filings)` now matches each statement period to the issuer's own
-NSM results announcement: a fiscal year to the first final / preliminary results or annual
-report (`FR`, `PRE`, `ACS`) within 12 months of the period end, a half-year to the first
-half-year report (`IR`) within 6 months. Its publication time goes in a `published` column that
-`usable_from` / `known` use; a period with no match (filings unavailable, before the NSM
-history, odd type codes) keeps the statutory lag. The window runs past the deadline so a late
-reporter is matched rather than assumed published. Only past-date cards need it (`--as-of`,
-the toolkit's `as_of`, `scripts/backtest.py`); the live card uses everything fetched, so the
-weekly scan makes no extra calls. The DB snapshot does not store `published`, so the
-validator's "rows known" view still uses the lag (conservative). Companies House was assessed
-as a source for the dates and the accounts and not used: its accounts arrive weeks after the
-results RNS (Jet2: 68 days), are annual only, mostly PDF for plc groups until iXBRL filing is
-compulsory (April 2028), and miss the non-UK-incorporated part of the universe.
+## Amendment: the financing card (#218, #214 F4)
+
+The fundamentals toolkit also returns a `financing` card (`analysis/financing.py`), saved beside
+the fundamentals card and judged by no band: context for the PM pack, the validator / research
+pack and thesis conditions. Runway (loss-makers burning cash: last annual cash / annual FCF burn,
+at the period end and what is left today), dilution over ~1 and ~3 years, equity raises in 3 years
+from NSM headlines (placing, fundraise, subscription, retail offer, ...; filings within 14 days =
+one raise), and whether a warrant or convertible appears in a headline. Runway comes from the
+last annual accounts, so it is stale by construction; `cash_period` and `raised_since_period`
+say how stale. The filings are fetched once per stock (`Inputs.announcements`); if they fail,
+the filing fields are None and the fundamentals card is unaffected. No sizing rule follows from
+it automatically: the PM caps a loss-maker under 12 months' runway with no completed raise at 1%
+risk in `/pm` (owner decision on #214).
+
+## Amendment: FX, growth_n, undefined ratios (#220, #213)
+
+- **FX.** 30 of 104 names report in USD / EUR / AUD while priced in pence. Valuation (P/E,
+  earnings and FCF yields, market cap, the own-history percentile) now converts the price into
+  the reporting currency with the Yahoo FX daily close on or before each week, so it stays
+  point-in-time. The toolkit, `scripts/fundamentals.py` and the backtest replay (when it has a
+  fetch) pass the rate.
+- **`growth_n`.** The card shows how many of the five growth sub-signals the score rests on: 1-2
+  is a thin score. Counting missing as neutral in `rank_score` changes the shortlist, so it waits
+  for the senior quant's test (#223).
+- **Undefined ratios.** ROE is NaN on zero equity (it raised before, #213), and net debt / EBITDA
+  is NaN when EBITDA is not positive. It used to be infinite and score −1 whatever the cash; for
+  a loss-maker the financing card's runway is the question.
+
+## Amendment: real publication dates (#221, #214 F2)
+
+The statutory lags are about twice reality on AIM (first results ~70 days after a year end, ~50
+after a half-year end, on a 26-name sample), so a point-in-time card was 2-3 months staler than
+what an investor had. `with_publication(fund, ann)` dates each statement period from the
+issuer's NSM filing that published the statements: final / preliminary results or the annual
+report (`FR`, `PRE`, `ACS`) for a fiscal year, the half-year report (`IR`) for an interim, the
+first after the period end and within 12 months of it. A trading update (`TST`) or notice of
+results (`NOR`) never counts, because it can come before the statements and would make them
+known too early. A late filer keeps its real (later) date. With no such filing (no LEI, NSM
+history too short, quarterly codes we don't map) the statutory lag stays. The toolkit and
+`scripts/backtest.py` pass the filings, and so does `scripts/fundamentals.py --as-of`; the
+validator's pack keeps the statutory lags (conservative: the DB snapshot has no `published`).
+
+**Companies House considered, not used** (2026-10-20). Its free API (600 requests / 5 min,
+reuse unrestricted) was assessed as a source for the dates and the accounts. It doesn't fit:
+accounts reach it weeks after the results RNS (Jet2 FY26: prelims 8 Jul, filed 14 Sep), annual
+only (no interims), mostly PDF for plc groups until software-only iXBRL filing from April 2028,
+no market data or forecasts, and nothing for the ~16-18 non-UK-incorporated stocks in the
+universe (Jersey, Guernsey, BVI, Bermuda, Canada, Australia, Ireland, US). Anything it adds for a
+listed company (charges, share capital, officers) the RNS feed announces first. Revisit after
+April 2028.
+
+**Restated figures.** Yahoo serves figures as restated, not as first reported: a mild
+look-ahead in any backtest. The `--save` snapshots of `fetch_fundamentals` build the
+as-first-seen history from now on.

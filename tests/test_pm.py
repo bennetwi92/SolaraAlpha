@@ -172,6 +172,8 @@ def test_pm_pack_and_memo(
     assert cand["ticker"] == "A.L" and cand["research"]["trade"]["stop"] == 1380.0
     assert cand["plan_at_default_risk"]["shares"] == 111
     assert set(cand["sizing"]["at"]) == {"1.00%", "2.00%", "3.00%"}
+    assert cand["financing"] is None  # no financing card saved in this run
+    assert cand["event_gap"]["n"] == 0 and cand["event_gap"]["in_first_half"]
     assert pack["rank_note"].startswith("The screen rank is unvalidated")  # #210
     assert pack["money"]["slots_free"] == 5 and pack["limits"]["risk_per_trade_range"] == (
         0.01,
@@ -198,6 +200,39 @@ def test_pm_pack_and_memo(
     msg = notify.weekly_message(conn, 1)
     conn.close()
     assert msg is not None and "Your PM: fund A.L" in msg and "### From your PM" in msg
+
+
+def test_financing_section() -> None:
+    card = {"date": "2026-10-09", "runway_months": float("nan"), "raises_3y": 2.0}
+    assert pm.financing(card) == {"runway_months": None, "raises_3y": 2.0}
+    assert pm.financing(None) is None
+
+
+def test_event_gap_costs_the_past_moves() -> None:
+    from solaraalpha.portfolio.rules import load_rules
+
+    rules = load_rules()
+    events = {
+        "next_event": "2026-10-23",
+        "event_moves": 3,
+        "event_worst_move": -0.4,
+        "event_p90_move": 0.25,
+    }
+    sized = {"at": {"2.00%": {"value_gbp": 1250.0}}}
+    got = pm.event_gap(events, sized, "2026-10-11", 5000.0, rules)
+    assert got is not None
+    assert got["in_first_half"] and got["weeks_to_event"] == 1.7 and got["small_sample"]
+    assert got["cost"]["2.00%"] == {
+        "worst_gbp": 500.0,
+        "p90_gbp": 312.5,
+        "worst_pct_equity": 0.1,
+        "p90_pct_equity": 0.0625,
+    }
+    later = pm.event_gap({**events, "next_event": "2027-01-29"}, sized, "2026-10-11", 5e3, rules)
+    assert later is not None and not later["in_first_half"]
+    none = pm.event_gap({"event_moves": 0}, None, "2026-10-11", 5000.0, rules)
+    assert none is not None and none["worst"] is None and none["cost"] == {}
+    assert pm.event_gap(None, sized, "2026-10-11", 5000.0, rules) is None
 
 
 def test_risk_band_rule(tmp_path: Path) -> None:

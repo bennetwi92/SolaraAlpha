@@ -3,8 +3,8 @@
 uv run python scripts/backtest.py [TICKERS...] [--years 5] [--step 1] [--out FILE]
 
 Fresh fetches (last --years years, check / clean / trim, weekly bars), each Friday's cards
-computed from the bars up to that week (fundamentals from their results announcement, else
-known() lags; benchmarks sliced the same way), labelled with the current bands; then forward 4 / 8 / 16-week returns (excess vs the
+computed from the bars up to that week (fundamentals via known() lags; benchmarks sliced the
+same way), labelled with the current bands; then forward 4 / 8 / 16-week returns (excess vs the
 market index) and a sweep changing one ACT threshold at a time. Writes a markdown report with
 the survivorship caveat and a *suggested* band table to data/processed/backtest/report.md (or
 --out); the bands in code are not changed. --step N replays every Nth week when 100 stocks x 5
@@ -20,10 +20,10 @@ from pathlib import Path
 import pandas as pd
 
 from solaraalpha.analysis.backtest import forward, replay, report, sweep
-from solaraalpha.analysis.fundamentals import stamp_published
+from solaraalpha.analysis.fundamentals import with_publication
 from solaraalpha.analysis.relative_strength import comparisons
 from solaraalpha.config import settings
-from solaraalpha.data.announcements import fetch_issuer_announcements
+from solaraalpha.data.announcements import fetch_announcements, resolve_issuer
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.fundamentals import fetch_fundamentals
 from solaraalpha.data.prices import fetch_daily
@@ -61,10 +61,10 @@ def main(argv: list[str] | None = None) -> None:
             print(f"{t}: fundamentals unavailable ({e})")
             fund = None
         if fund is not None:
-            try:
-                fund = stamp_published(fund, fetch_issuer_announcements(t))
+            try:  # real results publication dates for known() (#221); else statutory lags
+                fund = with_publication(fund, fetch_announcements(resolve_issuer(t).lei))
             except Exception as e:
-                print(f"{t}: filings unavailable, statutory lags used ({e})")
+                print(f"{t}: filings unavailable ({e}); statutory lags")
         comp = comparisons(t)
         bench = None
         if comp.market:

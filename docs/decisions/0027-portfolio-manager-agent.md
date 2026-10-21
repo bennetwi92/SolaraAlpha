@@ -58,3 +58,14 @@ post-mortems and `learn.py agents-value` proposing rule changes to the owner.
 **Consequences.** One more agent invocation a week. Sizing now varies 1-3% by conviction;
 heat (10%) still caps the total. The owner's role on entries moves from approving to placing
 and supervising, as 0024 did for stops.
+
+## Amendment: results-day gap risk in the pack (#219, #214 F5)
+
+The stop is not the worst case when results fall inside the trade: a profit warning gaps through
+it. Each candidate in the PM pack carries `event_gap`: the next scheduled event, whether it falls
+in the first half of the horizon (`horizon_weeks` max / 2), the stock's past results-day session
+returns from the events card (`event_moves`, `event_worst_move`, `event_p90_move`, Financial
+Results filings over the 5-year filing history, notices of results dropped, one per session) and
+what the worst and p90 move would cost at each risk of the band. Information only: `make_plan`,
+`fit` and `portfolio.toml` are unchanged. A hard cap is a rule change that waits for the
+shadow-book test (#223) and the owner's yes. Under 4 past events is flagged `small_sample`.

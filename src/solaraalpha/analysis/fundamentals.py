@@ -13,12 +13,11 @@ pillars, each scored in ``[-1, +1]`` (+ = favourable for a long):
   and share-count dilution.
 
 **No look-ahead.** Statement figures are dated at the period end but published later, so
-:func:`known` makes them usable only once announced: from the period's results announcement
-when :func:`stamp_published` has matched one from the issuer's filings (FCA NSM), else after
-the statutory reporting lag (``ANNUAL_LAG``, ``INTERIM_LAG``). Market fields (P/E, forward
-P/E, market cap) are known on their observation date. :func:`fundamentals_card` with ``as_of``
-applies those dates; without it (the live view) everything fetched counts, since it has all
-been published by now.
+:func:`known` makes them usable only from the publication of their results filing on the NSM
+(:func:`with_publication`, #221) or, when none is found, after the statutory reporting lag
+(``ANNUAL_LAG``, ``INTERIM_LAG``). Market fields (P/E, forward P/E, market cap) are known on their observation
+date. :func:`fundamentals_card` with ``as_of`` applies those lags; without it (the live view)
+everything fetched counts, since it has all been published by now.
 
 Unlike the technical and levels models this one is stock-specific in use (accounting quirks
 differ by company), but the scoring here is generic; per-stock adjustments are added only when
@@ -38,6 +37,14 @@ log = get_logger(__name__)
 
 ANNUAL_LAG = pd.DateOffset(months=6)  # AIM rule 19 (Main Market: 4 months)
 INTERIM_LAG = pd.DateOffset(months=3)  # AIM rule 18 / DTR 4.2 half-yearly reports
+# NSM type codes of the filings that publish the statements (#221): a trading update (TST) or a
+# notice of results (NOR) does not. Final / preliminary results or the annual report for a
+# fiscal year; the half-year report for an interim period.
+ANNUAL_RESULTS = frozenset({"FR", "PRE", "ACS"})
+INTERIM_RESULTS = frozenset({"IR"})
+# A results filing up to this long after the period end is that period's, even past the statutory
+# lag (a late filer: the later date is the honest one); beyond it, it belongs to another period.
+MAX_PUBLICATION = pd.DateOffset(months=12)
 YEAR_TOL = pd.Timedelta(days=20)  # "a year earlier" may be off by a few days (52/53-week years)
 FRESH_WEEKS = 13  # market observations older than this are ignored
 REVISION_WEEKS = (4, 26)  # forward-estimate revision measured over this many weeks
@@ -51,12 +58,6 @@ FULL_DILUTION = 0.05  # 5% more shares in a year scores -1 (5% bought back score
 # Price quoted in a minor unit: (major currency, units per major).
 MINOR_UNITS = {"GBp": ("GBP", 100), "GBX": ("GBP", 100), "ZAc": ("ZAR", 100), "ILA": ("ILS", 100)}
 MARKET_FIELDS = ("trailingPeRatio", "trailingForwardPeRatio", "trailingMarketCap")
-# NSM type codes of the announcement that publishes a period's figures, and how long after the
-# period end to look for it (past the statutory lag, so a late reporter is matched, not assumed).
-ANNUAL_RESULTS = frozenset({"FR", "PRE", "ACS"})  # final / preliminary results, annual report
-INTERIM_RESULTS = frozenset({"IR"})  # half-year (interim) report
-ANNUAL_WINDOW = pd.DateOffset(months=12)
-INTERIM_WINDOW = pd.DateOffset(months=6)
 
 
 def series(fund: pd.DataFrame, field: str) -> pd.Series:
@@ -66,15 +67,16 @@ def series(fund: pd.DataFrame, field: str) -> pd.Series:
 
 
 def _annual(fund: pd.DataFrame) -> pd.Series:
-    """Rows dated at a fiscal-year end (``annual*`` fields and trailing items on those dates)."""
+    """Rows dated at a fiscal-year end (``annual*`` fields, or any field on such a date)."""
     annual_ends = set(fund.loc[fund["field"].str.startswith("annual"), "date"])
     return fund["field"].str.startswith("annual") | fund["date"].isin(annual_ends)
 
 
 def usable_from(fund: pd.DataFrame) -> pd.Series:
     """Date from which each row may be used: observation date for market fields; for statement
-    figures the ``published`` date when :func:`stamp_published` found one, else period end plus
-    ``ANNUAL_LAG`` for fiscal-year figures, ``INTERIM_LAG`` for interim ones."""
+    figures the publication time of their results filing when :func:`with_publication` found
+    one (column ``published``), else period end plus ``ANNUAL_LAG`` for fiscal-year figures,
+    ``INTERIM_LAG`` for interim ones."""
     market = fund["field"].isin(MARKET_FIELDS)
     annual = _annual(fund)
     lagged = fund["date"].where(~annual, fund["date"] + ANNUAL_LAG)
@@ -84,31 +86,29 @@ def usable_from(fund: pd.DataFrame) -> pd.Series:
     return fund["date"].where(market, lagged)
 
 
-def stamp_published(fund: pd.DataFrame, filings: pd.DataFrame) -> pd.DataFrame:
-    """``fund`` with a ``published`` column: when each statement period's figures were announced.
+def with_publication(fund: pd.DataFrame, ann: pd.DataFrame | None) -> pd.DataFrame:
+    """``fund`` plus a ``published`` column: for each statement period end, the publication time
+    of the issuer's results filing for it in ``ann`` (NSM), NaT when there is none.
 
-    ``filings`` is the issuer's NSM frame (:func:`solaraalpha.data.announcements.
-    fetch_announcements`). A fiscal-year period is matched to the first final / preliminary
-    results or annual report (``ANNUAL_RESULTS``) published within ``ANNUAL_WINDOW`` after the
-    period end, an interim one to the first half-year report within ``INTERIM_WINDOW``. Market
-    fields and unmatched periods stay NaT, so :func:`usable_from` falls back to the lag.
+    The filing must be the results themselves (:data:`ANNUAL_RESULTS` for a fiscal-year end,
+    :data:`INTERIM_RESULTS` for an interim one), the first after the period end and within
+    :data:`MAX_PUBLICATION` of it (a late filer's date is kept, even past the statutory lag:
+    that is when the market saw the figures). A trading update published before the statements
+    never counts, so the figures are never known too early; NaT falls back to the statutory lag
+    in :func:`usable_from`. Market fields stay NaT (known on their own date).
     """
     out = fund.copy()
-    out["published"] = pd.Series(pd.NaT, index=out.index, dtype=out["date"].dtype)
-    if filings.empty:
+    out["published"] = pd.Series(pd.NaT, index=out.index, dtype="datetime64[ns, UTC]")
+    if ann is None or ann.empty:
         return out
-    statements = ~out["field"].isin(MARKET_FIELDS)
-    annual_ends = set(out.loc[_annual(out), "date"])
-    for end in out.loc[statements, "date"].unique():
-        codes, window = (
-            (ANNUAL_RESULTS, ANNUAL_WINDOW)
-            if end in annual_ends
-            else (INTERIM_RESULTS, INTERIM_WINDOW)
-        )
-        pub = filings.loc[filings["type_code"].isin(codes), "published"]
-        pub = pub[(pub > end) & (pub <= end + window)]
-        if len(pub):
-            out.loc[statements & (out["date"] == end), "published"] = pub.min()
+    stmt = ~out["field"].isin(MARKET_FIELDS)
+    annual = _annual(out)
+    for is_annual, codes in ((True, ANNUAL_RESULTS), (False, INTERIM_RESULTS)):
+        pub = ann.loc[ann["type_code"].isin(codes), "published"].sort_values()
+        for d in out.loc[stmt & (annual == is_annual), "date"].unique():
+            after = pub[pub > d]
+            if len(after) and after.iloc[0] <= d + MAX_PUBLICATION:
+                out.loc[stmt & (out["date"] == d), "published"] = after.iloc[0]
     return out
 
 
@@ -148,14 +148,48 @@ def eps_ttm(fund: pd.DataFrame) -> pd.Series:
     return pd.concat([trailing, annual[~annual.index.isin(trailing.index)]]).sort_index()
 
 
-def price_in(currency: str, close: float, price_currency: str | None) -> float:
-    """``close`` converted to the reporting ``currency`` (pence to pounds etc.); NaN if the
-    price is in a different currency altogether (no FX conversion)."""
+def fx_ticker(currency: str, price_currency: str | None) -> str | None:
+    """Yahoo FX ticker converting the price's major currency into the reporting ``currency``
+    (e.g. ``"GBPUSD=X"``: USD per GBP), or None when no conversion is needed."""
+    major, _ = MINOR_UNITS.get(price_currency or "", (price_currency, 1))
+    if not currency or not major or major == currency:
+        return None
+    return f"{major}{currency}=X"
+
+
+def fx_at(fx: pd.Series | None, dates: pd.DatetimeIndex) -> np.ndarray:
+    """``fx`` (daily closes) as of each of ``dates`` (last close on or before; NaN before it)."""
+    if fx is None or fx.empty:
+        return np.full(len(dates), np.nan)
+    fx = fx.dropna().sort_index()
+    pos = fx.index.searchsorted(dates, side="right") - 1
+    return np.where(pos >= 0, fx.to_numpy()[pos.clip(0)], np.nan)
+
+
+def price_in(
+    currency: str,
+    close: float,
+    price_currency: str | None,
+    fx: pd.Series | None = None,
+    date: pd.Timestamp | None = None,
+) -> float:
+    """``close`` converted to the reporting ``currency``: pence to pounds etc., then through
+    ``fx`` (daily closes of :func:`fx_ticker`, as of ``date``) when the currencies differ; NaN
+    when they differ and there is no ``fx``."""
     major, per = MINOR_UNITS.get(price_currency or "", (price_currency, 1))
-    if major != currency:
-        log.warning("price in %s, accounts in %s: valuation skipped", price_currency, currency)
-        return np.nan
-    return close / per
+    if major == currency:
+        return close / per
+    rate = fx_at(fx, pd.DatetimeIndex([date]))[0] if fx is not None and date is not None else np.nan
+    if np.isnan(rate):
+        log.warning(
+            "price in %s, accounts in %s: no FX, valuation skipped", price_currency, currency
+        )
+    return close / per * rate
+
+
+def _div(a: float, b: float) -> float:
+    """``a / b``, NaN when ``b`` is zero or missing (plain floats raise on zero)."""
+    return a / b if b and not np.isnan(b) else np.nan
 
 
 def reporting_currency(fund: pd.DataFrame) -> str:
@@ -163,8 +197,11 @@ def reporting_currency(fund: pd.DataFrame) -> str:
     return str(cur.mode().iloc[0]) if len(cur) else ""
 
 
-def earnings_yield_history(fund: pd.DataFrame, weekly: pd.DataFrame) -> pd.Series:
-    """Weekly TTM earnings yield (EPS / price), using only EPS public by each week (lagged)."""
+def earnings_yield_history(
+    fund: pd.DataFrame, weekly: pd.DataFrame, fx: pd.Series | None = None
+) -> pd.Series:
+    """Weekly TTM earnings yield (EPS / price), using only EPS public by each week (lagged) and
+    each week's FX rate when the accounts are in another currency."""
     eps = eps_ttm(fund)
     if eps.empty:
         return pd.Series(np.nan, index=weekly.index, name="earnings_yield")
@@ -174,14 +211,19 @@ def earnings_yield_history(fund: pd.DataFrame, weekly: pd.DataFrame) -> pd.Serie
     pit = pd.Series(eps.to_numpy(), index=pd.DatetimeIndex(avail.to_numpy())).sort_index()
     pos = pit.index.searchsorted(weekly.index, side="right") - 1
     eps_w = np.where(pos >= 0, pit.to_numpy()[pos.clip(0)], np.nan)
-    price = price_in(reporting_currency(fund), 1.0, weekly.attrs.get("currency"))
+    cur, quoted = reporting_currency(fund), weekly.attrs.get("currency")
+    major, per = MINOR_UNITS.get(quoted or "", (quoted, 1))
+    price = 1 / per if major == cur else fx_at(fx, pd.DatetimeIndex(weekly.index)) / per
     return pd.Series(
         eps_w / (weekly["close"].to_numpy() * price), weekly.index, name="earnings_yield"
     )
 
 
-def metrics(fund: pd.DataFrame, weekly: pd.DataFrame) -> dict[str, float]:
-    """Raw fundamental metrics from all rows of ``fund``, valued at the last weekly close."""
+def metrics(
+    fund: pd.DataFrame, weekly: pd.DataFrame, fx: pd.Series | None = None
+) -> dict[str, float]:
+    """Raw fundamental metrics from all rows of ``fund``, valued at the last weekly close
+    (converted through ``fx`` when the accounts are in another currency)."""
     as_of = weekly.index[-1]
     m: dict[str, float] = {}
 
@@ -209,10 +251,14 @@ def metrics(fund: pd.DataFrame, weekly: pd.DataFrame) -> dict[str, float]:
             m["eps_revision"] = _growth(float(fwd.iloc[-1]), float(base.iloc[0]))
 
     price = price_in(
-        reporting_currency(fund), float(weekly["close"].iloc[-1]), weekly.attrs.get("currency")
+        reporting_currency(fund),
+        float(weekly["close"].iloc[-1]),
+        weekly.attrs.get("currency"),
+        fx,
+        as_of,
     )
-    ey = earnings_yield_history(fund, weekly).dropna()
-    m["earnings_yield"] = m["eps_ttm"] / price
+    ey = earnings_yield_history(fund, weekly, fx).dropna()
+    m["earnings_yield"] = _div(m["eps_ttm"], price)
     m["pe"] = price / m["eps_ttm"] if m["eps_ttm"] > 0 else np.nan
     hist = ey.iloc[:-1]
     m["ey_percentile"] = (
@@ -220,12 +266,13 @@ def metrics(fund: pd.DataFrame, weekly: pd.DataFrame) -> dict[str, float]:
     )
     fcf, ni = _last(fund, "annualFreeCashFlow"), _last(fund, "annualNetIncome")
     m["market_cap"] = price * _last(fund, "annualOrdinarySharesNumber")
-    m["fcf_yield"] = fcf / m["market_cap"]
+    m["fcf_yield"] = _div(fcf, m["market_cap"])
 
     ebitda = _last(fund, "annualEBITDA")
     net_debt = _last(fund, "annualTotalDebt") - _last(fund, "annualCashAndCashEquivalents")
-    m["roe"] = ni / _last(fund, "annualStockholdersEquity")
-    m["net_debt_ebitda"] = net_debt / ebitda if ebitda > 0 else (np.inf if net_debt > 0 else np.nan)
+    m["roe"] = _div(ni, _last(fund, "annualStockholdersEquity"))  # NaN on zero equity (#213)
+    # Negative EBITDA: leverage is not meaningful (runway is on the financing card), not -1
+    m["net_debt_ebitda"] = net_debt / ebitda if ebitda > 0 else np.nan
     m["fcf_conversion"] = fcf / ni if ni > 0 else np.nan
     shares = series(fund, "trailingDilutedAverageShares")
     m["share_change"] = yoy(shares if len(shares) else series(fund, "annualOrdinarySharesNumber"))
@@ -237,20 +284,22 @@ def _score(parts: list[float]) -> float:
     return float(x.mean()) if len(x) else np.nan
 
 
+def _growth_parts(m: dict[str, float]) -> list[float]:
+    return [
+        m["eps_growth"] / FULL_GROWTH,
+        m["eps_accel"] / FULL_GROWTH,
+        m["rev_growth"] / FULL_GROWTH,
+        m["fwd_eps_growth"] / FULL_GROWTH,
+        m["eps_revision"] / FULL_REVISION,
+    ]
+
+
 def pillar_scores(m: dict[str, float]) -> dict[str, float]:
     """Growth / value / quality in [-1, 1] from :func:`metrics`; each is the mean of whichever
     sub-signals are available (fundamental data is patchy), NaN if none are."""
     nd = m["net_debt_ebitda"]
     return {
-        "growth": _score(
-            [
-                m["eps_growth"] / FULL_GROWTH,
-                m["eps_accel"] / FULL_GROWTH,
-                m["rev_growth"] / FULL_GROWTH,
-                m["fwd_eps_growth"] / FULL_GROWTH,
-                m["eps_revision"] / FULL_REVISION,
-            ]
-        ),
+        "growth": _score(_growth_parts(m)),
         "value": _score(
             [
                 (m["earnings_yield"] - NEUTRAL_YIELD) / NEUTRAL_YIELD,
@@ -290,21 +339,27 @@ class FundamentalsCard:
     fcf_yield: float
     market_cap: float  # in the reporting currency
     roe: float
-    net_debt_ebitda: float  # negative = net cash
+    net_debt_ebitda: float  # negative = net cash; NaN when EBITDA <= 0 (not meaningful)
     fcf_conversion: float  # free cash flow / net income
     share_change: float  # diluted share count vs a year earlier
     growth: float  # [-1, 1]
+    growth_n: int  # growth sub-signals the score rests on (of 5): 1-2 = a thin score
     value: float  # [-1, 1]
     quality: float  # [-1, 1]
 
 
 def fundamentals_card(
-    fund: pd.DataFrame, weekly: pd.DataFrame, as_of: str | pd.Timestamp | None = None
+    fund: pd.DataFrame,
+    weekly: pd.DataFrame,
+    as_of: str | pd.Timestamp | None = None,
+    fx: pd.Series | None = None,
 ) -> FundamentalsCard:
     """Fundamental metrics and pillar scores as of the last week in ``weekly``.
 
     With ``as_of`` (a past date), prices are cut to weeks ending on or before it and only
     fundamentals public by then are used (:func:`known`). Without it, all of ``fund`` is used.
+    ``fx``: daily closes of :func:`fx_ticker` when the accounts are in another currency than the
+    price (valuation is NaN without it).
     """
     if as_of is not None:
         weekly = weekly[weekly.index <= _utc(as_of)]
@@ -314,7 +369,7 @@ def fundamentals_card(
     statements = fund[~fund["field"].isin(MARKET_FIELDS)]
     if statements.empty:
         raise ValueError("no published fundamentals")
-    m = metrics(fund, weekly)
+    m = metrics(fund, weekly, fx)
     eps = eps_ttm(fund)
     step = eps.index[-1] - eps.index[-2] if len(eps) > 1 else pd.Timedelta(days=365)
     months = max(1, round(step.days / 30.4))
@@ -327,4 +382,5 @@ def fundamentals_card(
         close=float(weekly["close"].iloc[-1]),
         **m,
         **pillar_scores(m),
+        growth_n=sum(not np.isnan(p) for p in _growth_parts(m)),
     )

@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from solaraalpha.analysis.events import (
+    event_moves,
     expected_events,
     material,
     reaction_session,
@@ -140,3 +141,23 @@ def test_expected_events_move() -> None:
     hist = HISTORY.assign(ret=[0.05, -0.03, 0.08, 0.01, 0.0, 0.0, 0.0])
     ev = expected_events(hist, "2026-06-15", horizon_weeks=16)
     assert ev.iloc[0]["median_abs_move"] == pytest.approx(0.05)
+
+
+def test_event_moves() -> None:
+    ann = _ann(
+        [
+            ("2026-02-02 07:00", "TST", "Financial Results", "Trading Update"),
+            ("2026-02-02 07:01", "IR", "Financial Results", "Half-year Report"),  # same session
+            ("2026-03-02 07:00", "NOR", "Financial Results", "Notice of Results"),  # a date
+            ("2026-04-01 07:00", "FR", "Financial Results", "Final Results"),
+            ("2026-04-02 07:00", "UPD", "Operational updates", "Contract"),  # not results
+        ]
+    )
+    ann["session"] = pd.to_datetime(
+        ["2026-02-02", "2026-02-02", "2026-03-02", "2026-04-01", "2026-04-02"], utc=True
+    )
+    ann["ret"] = [-0.30, -0.30, 0.50, 0.10, -0.60]
+    got = event_moves(ann)
+    assert got["n"] == 2 and got["worst"] == pytest.approx(-0.30)
+    assert got["p90_abs"] == pytest.approx(0.28)  # between 0.10 and 0.30
+    assert event_moves(ann.drop(columns="ret"))["n"] == 0

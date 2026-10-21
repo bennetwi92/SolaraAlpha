@@ -64,11 +64,6 @@ def resolve_issuer(ticker: str) -> Issuer:
     return parse_issuer(ticker, lse, gleif)
 
 
-def fetch_issuer_announcements(ticker: str, end: str | None = None) -> pd.DataFrame:
-    """:func:`fetch_announcements` for an LSE Yahoo ticker, via :func:`resolve_issuer`."""
-    return fetch_announcements(resolve_issuer(ticker).lei, end=end)
-
-
 def parse_issuer(ticker: str, lse: dict, gleif: dict) -> Issuer:
     if not gleif["data"]:
         raise ValueError(f"no LEI found for ISIN {lse['isin']}")

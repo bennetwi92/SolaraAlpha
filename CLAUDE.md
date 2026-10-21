@@ -42,9 +42,9 @@ Current state:
   scoring in `analysis/fundamentals.py` is generic, and per-stock adjustments (accounting
   quirks) are added only when a stock needs one.
 - Fundamentals are fetched fresh each run too (`fetch_fundamentals`). Statement dates are
-  **period ends, not publication dates**: anything as-of a past date goes through `known()`,
-  never the raw frame — after `stamp_published(fund, filings)` dates each period by its NSM
-  results announcement (statutory reporting lags where none matches; ADR 0005 amendment).
+  **period ends, not publication dates**: anything as-of a past date goes through `known()`
+  (the real results filing date via `with_publication`, else statutory reporting lags), never the
+  raw frame.
 - Events & catalysts are split: `scripts/events.py` gathers facts programmatically (filings,
   market reactions, expected events, headlines) into an event pack; interpretation is done by
   an agent via the `/events` skill (`.claude/skills/events/SKILL.md`), and the Sunday research
@@ -65,7 +65,8 @@ Current state:
   amendment #192): past a sanity floor (no ERROR, `min_adv_gbp`), stocks are ranked by
   `portfolio.fit.rank_score` (mean of technical `trend`, levels `compression`, fundamentals
   `growth`); the top `shortlist_size` (7) plus up to `shortlist_catalysts` (3) with a fresh
-  catalyst (`solaraalpha.catalysts.fresh_catalysts`: new filings, headlines, scheduled events)
+  catalyst (`solaraalpha.catalysts.fresh_catalysts`: new filings, headlines, scheduled events,
+  tiered information > scheduled > discovery > warnings only, slots by tier then rank, #222)
   are ACT, the rest keep their band label capped at WATCH. Saved per stock in the `labels`
   table (`store.shortlist`) with `rank`, `shortlist` (why) and `watch_on` (JSON). **The rank is
   unvalidated**: every pack the agents read says so (`fit.RANK_NOTE`, #210). Levels is
@@ -240,10 +241,11 @@ src/solaraalpha/        importable package — all reusable code lives here
                         weekly bars as seen at the close (post-exit weeks = hindsight) — 0016
   monitoring.py         the monitor's pack: position then (entry conditions) vs now (fresh cards),
                         thesis conditions evaluated, triggers + filing text — docs/decisions/0018
-  catalysts.py          fresh_catalysts: ticker -> one-line reason (new material filings, headlines,
-                        a scheduled event in the window); a stock with one can join the shortlist
+  catalysts.py          fresh_catalysts: ticker -> tier-tagged one-line reason (new material filings,
+                        headlines, a scheduled event in the window); a stock with one can join the
+                        shortlist, best tier first
   pm.py                 the portfolio manager's pack: research-ACT candidates (verdict, levels, sizing
-                        across the risk band), open / pending positions, money, regime, macro,
+                        across the risk band, financing, results-day gap cost), open / pending positions, money, regime, macro,
                         correlations, limits — docs/decisions/0027
   value_models.py       register of per-stock value models (config/value_models.toml) for research
   dashboard.py          render_dashboard: one self-contained HTML page from the DB (inline CSS,
@@ -275,6 +277,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         stop/targets/reward:risk — see docs/decisions/0004
     fundamentals.py     fundamentals model (one stock): growth/value/quality scores,
                         point-in-time via publication lags — see docs/decisions/0005
+    financing.py        financing card (any stock): cash runway, dilution, equity raises and
+                        warrants / convertibles from NSM headlines; context only — 0005, #218
     relative_strength.py  relative strength (any stock) vs market, industry, peer basket:
                         vol-scaled excess returns, peer rank — see docs/decisions/0011
     liquidity.py        liquidity (any stock): median daily traded value (20 / 60 sessions),
@@ -348,6 +352,8 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
 .claude/agents/fundamental-strategist.md  subagent: fundamentals / balance sheet / valuation / macro / policy
                         specialist (fundamentals toolkit, expectations, financing risk, event gaps, #214);
                         `claude --agent fundamental-strategist`
+.claude/hooks/guard_live_writes.py  PreToolUse guard the three subagents load: blocks live book / DB
+                        writes, workflow runs and inbox posts unless `SOLARA_ALLOW_WRITES=1`
 notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure; fakes.py (FakeTurso), conftest.py (db_backend)
 data/                   gitignored; raw/ processed/ cache/ created on demand
@@ -393,11 +399,32 @@ docs/
 ## Issues
 
 GitHub issues are the backlog and the hand-off between threads/agents.
+
+### Desk ownership
+
+The three subagents (`.claude/agents/`) each own an area; one owner per file. Others propose in
+the owner's issue rather than edit. Status lives in each agent's issue, never in its file.
+Decision rules live in the skills (`.claude/skills/`), never duplicated in a subagent file.
+
+| Area | Owner | Live state |
+|---|---|---|
+| `analysis/technical.py`, `levels.py`, `relative_strength.py`, `regime.py` (method), `backtest.py`, `scorecard.py`; the `fit.rank_score` formula and its test; `portfolio/shadow.py`; `docs/research/`; ADR 0029 | `senior-quant` | #210 |
+| `analysis/fundamentals.py`, `financing.py`, `events.py`, `jet2_value.py`; `data/fundamentals.py`, `announcements.py`; `catalysts.py`; `value_models`; the `growth` input to the rank; the fundamental content of `/events`, `/research`, `/macro` | `fundamental-strategist` | #214 |
+| `pm.py`, `portfolio/planner.py`, `plan.py`, `fit.py` (slots, sector, heat), `review.py`; the `/pm`, `/validate`, `/monitor`, `/postmortem` skills and the agent chain (`agents.yml`, failures, cost) | `portfolio-manager` | ADR 0027 phases; its current issue |
+| ADR 0022, bands, rank weights, `config/portfolio.toml`, the book and broker mechanics, data sources, anything unlisted; every live write (`SOLARA_ALLOW_WRITES=1`) | owner | — |
 - One issue = one deliverable. Title is imperative ("Persist events notes to the DB").
 - Body: **Context** (why, links to ADRs/PRs), **Scope** (what's in / out), **Acceptance**
   (checkable list), **Open questions** (anything needing the owner's choice — don't assume).
 - State dependencies explicitly ("Blocked by #N"). Keep it short; detail goes in the PR/ADR.
 - PRs reference their issue (`Closes #N`). Note decisions taken during the work on the issue.
+- Labels (an unlabelled issue is ready to work):
+  - `needs-owner` — waiting on the owner's decision (proposals, open questions). Don't build
+    until the owner has answered on the issue; then remove the label.
+  - `epic` — umbrella issue listing its deliverables; closed when they are done, not by a PR.
+  - `R1` / `R2` / `R3` — release slice from `docs/user-story-map.md`.
+  - `inbox` — reserved for the "Solara inbox" notification issue (docs/decisions/0021); the
+    workflows comment on the open one. Never put backlog work there.
+  - `type:task` is legacy; don't use it on new issues.
 
 ## Workflow for Claude
 

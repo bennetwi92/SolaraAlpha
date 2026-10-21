@@ -1,13 +1,14 @@
 """The portfolio manager's pack: the whole book and the week's ideas on one page (ADR 0027).
 
 Built from the DB only, after the research stage: every research-ACT candidate (the research
-verdict, its trade levels, the plan at the rules' risk per trade and what each risk in the PM's
-band would buy after the caps), the research WATCH names (context: they cannot be funded), the
-open positions (P&L, R, stop, weeks held, next event, the latest monitor and review view) and the
-pending entries, the money (equity, cash, heat, sector exposure, drawdown and circuit breaker),
-the market regime, the run's macro notes, weekly-return correlations across candidates and
-holdings, the limits, and the week's agent failures. The PM decides the allocation and the
-rotations from it and records them through ``record.py verdict`` (:func:`agents.record_book`).
+verdict, its trade levels, the financing card, the results-day gap risk, the plan at the rules'
+risk per trade and what each risk in the PM's band would buy after the caps), the research
+WATCH names (context: they cannot be funded), the open positions (P&L, R, stop, weeks held,
+next event, the latest monitor and review view) and the pending entries, the money (equity,
+cash, heat, sector exposure, drawdown and circuit breaker), the market regime, the run's macro
+notes, weekly-return correlations across candidates and holdings, the limits, and the week's
+agent failures. The PM decides the allocation and the rotations from it and records them
+through ``record.py verdict`` (:func:`agents.record_book`).
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ from solaraalpha.store import Conn
 
 CORRELATION_WEEKS = 26
 CORRELATION_SHOW = 0.5  # pairs at or above this go in the pack
+MIN_EVENT_MOVES = 4  # fewer past results days than this: the gap estimate is a small sample
 LIMIT_KEYS = (
     "risk_per_trade",
     "risk_per_trade_range",
@@ -70,6 +72,58 @@ def latest_card(conn: Conn, ticker: str, model: str) -> dict[str, Any] | None:
         return None
     card = store.load_cards(int(row[0]), ticker, conn=conn).get(model)
     return {"run_id": int(row[0]), **card} if card else None
+
+
+def financing(card: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The financing card (runway, dilution, raises; #218) as JSON-able context, or None."""
+    if not card:
+        return None
+    return {k: _clean(v) for k, v in card.items() if k != "date"}
+
+
+def _naive(ts: Any) -> pd.Timestamp:
+    t = pd.Timestamp(ts)
+    return t.tz_convert(None) if t.tzinfo is not None else t
+
+
+def event_gap(
+    events: dict[str, Any] | None,
+    sized: dict[str, Any] | None,
+    started: str,
+    equity: float,
+    rules: Rules,
+) -> dict[str, Any] | None:
+    """What a results-day gap like the stock's past ones would cost (#219, #214 F5): the next
+    scheduled event, whether it falls in the first half of the horizon, the past moves
+    (``n``, ``worst``, ``p90_abs``; ``small_sample`` under :data:`MIN_EVENT_MOVES`) and, at each
+    risk of the band (``sizing``), the loss in GBP and % of equity at the worst and p90 moves.
+    Information only: sizing is unchanged. None without an events card."""
+    if not events:
+        return None
+    n = int(events.get("event_moves") or 0)
+    worst, p90 = _clean(events.get("event_worst_move")), _clean(events.get("event_p90_move"))
+    nxt = _clean(events.get("next_event"))
+    weeks = (_naive(nxt) - _naive(started)).days / 7 if nxt else None
+    cost: dict[str, Any] = {}
+    for r, at in ((sized or {}).get("at") or {}).items():
+        value = float(at["value_gbp"])
+        loss = {"worst": -min(worst, 0.0) if worst is not None else None, "p90": p90}
+        cost[r] = {
+            f"{k}_gbp": round(value * v, 2) if v is not None else None for k, v in loss.items()
+        } | {
+            f"{k}_pct_equity": round(value * v / equity, 4) if v is not None and equity else None
+            for k, v in loss.items()
+        }
+    return {
+        "next_event": nxt,
+        "weeks_to_event": round(weeks, 1) if weeks is not None else None,
+        "in_first_half": weeks is not None and weeks <= rules.horizon_weeks[1] / 2,
+        "n": n,
+        "worst": worst,
+        "p90_abs": p90,
+        "small_sample": n < MIN_EVENT_MOVES,
+        "cost": cost,
+    }
 
 
 def sizing(
@@ -137,6 +191,19 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
         plan = plans.get(c.ticker)
         adv = (cards.get("liquidity") or {}).get("adv_gbp_20")
         currency = book.quote_currency(c.ticker)
+        sized = (
+            sizing(
+                lv.entry,
+                lv.stop,
+                currency,
+                eq.equity,
+                eq.cash,
+                None if adv is None else float(adv),
+                rules,
+            )
+            if lv
+            else None
+        )
         scores = {
             k: _clean(res.get(k))
             for k in ("catalyst_score", "event_risk", "thesis", "value", "recent_catalysts")
@@ -156,6 +223,7 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
                     "trade": lv.model_dump() if lv else None,
                 },
                 "next_event": _clean((cards.get("events") or {}).get("next_event")),
+                "financing": financing(cards.get("financing")),
                 "adv_gbp_20": _clean(adv),
                 "plan_at_default_risk": {
                     "shares": plan.shares,
@@ -172,17 +240,8 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
                 else None,
                 "no_plan": no_plan.get(c.ticker),
                 "already_drafted": drafted.get(c.ticker),
-                "sizing": sizing(
-                    lv.entry,
-                    lv.stop,
-                    currency,
-                    eq.equity,
-                    eq.cash,
-                    None if adv is None else float(adv),
-                    rules,
-                )
-                if lv
-                else None,
+                "sizing": sized,
+                "event_gap": event_gap(cards.get("events"), sized, started, eq.equity, rules),
             }
         )
 
