@@ -1,7 +1,7 @@
 # 0030 — Trading212 API, read-only: reconcile the book against the broker
 
 **Status:** proposed (owner chose read-only first, 2026-10-21). Amends 0026 (the owner's
-touchpoints) once built. Issue #234; supersedes the CSV route of #141. Order placement through the API is
+touchpoints) and 0027 ("no broker API" now means no orders through it) once built. Issue #234; supersedes the CSV route of #141. Order placement through the API is
 **out of scope** and needs its own ADR.
 
 **Context.** Since ADR 0026 the owner places every order in Trading212 and reports back by
@@ -19,8 +19,11 @@ read scopes only and restricted to IP addresses.
 - **Read-only key.** The key is created with read scopes only (`account`, `portfolio`,
   `orders:read`, `history:orders`, `history:dividends`, `history:transactions`, `metadata`),
   never with order placement. It's read through `settings` as `SOLARA_T212_KEY` /
-  `SOLARA_T212_SECRET` (`.env`, the cloud environment, GitHub secrets for `daily.yml`). Live
-  base URL `https://live.trading212.com/api/v0`. Nothing in the code calls a write endpoint.
+  `SOLARA_T212_SECRET` (`.env`, the cloud environment, GitHub secrets for `daily.yml`).
+  **Practice or live** is a setting, `SOLARA_T212_ENV` = `demo` (default:
+  `https://demo.trading212.com/api/v0`, the practice account the first key is for) or `live`
+  (`https://live.trading212.com/api/v0`); a key only works on the account it was made for.
+  Nothing in the code calls a write endpoint.
 - **Fetcher** `solaraalpha.data.trading212`: one function per endpoint, each returning a tidy
   DataFrame. List endpoints are followed through `nextPagePath`, and the client sleeps on
   `x-ratelimit-reset` rather than retrying into a 429. Timestamps are parsed to UTC. Not
@@ -31,7 +34,10 @@ read scopes only and restricted to IP addresses.
   matched by ticker, side, type, quantity and price when unique). It lists matches, book-only
   items, broker-only items and mismatches (quantity; price beyond 0.5%; a position the book
   thinks open but the broker holds none of; an order working at the broker that the book has
-  ended).
+  ended). **Prices are compared in pence**: Trading212 quotes LSE stocks in GBX (positions'
+  `averagePrice` / `currentPrice`, orders' `stopPrice` / `limitPrice`) even where an order's
+  `currency` reads GBP, and the book stores pence, so no conversion is made; the instrument's
+  own `currencyCode` (GBX) is checked and anything else fails loudly.
 - **The daily job reconciles** after the close, when the keys are set (it skips silently
   otherwise). The differences go into the daily report and the inbox as "check" items, in plain
   words. **It never corrects the book by itself** in this phase: fills and dividends the broker
@@ -39,7 +45,7 @@ read scopes only and restricted to IP addresses.
 - **Tradable universe.** The instrument list (one call, refreshed every 10 minutes by Trading212,
   rate-limited to one per 50 s) maps each watchlist ticker to its Trading212 ticker by ISIN. The
   scan marks stocks Trading212 doesn't offer, and the shortlist skips them. Trading212 tickers
-  are always taken from the list, never built by hand.
+  are always taken from the list, never built by hand (LSE lines look like `AAZl_EQ`).
 - **Free source, recorded** in `docs/data-sources.md`. Account data never goes into the repo.
 
 **Consequences.** The owner keeps placing orders and setting alerts, but no longer has to

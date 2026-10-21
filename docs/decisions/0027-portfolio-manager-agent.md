@@ -40,7 +40,7 @@ daily book review, then a feedback loop.
   their value counts as cash. An ACT the PM left out is reported "not funded by the PM".
 - **No owner approval** (as ADR 0026): the PM's plans are approved by `agent:pm`, and a draft
   from the same run still waiting (from before ADR 0026) is approved as drafted when the PM
-  funds it. The owner places the orders in Trading212 from the inbox steps (no broker API) and
+  funds it. The owner places the orders in Trading212 from the inbox steps (no orders through the broker API; ADR 0030 only reads it) and
   supervises through the memo, `reject` and `undo`.
 - **Fallback**: no PM verdict, or an ERROR (`record.py error _BOOK --stage pm`), and the
   planner sizes at `risk_per_trade` in screen-rank order and the pipeline approves (ADR 0026);
