@@ -1581,6 +1581,13 @@ def _drafted_plan(conn: Conn, position_id: int) -> dict[str, Any]:
     return dict(payloads[-1]) if payloads else {}
 
 
+def waiting_on(conn: Conn, position_id: int) -> list[int]:
+    """The positions whose sale pays for this one's entry (a PM rotation, ``waits_for`` in its
+    plan) that are not closed yet: its buy is placed only once they are."""
+    ids = _drafted_plan(conn, position_id).get("waits_for") or []
+    return [int(i) for i in ids if position_status(conn, int(i)) == "open"]
+
+
 def _old_values(conn: Conn, position_id: int, st: PositionState) -> dict[str, Any]:
     if st.status in ("draft", "approved"):
         pe = pending_entry(conn, position_id) or {}

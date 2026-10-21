@@ -116,6 +116,8 @@ research or monitor note when you consider rotating it.
    - **never** rotate out a working winner (the trailing stop and the monitor handle those),
      never for a marginal edge (AIM spreads cost 1-3% round trip), never to fund an idea that
      fit would still reject. Name the position, why it is the weakest, and what it funds.
+   Set `funds` when the sale is for one idea: that buy waits for the sale to fill and is then cut
+   to the cash actually freed. Without `funds`, every new buy of the run waits for it.
 6. **Idle cash is a decision.** Funding nothing is right when nothing clears the bar; say so
    plainly. Leaving cash idle because the ideas are merely good is not.
 

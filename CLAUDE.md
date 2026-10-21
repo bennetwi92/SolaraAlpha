@@ -129,7 +129,8 @@ Current state:
   money, regime, macro, correlations) and records one `pm` verdict (ticker `_BOOK`) with the
   `allocation` (research-ACT tickers, `risk_pct` inside `risk_per_trade_range` 1-3% by
   conviction, priority order) and `rotations` (exit an open position / cancel a pending entry,
-  applied as recorded). The planner follows it and the PM approves its plans (`agent:pm`);
+  applied as recorded; the buy a sale pays for waits for that sale, then the daily job sizes it
+  to the cash freed, ADR 0027 amendment). The planner follows it and the PM approves its plans (`agent:pm`);
   without a PM verdict (or an ERROR) plans fall back to `risk_per_trade` in screen-rank order,
   approved by the pipeline. The PM memo heads the weekly pack and follows the inbox steps.
 - **The research agent owns the entry and the stop** (docs/decisions/0023): a research ACT must

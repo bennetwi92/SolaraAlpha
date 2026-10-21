@@ -181,6 +181,20 @@ def _steps(
     if purpose == "entry":
         plan = book._drafted_plan(conn, task.position_id)
         task.title = "Change the entry" if replaces else "New trade"
+        sales = book.waiting_on(conn, task.position_id)
+        if sales:  # a PM rotation: the sale pays for it, so the buy waits for the sale
+            pos = book.positions(conn).set_index("position_id")["ticker"]
+            names = " and ".join(f"{pos[i]} (position {i})" for i in sales)
+            task.steps.append(
+                f"Don't place it yet: selling {names} pays for it. Once that sale has filled"
+                f" I'll size it to the cash you have and tell you to place {_bold(o, ccy)}"
+            )
+            task.alerts = alert_lines(conn, task.position_id, ccy)
+            if not task.why:
+                stop = book._planned_stop(conn, task.position_id)
+                task.why = _entry_why(conn, task.position_id, plan, o, stop, ccy)
+            task.reply = "nothing yet"
+            return
         if plan.get("wait_for_break") and not replaces:
             task.steps.append(
                 f"Don't place it yet: when a daily close is above {price(o['price'], ccy)},"

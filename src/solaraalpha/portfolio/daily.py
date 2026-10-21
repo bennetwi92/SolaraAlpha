@@ -85,6 +85,7 @@ class DailyResult:
     breaker_limit: float = 0.0
     breaker_on: bool = False
     booked: list[str] = field(default_factory=list)  # taken in from Trading212 (ADR 0030)
+    resized: list[str] = field(default_factory=list)  # rotation buys sized to the cash freed
 
     def of(self, kinds: tuple[str, ...]) -> list[Trigger]:
         return [t for t in self.triggers if t.kind in kinds]
@@ -224,6 +225,8 @@ def run_daily(
             log.exception("Trading212 reconcile failed")
             broker_errors.append(("Trading212", f"reconcile: {type(e).__name__}: {e}"))
 
+    resized = release_rotations(conn, load_rules())
+
     open_pos = book.positions(conn, status="open")
     states = {int(p): book.position_state(conn, int(p)) for p in open_pos["position_id"]}
     targets = {}
@@ -248,7 +251,7 @@ def run_daily(
         why.setdefault(t, []).append("watch")
     for pb in pending:
         why.setdefault(pb["ticker"], []).append("pending")
-    result = DailyResult(since=since, tickers=why, run_id=run_id, booked=booked)
+    result = DailyResult(since=since, tickers=why, run_id=run_id, booked=booked, resized=resized)
     result.triggers += [broker_trigger(d, now.strftime("%Y-%m-%d")) for d in broker_diffs]
     result.errors += broker_errors
 
@@ -397,6 +400,59 @@ def run_daily(
     return result
 
 
+def free_cash(conn: Conn, rules: Any, but: int | None = None) -> float:
+    """Cash (GBP) a new buy can use now: the book's cash, less what the other live buy orders
+    will take (not the ones still waiting for a sale) and the cash buffer (on equity at cost)."""
+    states = [book.position_state(conn, int(p)) for p in book.positions(conn)["position_id"]]
+    e = risk.equity(book.cash(conn), states, pd.DataFrame())
+    ccy = book.positions(conn).set_index("position_id")["currency"]
+    od = book.orders(conn)
+    live = od[
+        od["purpose"].isin(list(book.BUY_PURPOSES))
+        & od["status"].isin(list(book.LIVE_ORDER))
+        & od["price"].notna()
+        & (od["position_id"] != but)
+    ]
+    committed = sum(
+        book.to_account(
+            (int(r["qty"]) - int(r["filled"])) * float(r["price"]), ccy[r["position_id"]]
+        )
+        for r in live.to_dict("records")
+        if not book.waiting_on(conn, int(r["position_id"]))
+    )
+    return e.cash - committed - rules.cash_buffer * (e.cash + e.open_cost)
+
+
+def release_rotations(conn: Conn, rules: Any) -> list[str]:
+    """A buy the PM paid for with a sale (``waits_for``, ADR 0027) waits until that sale has
+    filled; then its quantity is cut to the cash actually there (the sale may fill below the
+    close it was sized on), or the entry is cancelled when nothing is left. The owner places it
+    from the inbox as any other buy. Returns one line per change."""
+    out = []
+    pos = book.positions(conn, status="approved")
+    for pid, ticker, ccy in zip(pos["position_id"], pos["ticker"], pos["currency"], strict=True):
+        pid = int(pid)
+        if not book._drafted_plan(conn, pid).get("waits_for") or book.waiting_on(conn, pid):
+            continue
+        pe = book.pending_entry(conn, pid)
+        if pe is None or pe["status"] != "approved" or pe["price"] is None:
+            continue
+        cash = free_cash(conn, rules, but=pid)
+        qty = min(pe["qty"], math.floor(cash / book.to_account(pe["price"], str(ccy))))
+        if qty == pe["qty"]:
+            continue
+        why = f"the sale paying for it left £{max(cash, 0):,.2f} to spend"
+        if qty <= 0:
+            book.end_order(conn, pe["order_id"], "cancelled", why, actor=book.PIPELINE)
+            out.append(f"{ticker}: entry cancelled ({why})")
+        else:
+            book.amend_position(conn, pid, qty=qty, reason=why, actor=book.PIPELINE)
+            out.append(f"{ticker}: buy cut from {pe['qty']:,} to {qty:,} shares ({why})")
+    for line in out:
+        log.info("rotation: %s", line)
+    return out
+
+
 def broker_trigger(d: Any, day: str) -> Trigger:
     """A :class:`solaraalpha.portfolio.reconcile.Difference` as an owner trigger."""
     detail = {"what": d.kind, "text": d.text, "command": d.command}
@@ -512,6 +568,9 @@ def render_daily(r: DailyResult) -> str:
     if r.booked:
         lines += ["### Booked from Trading212", ""]
         lines += [f"- {b}" for b in r.booked] + [""]
+    if r.resized:
+        lines += ["### Rotation buys sized to the cash freed", ""]
+        lines += [f"- {b}" for b in r.resized] + [""]
 
     lines += ["### Owner actions", ""]
     owner = r.of(OWNER_KINDS)
