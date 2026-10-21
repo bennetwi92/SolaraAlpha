@@ -1,7 +1,7 @@
 # 0031 — Orders through the Trading212 API, by an execution agent, on the practice account
 
 **Status:** accepted (owner, 2026-10-21; the answers to the open questions are under "Owner's
-answers"), not built yet. Amends 0026 (the
+answers"), not built yet; practice checks "As tested" below, build proposed in epic #244 (#245-#250). Amends 0026 (the
 owner places every order), 0030 ("never an order") and the one-open-order rule of 0026 / 0030.
 
 **Context.** Since ADR 0026 the owner places every order the book approves, from the inbox.
@@ -111,3 +111,49 @@ starts on the practice account: check an order in pence-quoted AIM lines is acce
 account, how a limit / stop order behaves out of hours, and the order states a cancel passes
 through, before anything is built on them. The rule text in CLAUDE.md and ADR 0026 changes to
 "one order per unit" when this is built.
+
+**As tested (2026-10-21, practice account, out of hours).** Run from a throwaway script against
+`demo` at 19:56-19:58 UTC (20:56 London, market shut), with the new all-permission key. Each
+POST was sent once, with no retry, after listing the working orders. The account held 73 AAZ
+(Anglo Asian Mining, `AAZl_EQ`, GBX, last 392p) with the book's stop sell on all 73 at 337p, and
+the book's AVG stop buy. Neither was touched. Test orders were 1 share of AAZ, priced so none
+could fill.
+
+- **The key works**: account summary and positions read as before (GBP account, £4,997.81).
+- **Prices go in pence.** `POST /equity/orders/limit` `{"ticker": "AAZl_EQ", "quantity": 1,
+  "limitPrice": 274, "timeValidity": "GOOD_TILL_CANCEL"}` (30% under the last price) → 200,
+  status `NEW`, `limitPrice` 274 echoed, `currency` "GBP" on the order and "GBX" on the
+  instrument (as in ADR 0030). Reserved cash rose by exactly £2.74, so 274 was read as 274p.
+  Integer quantities are accepted.
+- **Out of hours, limit and stop orders are accepted and wait.** A limit buy (GTC), a **DAY**
+  limit buy and a stop buy at 510p (GTC) all came back 200, `NEW`, `initiatedFrom: API`, each
+  with its own id. Nothing marks them as queued for the open. Whether a DAY order placed after
+  the close is good for the next session or lapses at once was not seen. Three orders on one
+  ticker plus the stop sell were all live together, so the broker does not limit a stock to one
+  order.
+- **The broker enforces one order per unit on sells.** With the stop sell covering all 73
+  shares, a limit sell of 1 share at 510p → **400** `/api-errors/selling-equity-not-owned`,
+  "Selling more equities than owned, owned: 0.0". Working sells reserve their shares, so the sum
+  of live sell quantities can't exceed the holding. A partial sale has to cut the stop first
+  (cancel, confirm, place the smaller stop), then sell. A rejected order gets no id and never
+  appears in the order history. Buys alongside the stop are accepted.
+- **Cancel out of hours is immediate.** `DELETE /equity/orders/{id}` → 200 with an empty body in
+  about 0.65 s. The next `GET /equity/orders/{id}`, under 1 s later, was already **404**
+  `entity-not-found`, with no intermediate state seen. In the history the order shows
+  `CANCELLED`, without `timeInForce`, `createdAt` cut to whole seconds in UTC. The pending
+  endpoint gives the same time with milliseconds and a +03:00 offset (the parser converts to
+  UTC). "Gone from pending" therefore means 404 on `GET /{id}`, and the history gives the end
+  state. Reserved cash went back to its prior £1,248.20.
+- **Rate limits** are as documented, read from the headers (`x-ratelimit-limit / -period /
+  -remaining / -reset / -used`): limit and stop 1 per 2 s, the order list 1 per 5 s,
+  `GET /{id}` 1 per 1 s, the order history 20 a minute. `x-ratelimit-reset` is a whole-second
+  epoch, and a `GET /{id}` sent 1.2 s after the last one still got 429 (`{"code":
+  "BusinessException", "context": {"type": "TooManyRequests"}}`) because the window hadn't
+  reset. The client must wait for the reset header, not a fixed gap. Errors come as problem
+  JSON (`type`, `title`, `status`, `detail`, `traceId`).
+- **Not tested yet, in market hours**: a cancel while the market is open (any `CANCELLING`
+  state, how long it takes), a marketable order and its fill as the API shows it, whether a
+  DAY order expires at the close and with what status, a stop triggering. Run those at the
+  next session before the execution job relies on them.
+- End state: only the book's two orders working (AAZ stop sell 73 @ 337p, AVG stop buy 158 @
+  790p), and nothing of the test left.
