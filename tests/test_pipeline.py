@@ -174,6 +174,8 @@ def test_relative_strength_has_no_bands(monkeypatch: pytest.MonkeyPatch, fields:
         (dict(growth=0.1, quality=0.0, eps_revision=-0.1), "PASS"),  # revisions falling
         (dict(growth=0.0, quality=0.0, eps_revision=0.1), "WATCH"),  # revisions rising
         (dict(growth=0.0, quality=0.0, eps_revision=0.0), "PASS"),
+        (dict(growth=-0.3, quality=1.0, eps_revision=math.nan), "WATCH"),  # no revisions data
+        (dict(growth=-0.3, quality=-0.5, eps_revision=math.nan), "PASS"),  # quality veto
         (dict(growth=0.5, quality=-0.5, eps_revision=0.1), "PASS"),  # quality veto
     ],
 )

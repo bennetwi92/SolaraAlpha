@@ -32,7 +32,7 @@ stretched above it, outperforming its peers, with earnings growing or being revi
   relative_strength  act:   rs > 0
                      watch: rs >= -0.25 | rs_high == true or peer_top_half == true
   fundamentals       act:   growth > 0 | quality > -0.5 | eps_revision >= 0 or eps_revision is nan
-                     watch: quality > -0.5 | eps_revision > 0
+                     watch: quality > -0.5 | eps_revision > 0 or eps_revision is nan
   events             (none: always ACT)
   ```
   `|` separates clauses; within a clause `or` joins conditions. Derived card fields:
@@ -194,3 +194,11 @@ rank. A stock with only warnings is still eligible, last (ADR 0022: never an exc
 Director dealings are tier 3: by type code they are mostly grants and vesting; open-market
 buying needs the filing text (R6, tested first under #223). Wording against expectations is the
 same: R1, not read here.
+
+## Amendment (owner 2026-10-21): no revisions data is not a PASS in the fundamentals WATCH band
+
+The ACT band already treated a missing `eps_revision` (no consensus revisions data) as neutral,
+but the WATCH clause `eps_revision > 0` failed on NaN, so a stock that missed ACT on `growth`
+fell straight to PASS for want of data (Jet2, run of 2026-10-16). The WATCH clause is now
+`eps_revision > 0 or eps_revision is nan`: missing data is neutral in both bands. A revision of
+exactly 0 still fails WATCH, as before.
