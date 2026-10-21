@@ -149,8 +149,9 @@ Current state:
   fill on a buy cancels the rest, no target orders (targets are price alerts). Breakout entries
   are stop market orders (ADR 0026). **Trading212 API, read-only** (docs/decisions/0030):
   `SOLARA_T212_KEY` / `SOLARA_T212_SECRET`, `SOLARA_T212_ENV` = `demo` (practice, default) / `live`;
-  GET only, never an order. The daily job reconciles the book against it (`broker` owner triggers
-  with the `book.py` command to run; it never corrects the book) and the scan drops stocks
+  GET only, never an order. The daily job first **books what it shows** (fills, orders placed or
+  ended, dividends paid; actor `broker`, ADR 0030 amendment) and raises the rest as `broker` owner
+  triggers with the `book.py` command to run; the scan drops stocks
   Trading212 doesn't offer in GBX from the shortlist. Skipped silently without the keys.
 - **Portfolio rules** (capital, risk per trade, position / sector / heat limits, entry validity,
   long-only, the pre-results event policy, the drawdown circuit breaker) live in `config/portfolio.toml`, read through `portfolio.rules.load_rules`. The owner
@@ -219,7 +220,7 @@ Current state:
 | Static HTML dashboard over the DB (holdings, portfolio, equity curve, this week's pack, history) | `uv run python scripts/dashboard.py [--out FILE] [--run N]` |
 | Backtest the screen point-in-time and sweep the band thresholds (report only; bands unchanged) | `uv run python scripts/backtest.py [TICKERS...] [--years 5] [--step N] [--out FILE]` |
 | Label scorecard (forward returns per label / toolkit band) and trade journal | `uv run python scripts/learn.py scorecard [--since D]` / `journal` / `agents` (cost, tokens, minutes) / `agents-value` (did downgrades avoid losers; calibration) |
-| Book vs Trading212 (read-only API): fills, orders, holdings, dividends, cash; prints the commands to fix | `uv run python scripts/book.py reconcile` |
+| Book vs Trading212 (read-only API): fills, orders, holdings, dividends, cash; prints the commands to fix (`--book`: books fills, placed / ended orders, dividends first) | `uv run python scripts/book.py reconcile [--book]` |
 | Results DB: which is in use, copy local ↔ Turso | `uv run python scripts/db.py status` / `push [--from PATH] [--append-new-runs]` / `pull [--to PATH]` |
 | Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `relative_strength` / `fundamentals` / `jet2_value` / `scan` |
 | Notebooks | `make notebook` |
@@ -332,7 +333,7 @@ src/solaraalpha/        importable package — all reusable code lives here
     journal.py          trade journal: closed trades (close summary + set-up type from the plan),
                         hit rate / average R / expectancy by exit reason and set-up
     reconcile.py        the book against Trading212 (fills, orders, holdings, dividends, net cash):
-                        Difference rows with the book.py command; never writes — 0030
+                        Difference rows with the book.py command; absorb books the plain ones — 0030
     shadow.py           shadow book: systematic baselines beside every decision, append-only
                         `shadow` table, record (scan / plan time) and load — 0028
 scripts/                thin CLI entry points (argparse) that call into the package

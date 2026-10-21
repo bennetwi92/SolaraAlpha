@@ -9,8 +9,14 @@ import pytest
 
 from solaraalpha.data import trading212 as t212
 from solaraalpha.portfolio import book
-from solaraalpha.portfolio.daily import DailyResult, broker_trigger, render_daily
-from solaraalpha.portfolio.reconcile import Broker, reconcile, render
+from solaraalpha.portfolio.daily import (
+    DailyResult,
+    Fetchers,
+    broker_trigger,
+    render_daily,
+    run_daily,
+)
+from solaraalpha.portfolio.reconcile import Broker, absorb, reconcile, render
 from solaraalpha.store import Conn
 
 FIX = Path(__file__).parent / "fixtures"
@@ -66,9 +72,8 @@ def test_everything_matches(db_backend: Path | None) -> None:
     assert render(diffs, matched) == "Book and Trading212 agree (5 items matched)."
 
 
-def test_stop_that_sold_is_a_fill_to_book(db_backend: Path | None) -> None:
-    conn, ids = _book(db_backend)
-    br = _broker()
+def _stop_sold(br: Broker) -> Broker:
+    """The fixtures after AAZ's stop sold all 50 shares at 335p."""
     sold = {
         "order": {
             "id": 900000004,
@@ -92,7 +97,12 @@ def test_stop_that_sold_is_a_fill_to_book(db_backend: Path | None) -> None:
     br.history = pd.concat([br.history, t212.parse_history([sold])], ignore_index=True)
     br.pending = br.pending.iloc[1:]  # the stop is no longer working
     br.positions = br.positions.iloc[0:0]  # and nothing is held
-    diffs, _ = reconcile(conn, br)
+    return br
+
+
+def test_stop_that_sold_is_a_fill_to_book(db_backend: Path | None) -> None:
+    conn, ids = _book(db_backend)
+    diffs, _ = reconcile(conn, _stop_sold(_broker()))
     assert _kinds(diffs) == ["fill"]  # the missing fill explains the missing holding
     d = diffs[0]
     assert (d.ticker, d.order_id, d.position_id) == ("AAZ.L", ids["stop"], ids["aaz"])
@@ -194,3 +204,66 @@ def test_a_line_not_in_pence_fails_loudly(tmp_path: Path) -> None:
     br.positions = br.positions.assign(currency="EUR")
     with pytest.raises(NotImplementedError, match="only GBX"):
         reconcile(conn, br)
+
+
+def test_absorb_books_a_stop_that_sold(db_backend: Path | None) -> None:
+    conn, ids = _book(db_backend)
+    booked, left, _ = absorb(conn, _stop_sold(_broker()))
+    assert _kinds(booked) == ["fill"] and left == []
+    assert book.position_status(conn, ids["aaz"]) == "closed"
+    ev = book.order_events(conn, ids["stop"])
+    assert ev["actor"].iloc[-1] == "broker"
+    assert absorb(conn, _stop_sold(_broker()))[0] == []  # nothing twice
+
+
+def test_absorb_marks_placed_then_takes_its_fill(db_backend: Path | None) -> None:
+    conn, ids = _book(db_backend, avg_placed=False)
+    br = _broker()
+    booked, left, _ = absorb(conn, br)
+    assert _kinds(booked) == ["placed"] and left == []
+    assert book.order_status(conn, ids["avg_entry"]) == "placed"
+    assert book.order_events(conn, ids["avg_entry"])["broker_ref"].iloc[-1] == "900000003"
+
+
+def test_absorb_ends_orders_and_books_dividends(db_backend: Path | None) -> None:
+    conn, ids = _book(db_backend)
+    br = _broker()
+    br.dividends = t212.parse_dividends(_load("dividends")["items"])
+    gone = br.pending.iloc[1:].assign(status="cancelled", fill_qty=0.0)
+    gone = gone.reindex(columns=br.history.columns)
+    br.history = pd.concat([br.history, gone], ignore_index=True)
+    br.pending = br.pending.iloc[:1]  # AVG's entry was cancelled at Trading212
+    booked, left, _ = absorb(conn, br)
+    assert sorted(_kinds(booked)) == ["dividend", "order_gone"] and left == []
+    assert book.order_status(conn, ids["avg_entry"]) == "not_filled"  # an entry ends unfilled
+    assert book.position_status(conn, ids["avg"]) == "cancelled"
+    assert book.dividends_for(conn, ids["aaz"]) == pytest.approx(2.5)
+
+
+def test_absorb_leaves_mismatches_to_the_owner(db_backend: Path | None) -> None:
+    conn, _ = _book(db_backend)
+    br = _broker()
+    br.positions = br.positions.assign(qty=40.0)
+    booked, left, _ = absorb(conn, br)
+    assert booked == [] and _kinds(left) == ["shares"]
+
+
+def test_daily_job_absorbs_before_its_checks(db_backend: Path | None) -> None:
+    conn, ids = _book(db_backend)
+
+    def boom(*a: Any, **k: Any) -> Any:
+        raise RuntimeError("offline")
+
+    fetch = Fetchers(
+        daily=boom,
+        actions=boom,
+        announcements=boom,
+        issuer=boom,
+        news=boom,
+        broker=lambda: _stop_sold(_broker()),
+    )
+    r = run_daily(conn, fetch)
+    assert "AAZ.L" not in r.tickers  # closed before the checks
+    assert r.booked == [f"AAZ.L: order #{ids['stop']} filled 50 at 335p on 2026-10-22"]
+    assert not r.of(("broker",))
+    assert "### Booked from Trading212" in render_daily(r)

@@ -877,9 +877,13 @@ def amend_position(
 
 
 def place_order(
-    conn: Conn, order_id: int, broker_ref: str | None = None, at: str | None = None
+    conn: Conn,
+    order_id: int,
+    broker_ref: str | None = None,
+    at: str | None = None,
+    actor: str = OWNER,
 ) -> None:
-    order_event(conn, order_id, "placed", broker_ref=broker_ref, actor=OWNER, at=at)
+    order_event(conn, order_id, "placed", broker_ref=broker_ref, actor=actor, at=at)
 
 
 def tickets(conn: Conn) -> pd.DataFrame:
