@@ -220,6 +220,11 @@ def plan_run(
         if book.position_status(conn, int(r["position_id"])) == "open"
         and _exiting(conn, int(r["position_id"]))
     ]
+    # a buy paid for by a rotation waits for that sale (the one it names, else every one)
+    waits: dict[str | None, list[int]] = {}
+    for r in pm["rotations"] if pm else []:
+        if int(r["position_id"]) in rotating:
+            waits.setdefault(r.get("funds"), []).append(int(r["position_id"]))
     held_fit = held[~held["position_id"].isin(rotating)]
     cash = equity.cash + float(held.loc[held["position_id"].isin(rotating), "value"].sum())
 
@@ -345,6 +350,7 @@ def plan_run(
             run_id,
             rules,
             started,
+            waits_for=waits.get(plan.ticker, []) + waits.get(None, []),
             **by,
         )
     return out
@@ -360,6 +366,7 @@ def write_plan(
     at: str,
     approver: str = book.PIPELINE,
     approval: str = "approved as planned (ADR 0026)",
+    waits_for: list[int] | None = None,
 ) -> int:
     """Position + entry order + entry conditions + thesis conditions for one plan, approved as
     it is drafted by ``approver`` (the pipeline, or the PM when it allocated it, ADR 0027): the
@@ -367,6 +374,8 @@ def write_plan(
     research = cards.get("research") or {}
     thesis = str(research.get("reasons") or "")
     payload = {**asdict(plan), "fit_flags": list(flags)}
+    if waits_for:  # the positions whose sale pays for it (a PM rotation)
+        payload["waits_for"] = sorted(set(waits_for))
     pid, _ = book.draft_position(
         conn,
         plan.ticker,

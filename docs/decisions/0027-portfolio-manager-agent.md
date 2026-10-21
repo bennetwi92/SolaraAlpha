@@ -69,3 +69,13 @@ Results filings over the 5-year filing history, notices of results dropped, one 
 what the worst and p90 move would cost at each risk of the band. Information only: `make_plan`,
 `fit` and `portfolio.toml` are unchanged. A hard cap is a rule change that waits for the
 shadow-book test (#223) and the owner's yes. Under 4 past events is flagged `small_sample`.
+
+**Amendment (owner, 2026-10-21): a rotation's buy waits for its sale.** A buy the PM pays for
+with a rotation (the one the rotation `funds`, or every new buy from the run when it names
+none) carries `waits_for` (the rotated position ids) in its plan. Until those positions are
+closed, the inbox says "don't place it yet" instead of giving the order. The daily job, after
+booking Trading212's fills, releases it: when the sale has filled, the buy is cut to the cash
+actually free (the book's cash, less the other live buy orders and the cash buffer), or
+cancelled when nothing is left (`daily.release_rotations`, actor `pipeline`), and the inbox gives
+it as an ordinary order to place. A sale that never fills leaves the buy waiting until its
+validity runs out.

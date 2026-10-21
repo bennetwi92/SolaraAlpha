@@ -877,9 +877,13 @@ def amend_position(
 
 
 def place_order(
-    conn: Conn, order_id: int, broker_ref: str | None = None, at: str | None = None
+    conn: Conn,
+    order_id: int,
+    broker_ref: str | None = None,
+    at: str | None = None,
+    actor: str = OWNER,
 ) -> None:
-    order_event(conn, order_id, "placed", broker_ref=broker_ref, actor=OWNER, at=at)
+    order_event(conn, order_id, "placed", broker_ref=broker_ref, actor=actor, at=at)
 
 
 def tickets(conn: Conn) -> pd.DataFrame:
@@ -1575,6 +1579,13 @@ def _drafted_plan(conn: Conn, position_id: int) -> dict[str, Any]:
     ev = position_events(conn, position_id)
     payloads = list(ev.loc[ev["kind"] == "drafted", "payload"])
     return dict(payloads[-1]) if payloads else {}
+
+
+def waiting_on(conn: Conn, position_id: int) -> list[int]:
+    """The positions whose sale pays for this one's entry (a PM rotation, ``waits_for`` in its
+    plan) that are not closed yet: its buy is placed only once they are."""
+    ids = _drafted_plan(conn, position_id).get("waits_for") or []
+    return [int(i) for i in ids if position_status(conn, int(i)) == "open"]
 
 
 def _old_values(conn: Conn, position_id: int, st: PositionState) -> dict[str, Any]:

@@ -1,8 +1,10 @@
 """Reconcile the book against Trading212: what the broker shows that the book doesn't, and back.
 
-Read-only on both sides (ADR 0030): nothing here writes to the book or the broker. Each
-:class:`Difference` says in plain words what differs and, when one fixes it, the ``book.py``
-arguments to run (``command``, without the ``book.py`` prefix). Checked:
+Never writes to the broker (ADR 0030). :func:`reconcile` only reads; :func:`absorb` books into the
+book what the broker plainly shows (fills, orders placed, orders ended, dividends paid) as actor
+``broker`` and leaves the rest for the owner (ADR 0030 amendment). Each :class:`Difference` says
+in plain words what differs and, when one fixes it, the ``book.py`` arguments to run
+(``command``, without the ``book.py`` prefix). Checked:
 
 - **fills** in the broker's order history against the book's fills on the same order (a stop
   that sold, an entry that filled, a fill typed in wrong);
@@ -32,6 +34,7 @@ from solaraalpha.store import Conn
 
 PRICE_TOL = 0.005  # prices further apart than 0.5% are a mismatch
 CASH_TOL = 0.01  # GBP
+ACTOR = "broker"  # what absorb() books is the broker's record, not the owner's word
 ENDED = frozenset({"filled", "not_filled", "cancelled", "expired"})
 
 
@@ -45,6 +48,7 @@ class Difference:
     command: str | None = None  # book.py arguments that fix it (None: check by hand)
     position_id: int | None = None
     order_id: int | None = None
+    data: Mapping[str, Any] = field(default_factory=dict)  # what absorb() books (empty: nothing)
 
 
 @dataclass
@@ -193,6 +197,12 @@ def reconcile(conn: Conn, br: Broker) -> tuple[list[Difference], int]:
                         f"fill {oid} --qty {missing} --price {o['fill_price']:g} --at {when}{fees}",
                         pid,
                         oid,
+                        {
+                            "qty": missing,
+                            "price": float(o["fill_price"]),
+                            "at": when,
+                            "fees": float(o["taxes"] or 0.0),
+                        },
                     )
                 )
             elif missing < 0:
@@ -246,6 +256,10 @@ def reconcile(conn: Conn, br: Broker) -> tuple[list[Difference], int]:
                             f"{cmd} {oid} --reason '{o['status']} at Trading212'",
                             int(b["position_id"]),
                             oid,
+                            {
+                                "status": "not_filled" if cmd == "unfilled" else "cancelled",
+                                "reason": f"{o['status']} at Trading212",
+                            },
                         )
                     )
             else:
@@ -306,6 +320,7 @@ def reconcile(conn: Conn, br: Broker) -> tuple[list[Difference], int]:
                     f"placed {oid} --ref {o['id']}",
                     pid,
                     oid,
+                    {"ref": str(o["id"])},
                 )
             )
         else:
@@ -409,6 +424,7 @@ def reconcile(conn: Conn, br: Broker) -> tuple[list[Difference], int]:
                 f"Trading212 paid a dividend of £{d['amount']:,.2f} on {day} that the book"
                 " doesn't have (use the ex-date for --at if you know it).",
                 f"cash dividend {tk} {d['amount']:.2f} --at {day}",
+                data={"amount": float(d["amount"]), "at": day},
             )
         )
     # deposits and withdrawals: the net flow, so a correction in the book (a deposit, its
@@ -442,11 +458,65 @@ def reconcile(conn: Conn, br: Broker) -> tuple[list[Difference], int]:
     return diffs, matched
 
 
-def render(diffs: list[Difference], matched: int) -> str:
+def _book(conn: Conn, d: Difference) -> None:
+    """Book one absorbable difference as the broker (see :func:`absorb`)."""
+    x, oid = d.data, d.order_id or 0
+    if d.kind == "fill":
+        book.fill(conn, oid, x["qty"], x["price"], x["at"], fees=x["fees"], actor=ACTOR)
+    elif d.kind == "placed":
+        book.place_order(conn, oid, x["ref"], actor=ACTOR)
+    elif d.kind == "order_gone":
+        book.end_order(conn, oid, x["status"], x["reason"], actor=ACTOR)
+    elif d.kind == "dividend":
+        book.record_dividend(conn, d.ticker, x["amount"], x["at"], note=f"{d.ticker} dividend")
+    else:
+        raise ValueError(f"not absorbable: {d.kind}")
+
+
+def absorb(conn: Conn, br: Broker) -> tuple[list[Difference], list[Difference], int]:
+    """Book what the broker plainly shows, then reconcile again: ``(booked, left, matched)``.
+
+    Absorbed (actor ``broker``): fills on a book order (a stop that sold closes the position, an
+    entry that filled opens it and drafts its stop), orders the owner placed but didn't report
+    (with their Trading212 id), orders that ended at the broker, and dividends paid. Everything
+    else (an unknown fill or order, a quantity or price mismatch, a missing stop, net deposits)
+    is left for the owner. Repeats until nothing more is absorbable (placing an order can let
+    its fill match), so the book ends as close to the broker as it can get on its own.
+    """
+    booked: list[Difference] = []
+    for _ in range(5):  # converges in two passes; the bound only guards a loop
+        diffs, matched = reconcile(conn, br)
+        todo = [d for d in diffs if d.data]
+        if not todo:
+            return booked, diffs, matched
+        for d in todo:
+            _book(conn, d)
+            booked.append(d)
+    diffs, matched = reconcile(conn, br)
+    return booked, diffs, matched
+
+
+def booked_text(d: Difference) -> str:
+    """What :func:`absorb` booked for ``d``, in plain words."""
+    x = d.data
+    if d.kind == "fill":
+        return f"order #{d.order_id} filled {x['qty']} at {_px(x['price'])} on {x['at'][:10]}"
+    if d.kind == "placed":
+        return f"order #{d.order_id} placed (Trading212 order {x['ref']})"
+    if d.kind == "order_gone":
+        return f"order #{d.order_id} {x['status'].replace('_', ' ')} ({x['reason']})"
+    return f"dividend £{x['amount']:,.2f} paid on {x['at']}"
+
+
+def render(diffs: list[Difference], matched: int, booked: list[Difference] | None = None) -> str:
     """Plain-text report for ``book.py reconcile``."""
+    head = [f"Booked from Trading212: {d.ticker}: {booked_text(d)}" for d in booked or []]
     if not diffs:
-        return f"Book and Trading212 agree ({matched} items matched)."
-    lines = [f"{len(diffs)} difference(s) between the book and Trading212 ({matched} matched):"]
+        return "\n".join([*head, f"Book and Trading212 agree ({matched} items matched)."])
+    lines = [
+        *head,
+        f"{len(diffs)} difference(s) between the book and Trading212 ({matched} matched):",
+    ]
     for d in diffs:
         lines.append(f"- {d.ticker}: {d.text}")
         if d.command:

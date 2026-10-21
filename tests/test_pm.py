@@ -245,3 +245,39 @@ def test_risk_band_rule(tmp_path: Path) -> None:
     (tmp_path / "p.toml").write_text(text)
     with pytest.raises(ValueError, match="risk_per_trade_range"):
         load_rules(tmp_path / "p.toml")
+
+
+def test_rotation_buy_waits_for_the_sale_then_fits_the_cash(scan_db: Path) -> None:
+    from solaraalpha.portfolio import broker
+    from solaraalpha.portfolio.daily import free_cash, release_rotations
+
+    conn = book.connect(scan_db)
+    rules = load_rules()
+    with conn:
+        held = [_open(conn, f"H{i}.L") for i in range(5)]  # every slot taken
+    agents.record_book(
+        conn, _pm(rotations=[{"position_id": held[0], "reason": "dead money", "funds": "A.L"}])
+    )
+    with conn:
+        pid = plan_run(conn, 1).written["A.L"]
+    assert book.waiting_on(conn, pid) == [held[0]]
+    (task,) = [t for t in broker.tasks(conn) if t.position_id == pid]
+    assert "Don't place it yet: selling H0.L (position" in task.steps[0]
+    qty = book.pending_entry(conn, pid)["qty"]  # type: ignore[index]
+    assert release_rotations(conn, rules) == []  # still waiting: nothing changes
+
+    exit_oid = int(book.orders(conn, held[0]).query("purpose == 'exit'")["order_id"].iloc[0])
+    with conn:
+        book.fill(conn, exit_oid, 10, 50.0)
+        book.cash_event(conn, "withdrawal", 9800.0)  # less cash than it was sized on
+    assert book.waiting_on(conn, pid) == []
+    cash = free_cash(conn, rules, but=pid)
+    want = min(qty, int(cash // 15.6))
+    lines = release_rotations(conn, rules)
+    new = book.pending_entry(conn, pid)
+    assert new is not None and new["qty"] == want
+    assert want < qty and "buy cut from" in lines[0]  # the sale freed less than sized on
+    (task,) = [t for t in broker.tasks(conn) if t.position_id == pid]
+    assert task.steps[0].startswith("Place ")
+    assert release_rotations(conn, rules) == []  # once it fits, nothing more
+    conn.close()

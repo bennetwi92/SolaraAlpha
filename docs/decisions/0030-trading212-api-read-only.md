@@ -83,3 +83,22 @@ the book exactly.
   prints the same by hand. Workflows read `SOLARA_T212_KEY` / `SOLARA_T212_SECRET` from secrets
   and `SOLARA_T212_ENV` from repository variables (default `demo`).
 
+
+**Amendment (owner, 2026-10-21): the book takes in what the broker shows.** The owner doesn't
+want to read the inbox to book fills. The daily job now calls `reconcile.absorb` **first**,
+before its checks, and books as actor `broker`:
+
+- **fills** on a book order (a stop that sold closes the position; an entry that filled opens it
+  and drafts its protective stop, which the owner still places);
+- **orders the owner placed** but didn't report, with their Trading212 id as `broker_ref`;
+- **orders that ended** at the broker while the book still has them working (entry → not
+  filled, others cancelled), except a protective stop, which stays an owner alert (the shares
+  have no stop);
+- **dividends paid**, at the payment date (the ex-date isn't in the API); with keys set, the
+  Yahoo ex-dividend owner trigger is dropped since the cash is booked when paid.
+
+Everything that needs judgement stays an owner `broker` trigger: a fill or order the book has no
+order for, quantity or price mismatches, a holding missing on either side, net deposits. The
+daily report lists what was booked under "Booked from Trading212"; the inbox doesn't mention it.
+`book.py reconcile --book` does the same by hand. Order placement through the API is still out
+of scope.
