@@ -7,7 +7,7 @@ uv run python scripts/scan.py --list                   # stages, toolkits and th
 
 Every toolkit labels its stock ACT / WATCH / PASS (ERROR if it raised) from its act / watch
 bands (information). The screen then ranks every stock past a sanity floor (no ERROR, liquidity
->= min_adv_gbp) by the combined score and shortlists the top shortlist_size (config/
+>= min_adv_gbp, offered by Trading212 when its keys are set) by the combined score and shortlists the top shortlist_size (config/
 portfolio.toml), plus up to shortlist_catalysts more with a catalyst: shortlisted stocks get the
 screen label ACT and go to the agents, the rest keep their band label capped at WATCH, floor
 failures PASS. See solaraalpha.pipeline, docs/decisions/0014 (amendment #192) and 0022.
@@ -32,6 +32,7 @@ from typing import Any
 import pandas as pd
 
 from solaraalpha.catalysts import fresh_catalysts
+from solaraalpha.data import trading212
 from solaraalpha.pipeline import (
     ALL_LABELS,
     NOT_ERROR,
@@ -151,6 +152,28 @@ def _list() -> None:
             print(f"  {'':<18} watch: {' | '.join(t.watch)}")
 
 
+def not_offered(tickers: list[str]) -> dict[str, str]:
+    """Tickers Trading212 doesn't offer (ADR 0030): they fail the screen's floor. Empty without
+    the Trading212 keys, or when the instrument list can't be read (warned, never fatal)."""
+    if not trading212.configured():
+        return {}
+    try:
+        inst = trading212.fetch_instruments()
+    except Exception as e:
+        print(f"warning: Trading212 instrument list unavailable ({type(e).__name__}: {e})")
+        return {}
+    gbp, any_ccy = trading212.lse_lines(inst), trading212.lse_lines(inst, currencies=None)
+    return {
+        t: (
+            "Trading212 quotes it in another currency (the book is pence only)"
+            if t in any_ccy
+            else "not offered by Trading212"
+        )
+        for t in tickers
+        if t not in gbp
+    }
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument("tickers", nargs="*", help="Yahoo tickers (default: config/watchlist.toml)")
@@ -177,8 +200,9 @@ def main(argv: list[str] | None = None) -> None:
         labels = {t: Screened(s[0].label, s[0].reason, ranks.get(t)) for t, s in results.items()}
     else:
         catalysts = fresh_catalysts([x.ticker for x in inputs])
-        results = run_pipeline(inputs, catalysts=catalysts)
-        labels = screen(results, catalysts=catalysts)
+        untradable = not_offered([x.ticker for x in inputs])
+        results = run_pipeline(inputs, catalysts=catalysts, untradable=untradable)
+        labels = screen(results, catalysts=catalysts, untradable=untradable)
 
     for x in inputs:
         steps, got = results[x.ticker], labels[x.ticker]

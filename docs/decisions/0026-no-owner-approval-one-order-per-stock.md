@@ -1,7 +1,8 @@
 # 0026 — No owner approval; one order per stock; the inbox says what to do in Trading212
 
 **Status:** accepted (owner, 2026-10-20). Amends 0015 (trade plans), 0021 (notifications), 0024
-(auto-applied revisions) and 0025 (agent adds: how they are worked at the broker).
+(auto-applied revisions) and 0025 (agent adds: how they are worked at the broker). Amended by
+0030: the daily job reads Trading212 and tells the owner what the book is missing.
 
 **Context.** The owner wants the system low- to no-touch: no approving positions or pipeline
 proposals, only being told which orders to submit, then reporting back when they are placed and

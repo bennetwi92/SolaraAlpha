@@ -350,6 +350,7 @@ def screen(
     catalysts: Mapping[str, str] | None = None,
     catalyst_cap: int | None = None,
     min_adv_gbp: float | None = None,
+    untradable: Mapping[str, str] | None = None,
 ) -> dict[str, Screened]:
     """Rank the screened tickers into the shortlist (ADR 0022; ADR 0014, amendment #192).
 
@@ -361,7 +362,8 @@ def screen(
     both reasons. Shortlisted -> ACT; past the floor but not shortlisted -> its band label
     (:func:`screen_label`) capped at WATCH; below the floor -> PASS; ERROR stays ERROR.
     ``None`` arguments default to ``config/portfolio.toml`` (``shortlist_size``,
-    ``shortlist_catalysts``, ``min_adv_gbp``)."""
+    ``shortlist_catalysts``, ``min_adv_gbp``). A ticker in ``untradable`` (ticker -> why, e.g.
+    not offered by Trading212, ADR 0030) fails the floor."""
     if size is None or catalyst_cap is None or min_adv_gbp is None:
         from solaraalpha.portfolio.rules import load_rules
 
@@ -371,7 +373,8 @@ def screen(
         min_adv_gbp = rules.min_adv_gbp if min_adv_gbp is None else min_adv_gbp
     catalysts = catalysts or {}
     bands = {t: screen_label(s) for t, s in steps.items()}
-    below = {t: floor(s, min_adv_gbp) for t, s in steps.items()}
+    untradable = untradable or {}
+    below = {t: untradable.get(t) or floor(s, min_adv_gbp) for t, s in steps.items()}
     ranks = rank_act({t: cards_of(s) for t, s in steps.items() if below[t] is None})
     picks = {t: f"rank {r}" for t, r in ranks.items() if r <= size}
     extra = 0
@@ -426,7 +429,7 @@ def run_pipeline(
     """Run ``stages`` in order over every ticker; a stage runs on a ticker only while its running
     label (the combination of every toolkit judged so far) is in the stage's ``runs_on`` or,
     for an ``on_shortlist`` stage, while it is on :func:`screen`'s shortlist of the steps so
-    far (``catalysts`` and the ``size`` / ``catalyst_cap`` / ``min_adv_gbp`` keywords go to
+    far (``catalysts`` and the ``size`` / ``catalyst_cap`` / ``min_adv_gbp`` / ``untradable`` keywords go to
     :func:`screen`)."""
     steps: dict[str, list[Step]] = {x.ticker: [] for x in inputs}
     running: dict[str, str] = {x.ticker: "ACT" for x in inputs}  # nothing judged yet

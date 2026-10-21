@@ -37,6 +37,9 @@ jobs:
         env:
           SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
           SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+          SOLARA_T212_KEY: ${{ secrets.SOLARA_T212_KEY }}
+          SOLARA_T212_SECRET: ${{ secrets.SOLARA_T212_SECRET }}
+          SOLARA_T212_ENV: ${{ vars.SOLARA_T212_ENV || 'demo' }}
           SCRIPT: ${{ inputs.script }}
           COMMAND: ${{ inputs.command }}
         # The input is split by shlex in Python, never interpolated into the shell.

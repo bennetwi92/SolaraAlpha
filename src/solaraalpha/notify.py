@@ -123,6 +123,9 @@ def owner_items(conn: Conn, run_id: int) -> tuple[list[str], list[str]]:
                 f"{tk} splits {d['ratio']} on {t['at']}: tell me"
                 f" `split {pid} --ratio {d['ratio']} --at {t['at']}` and I'll re-size its orders."
             )
+        elif kind == "broker":
+            cmd = f" Tell me `{d['command']}`." if d.get("command") else ""
+            checks.append(f"{tk} {BROKER} and the book differ: {d['text']}{cmd}")
         else:
             info.append(f"{tk} {kind}: {json.dumps(d, default=str)}")
     return checks, info
