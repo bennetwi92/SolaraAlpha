@@ -30,8 +30,14 @@ class Settings(BaseSettings):
     # Hosted results DB (Turso). Unset: the local SQLite file at db_path is used.
     turso_url: str = ""
     turso_token: SecretStr = SecretStr("")
+    # Trading212 API, read-only (ADR 0030). Unset: no broker reconcile, no tradable check.
+    t212_key: SecretStr = SecretStr("")
+    t212_secret: SecretStr = SecretStr("")
+    t212_env: str = "demo"  # demo (practice account) / live
 
-    @field_validator("turso_url", "turso_token", mode="before")
+    @field_validator(
+        "turso_url", "turso_token", "t212_key", "t212_secret", "t212_env", mode="before"
+    )
     @classmethod
     def _unquote(cls, v: object) -> object:
         """Tolerate values pasted with surrounding quotes into an environment's settings."""

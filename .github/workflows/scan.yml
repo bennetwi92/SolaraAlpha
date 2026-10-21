@@ -35,6 +35,9 @@ jobs:
       - run: uv sync --no-default-groups
       - name: Pipeline
         env:
+          SOLARA_T212_KEY: ${{ secrets.SOLARA_T212_KEY }}
+          SOLARA_T212_SECRET: ${{ secrets.SOLARA_T212_SECRET }}
+          SOLARA_T212_ENV: ${{ vars.SOLARA_T212_ENV || 'demo' }}
           SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
           SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
           TICKERS: ${{ inputs.tickers }}

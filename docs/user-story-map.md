@@ -108,7 +108,7 @@ Evidence (articles, filings, events) ──linked to── candidates, plans, re
 | A3 | **Research**: events, news, headwinds; log evidence and impact | Sunday | Strategist | ✅ |
 | A4 | **Plan and size**: trade plan, size, portfolio fit; draft orders and positions | Sunday | Pipeline | ✅ |
 | A5 | **Place**: owner places the orders the inbox lists (no approval, ADR 0026) | Sun eve / Mon | Owner | ✅ inbox steps + `book.py placed` |
-| A6 | **Record fills**: fill, part-fill, not filled; open positions | daily | Owner | ✅ by hand (`book.py fill`); broker reconciliation open (#141) |
+| A6 | **Record fills**: fill, part-fill, not filled; open positions | daily | Owner | ✅ by hand (`book.py fill`); reconciled daily against Trading212's read-only API (`book.py reconcile`, #234) |
 | A7 | **Monitor daily**: prices vs stops/triggers, announcements, news, volatility | daily | Pipeline + Monitor | ✅ |
 | A8 | **Review weekly**: re-run toolkits on open positions; hold / trail / add / exit | Sunday | Pipeline + Monitor | ✅ |
 | A9 | **Exit and close**: exit orders, final fill, P&L, post-mortem | when triggered | Owner | ✅ |
@@ -277,7 +277,7 @@ labelled as such (no look-ahead in the record, and the live decision uses what's
 | S6.3 | As the owner I want a first fill to open the position, and it to show average cost, shares, risk at the stop and R. | R1 | ✅ first fill opens the position; `show [--price P]` gives cost, shares, risk, R · #106, #108 |
 | S6.4 | As the owner I want each newly opened position to get a **protective stop order** drafted for me to place. | R1 | ✅ protective stop drafted (approved) on the first fill, re-sized on later fills · #108 |
 | S6.5 | As the owner I want a reminder of orders past their validity with no fill entered. | R2 | ✅ daily `order_stale` trigger + weekly pack "Stale orders" (`book.stale_orders`) · #130 |
-| S6.6 | As the owner I want fills reconciled against a broker statement / CSV export, if the broker offers one, so manual entry errors show up. | R3 | ⬜ (depends on the broker; owner to choose) · #141 |
+| S6.6 | As the owner I want fills reconciled against a broker statement / CSV export, if the broker offers one, so manual entry errors show up. | R3 | ✅ Trading212 API instead of a CSV: fills, orders, holdings, dividends, cash (ADR 0030) · #234 |
 
 ### A7 — Monitor daily
 

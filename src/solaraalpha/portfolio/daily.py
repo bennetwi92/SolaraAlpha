@@ -4,7 +4,8 @@ Every weekday evening (``daily.yml``): fetch daily prices for the open positions
 scan's WATCH tickers and the pending entries (draft / approved positions with an unfilled entry
 order); run the checks in :mod:`solaraalpha.portfolio.triggers`; evaluate the machine thesis
 conditions of open positions and pending entries on fresh cards; look for dividends and splits
-the book has not recorded, and for new filings (and headlines) since the last daily run; report
+the book has not recorded, and for new filings (and headlines) since the last daily run; compare
+the book with Trading212 when its keys are set (ADR 0030); report
 owner actions and agent reviews. Every open position and pending entry gets a ``daily_review``
 trigger, so the monitor agent re-evaluates each one every weekday (ADR 0024). One ticker's
 failure never stops the others. With ``save``: one ``daily`` run, a price snapshot per ticker
@@ -69,6 +70,7 @@ class Fetchers:
     announcements: Callable[..., pd.DataFrame] = ann_mod.fetch_announcements
     issuer: Callable[[str], Any] = ann_mod.resolve_issuer
     news: Callable[..., pd.DataFrame] = news_mod.fetch_news
+    broker: Callable[[], Any] | None = None  # Trading212 state (ADR 0030); None: when keys set
 
 
 @dataclass
@@ -350,6 +352,20 @@ def run_daily(
             log.warning("%s: news unavailable (%s)", ticker, e)
             result.errors.append((ticker, f"news: {type(e).__name__}: {e}"))
 
+    # the book against Trading212 (ADR 0030): read-only, never corrects the book; skipped
+    # silently without keys
+    from solaraalpha.data import trading212
+    from solaraalpha.portfolio import reconcile
+
+    get_broker = fetch.broker or (reconcile.fetch_broker if trading212.configured() else None)
+    if get_broker is not None:
+        try:
+            diffs, _ = reconcile.reconcile(conn, get_broker())
+            result.triggers += [broker_trigger(d, now.strftime("%Y-%m-%d")) for d in diffs]
+        except Exception as e:
+            log.exception("Trading212 reconcile failed")
+            result.errors.append(("Trading212", f"reconcile: {type(e).__name__}: {e}"))
+
     # the weekday agent review of every open position and pending entry (ADR 0024)
     today = now.strftime("%Y-%m-%d")
     order_of = {pe["position_id"]: pe["order_id"] for pe in pending}
@@ -367,6 +383,12 @@ def run_daily(
     if run_id is not None:
         store.save_triggers(run_id, result.triggers, conn=conn)
     return result
+
+
+def broker_trigger(d: Any, day: str) -> Trigger:
+    """A :class:`solaraalpha.portfolio.reconcile.Difference` as an owner trigger."""
+    detail = {"what": d.kind, "text": d.text, "command": d.command}
+    return Trigger(d.ticker, "broker", d.position_id, d.order_id, detail, day)
 
 
 def check_thesis(
@@ -517,6 +539,9 @@ def render_daily(r: DailyResult) -> str:
             lines.append(
                 f"- **{t.ticker}** split {d['ratio']} on {t.at} (position {t.position_id}): record it — `book.py split {t.position_id} --ratio {d['ratio']} --at {t.at}`"
             )
+        elif t.kind == "broker":
+            cmd = f" — `book.py {d['command']}`" if d["command"] else ""
+            lines.append(f"- **{t.ticker}** Trading212: {d['text']}{cmd}")
     lines += ([] if owner else ["none"]) + [""]
 
     lines += ["### Agent review needed", ""]

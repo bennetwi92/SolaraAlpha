@@ -22,6 +22,7 @@ uv run python scripts/book.py revisions [--status proposed|accepted|declined|und
 uv run python scripts/book.py accept REV_ID          # drafts the orders the revision implies
 uv run python scripts/book.py decline REV_ID --reason TEXT
 uv run python scripts/book.py undo REV_ID --reason TEXT   # reverse an applied (agent) change
+uv run python scripts/book.py reconcile               # book vs Trading212 (read-only API, ADR 0030)
 uv run python scripts/book.py stats [--since DATE]   # drafted / approved / amended / rejected by deciding stage
 uv run python scripts/book.py exit POSITION_ID --reason stop|trailing_stop|target|thesis_broken|time|discretionary|corporate_action
                                  [--type market|limit] [--price P] [--qty N]
@@ -317,6 +318,16 @@ def _corporate_close(conn: Conn, a: argparse.Namespace) -> None:
     )
 
 
+@command("reconcile")
+def _reconcile(conn: Conn, args: argparse.Namespace) -> None:
+    from solaraalpha.data import trading212
+    from solaraalpha.portfolio import reconcile
+
+    if not trading212.configured():
+        sys.exit("Trading212 keys not set (SOLARA_T212_KEY / SOLARA_T212_SECRET)")
+    print(reconcile.render(*reconcile.reconcile(conn, reconcile.fetch_broker())))
+
+
 @command("stats")
 def _stats(conn: Conn, a: argparse.Namespace) -> None:
     from solaraalpha.store import query
@@ -514,6 +525,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cc.add_argument("--reason", required=True, choices=book.CORPORATE_CLOSES)
     cc.add_argument("--at", help="ISO time (default now)")
+
+    sub.add_parser("reconcile", help="compare the book with Trading212 (read-only, ADR 0030)")
 
     stt = sub.add_parser(
         "stats", help="approval statistics: drafted / approved / amended / rejected"

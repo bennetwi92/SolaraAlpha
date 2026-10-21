@@ -33,6 +33,7 @@ OWNER_KINDS = (
     "split",
     "event_due",
     "order_stale",
+    "broker",  # a difference between the book and Trading212 (ADR 0030)
 )
 EVENT_DUE_SESSIONS = 2  # warn when a scheduled event is this many sessions away (#129)
 AGENT_KINDS = ("gap", "filing", "thesis_hit", "daily_review")

@@ -498,3 +498,11 @@ def test_screen_fills_catalyst_slots_by_tier_then_rank() -> None:
         "B.L": "catalyst: tier 3: 1 headline, latest 2026-10-16: B",
     }
     assert got["C.L"].label == "WATCH" and "(catalyst: negative: warning" in got["C.L"].reason
+
+
+def test_screen_skips_stocks_the_broker_does_not_offer() -> None:
+    steps = {t: _ticker(v) for t, v in [("A.L", 0.9), ("B.L", 0.5), ("C.L", 0.3)]}
+    off = {"A.L": "not offered by Trading212"}
+    got = screen(steps, size=1, catalyst_cap=0, min_adv_gbp=25_000, untradable=off)
+    assert got["A.L"].label == "PASS" and got["A.L"].reason.startswith("floor: not offered")
+    assert got["B.L"].shortlist == "rank 1"

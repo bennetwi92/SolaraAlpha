@@ -121,6 +121,18 @@ def test_daily_renders_each_item_type(
                     "JET2.L", "split", pid, None, {"ratio": "2:1", "factor": 2.0}, "2026-10-21"
                 ),
                 Trigger(
+                    "E.L",
+                    "broker",
+                    p2,
+                    o2,
+                    {
+                        "what": "placed",
+                        "text": f"order #{o2} is working at Trading212 but the book still waits.",
+                        "command": f"placed {o2} --ref 900",
+                    },
+                    "2026-10-20",
+                ),
+                Trigger(
                     "JET2.L", "gap", pid, None, {"gap_atr": 2.3}, "2026-10-20"
                 ),  # agent trigger: not for the owner
             ],
@@ -197,6 +209,8 @@ def test_daily_renders_each_item_type(
         f" if not, cancel it in Trading212 and tell me `unfilled {o2}`.",
         "`cash dividend JET2.L 10.70 --at 2026-10-20`",
         "`split 1 --ratio 2:1 --at 2026-10-21`",
+        f"**E.L** Trading212 and the book differ: order #{o2} is working at Trading212 but the"
+        f" book still waits. Tell me `placed {o2} --ref 900`.",
         "### Price alerts",
         "**JET2.L**: move the target alert 1,800p → 1,900p (the monitor agent: new contract)",
         "### For information (nothing to do)",

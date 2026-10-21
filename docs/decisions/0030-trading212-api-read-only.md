@@ -1,7 +1,8 @@
 # 0030 — Trading212 API, read-only: reconcile the book against the broker
 
-**Status:** proposed (owner chose read-only first, 2026-10-21). Amends 0026 (the owner's
-touchpoints) and 0027 ("no broker API" now means no orders through it) once built. Issue #234; supersedes the CSV route of #141. Order placement through the API is
+**Status:** accepted and built (owner chose read-only first, 2026-10-21; built in #234, see
+"As built" below). Amends 0026 (the owner's touchpoints) and 0027 ("no broker API" now means
+no orders through it). Issue #234; supersedes the CSV route of #141. Order placement through the API is
 **out of scope** and needs its own ADR.
 
 **Context.** Since ADR 0026 the owner places every order in Trading212 and reports back by
@@ -37,13 +38,13 @@ read scopes only and restricted to IP addresses.
   ended). **Prices are compared in pence**: Trading212 quotes LSE stocks in GBX (positions'
   `averagePrice` / `currentPrice`, orders' `stopPrice` / `limitPrice`) even where an order's
   `currency` reads GBP, and the book stores pence, so no conversion is made; the instrument's
-  own `currencyCode` (GBX) is checked and anything else fails loudly.
+  own currency (GBX) is checked and anything else fails loudly.
 - **The daily job reconciles** after the close, when the keys are set (it skips silently
   otherwise). The differences go into the daily report and the inbox as "check" items, in plain
   words. **It never corrects the book by itself** in this phase: fills and dividends the broker
   shows are offered as the exact `book.py` command to run (or confirmed by telling Claude).
 - **Tradable universe.** The instrument list (one call, refreshed every 10 minutes by Trading212,
-  rate-limited to one per 50 s) maps each watchlist ticker to its Trading212 ticker by ISIN. The
+  rate-limited to one per 50 s) maps each watchlist ticker to its Trading212 ticker. The
   scan marks stocks Trading212 doesn't offer, and the shortlist skips them. Trading212 tickers
   are always taken from the list, never built by hand (LSE lines look like `AAZl_EQ`).
 - **Free source, recorded** in `docs/data-sources.md`. Account data never goes into the repo.
@@ -56,3 +57,29 @@ pinned to saved responses and fails loudly on a shape it doesn't know. The docs 
 pending orders per ticker, against the one-order-per-stock rule ADR 0026 took from the app. The
 rule stays until it is tested on the demo account. A later ADR may let the reconciler book exact
 matches itself (actor `broker`), and a separate one would cover placing orders.
+
+**As built (#234, 2026-10-21).** Tried first on the practice account (`demo`), which matched
+the book exactly.
+
+- Endpoints read: `/equity/account/summary`, `/equity/positions`, `/equity/orders` (pending),
+  `/equity/history/orders` (each item an order and its fill), `/equity/history/dividends`,
+  `/equity/history/transactions`, `/equity/metadata/instruments`. When a response says the
+  window is spent, the **next call to the same endpoint** waits for `x-ratelimit-reset`, so the
+  one-per-50 s instrument list costs nothing unless it is called twice.
+- **Tickers are matched on `shortName`** (the TIDM) among the LSE share lines (`…l_EQ`,
+  `…l1_EQ`), not by ISIN: the watchlist holds no ISINs, and fetching them is one LSE call per
+  stock. A TIDM with two lines is left out as ambiguous. On 2026-10-21 all 104 watchlist stocks
+  matched; Greencoat Renewables (`GRP.L`) is quoted in EUR, so it is screened out ("quotes it in
+  another currency") until the book handles FX. Only GBX lines count as tradable, and
+  reconcile refuses a broker line in any other currency.
+- The scan's floor drops untradable stocks (`pipeline.screen(untradable=...)`), so they are
+  never shortlisted. The practice account's instrument list may differ from the ISA's; check it
+  again when the key moves to `live`.
+- Deposits and withdrawals are compared as the **net flow**, so a correction in the book (a
+  deposit, its withdrawal, the deposit again) is not a difference. Dividends are matched by
+  ticker and amount.
+- Each difference is an owner trigger `broker` in the daily run (report "Owner actions", the
+  inbox "Check and tell me"), with the `book.py` command when one fixes it. `book.py reconcile`
+  prints the same by hand. Workflows read `SOLARA_T212_KEY` / `SOLARA_T212_SECRET` from secrets
+  and `SOLARA_T212_ENV` from repository variables (default `demo`).
+
