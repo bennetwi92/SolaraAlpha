@@ -144,9 +144,10 @@ def get(id: str) -> Toolkit:
 def _technical(
     x: Inputs, side: int = 1, entry_date: str | None = None, entry_price: float | None = None
 ) -> Cards:
-    """Weekly trend / momentum / entry scores (+ open-position assessment with entry_date)."""
+    """Weekly trend / momentum / entry scores (+ open-position assessment with entry_date, once a
+    completed week has closed since entry: a position opened this week has none yet)."""
     cards: Cards = {"technical": scorecard(x.weekly, side)}
-    if entry_date:
+    if entry_date and x.weekly.index[-1] >= pd.Timestamp(entry_date, tz="UTC"):
         cards["position"] = assess_position(x.weekly, entry_date, side, entry_price)
     return cards
 
