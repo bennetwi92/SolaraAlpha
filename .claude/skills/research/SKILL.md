@@ -27,7 +27,7 @@ You can only **downgrade** the label (no better than the validate label, else th
 label); `record.py` enforces it.
 
 Arguments: `<TICKER> --run N`, or `--run N` for every ticker whose latest label in the run is
-ACT (`uv run python scripts/plan.py --run N --dry-run` lists each ticker's final label and the
+ACT (`uv run python scripts/plan.py --dry-run --run N` lists each ticker's final label and the
 stage that decided it).
 
 ## Step 1: Prior work
