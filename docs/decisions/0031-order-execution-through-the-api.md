@@ -204,7 +204,15 @@ GitHub scheduled run starting late is accepted on practice. A stop-limit sell co
   order steps.
 - **London calendar** in code (weekdays 08:00-16:30, England & Wales bank holidays and the 12:30
   half days for 2026-2027; a warning once a year is missing).
-- **Not done here:** the one-share practice run in market hours and the checks listed under "Not
-  tested yet" (cancel while open, DAY expiry, a fill as the API shows it, a stop triggering):
-  they run in the first practice week, before the owner signs the epic off.
+- **Practice run through the built code (2026-10-23, 16:08 UTC, market shut).** With
+  `SOLARA_T212_TRADING=demo` for that one process and the book untouched: `trading212.place`
+  limit buy 1 AAZ at 256p (30% under the 365p last) → `new`, id returned, in 0.66 s;
+  `fetch_order` found it working; `cancel` answered in 0.22 s and the first `GET /{id}` poll
+  (1.2 s later) was already 404; the history showed it `cancelled`, nothing filled. A limit sell
+  of 1 AAZ with all 73 under the book's stop → `T212Error` 400
+  `/api-errors/selling-equity-not-owned` ("Selling more equities than owned, owned: 0.0"),
+  parsed as the code expects. Afterwards only the book's two orders were working (AAZ stop sell
+  73 @ 337p, AVG stop buy 158 @ 790p).
+- **Still to run in market hours** (the first practice week, before the owner signs the epic
+  off): cancel while open, DAY expiry, a fill as the API shows it, a stop triggering.
 
