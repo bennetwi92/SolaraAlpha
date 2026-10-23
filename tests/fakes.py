@@ -102,6 +102,7 @@ class FakeBroker:
         self.fail_next: Exception | None = None  # raised by the next place, nothing placed
         self.lose_answer = False  # the next place is placed, but the answer never comes
         self.fill_on_cancel: dict[str, float] = {}  # ref -> price it fills at instead
+        self.partial: dict[str, tuple[float, float]] = {}  # ref -> (qty, price) filled so far
 
     def ticker(self, yahoo: str) -> str | None:
         return yahoo.removesuffix(".L") + "l_EQ"
@@ -161,7 +162,16 @@ class FakeBroker:
             self.fill(ref, price=self.fill_on_cancel.pop(ref))
             return
         o = self.working.pop(ref)
-        self.ended.append({**o, "status": "cancelled", "fill": None})
+        self.ended.append({**o, "status": "cancelled", "fill": self.partial.pop(ref, None)})
+
+    def part_fill(self, ref: str, qty: float, price: float) -> None:
+        """Fill part of a working buy and leave the rest working (``filled`` on the order)."""
+        o = self.working[ref]
+        t = o["t212"]
+        self.cost[t] = self.cost.get(t, 0.0) + qty * price
+        self.held[t] = self.held.get(t, 0.0) + qty
+        o["filled"] = float(qty)
+        self.partial[ref] = (float(qty), float(price))
 
     def order(self, ref: str) -> dict[str, Any] | None:
         o = self.working.get(ref)

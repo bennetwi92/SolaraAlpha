@@ -41,11 +41,10 @@ ENDED = frozenset({"filled", "not_filled", "cancelled", "expired"})
 
 @dataclass(frozen=True)
 class Difference:
-    kind: (
-        str  # fill / late_fill / unknown_fill / placed / order_gone / unknown_order / ended_order /
-    )
-    # order_terms / position_missing / unknown_position / shares / avg_price / dividend /
-    # cash
+    # fill / late_fill / part_fill / unknown_fill / placed / order_gone / unknown_order /
+    # ended_order / order_terms / position_missing / unknown_position / shares / avg_price /
+    # dividend / cash
+    kind: str
     ticker: str
     text: str
     command: str | None = None  # book.py arguments that fix it (None: check by hand)
@@ -362,6 +361,26 @@ def reconcile(conn: Conn, br: Broker) -> tuple[list[Difference], int]:
                     {"ref": str(o["id"])},
                 )
             )
+        elif (
+            b["purpose"] in book.BUY_PURPOSES
+            and b["status"] == "placed"
+            and o["filled"] > int(b["filled"])
+        ):
+            # part filled and still working: the rest is cancelled (one order per unit of stock,
+            # ADR 0031), then the history gives the fill and its price and the stop goes on
+            diffs.append(
+                Difference(
+                    "part_fill",
+                    tk,
+                    f"order #{oid} ({b['purpose']} buy {int(b['qty'])}) has {o['filled']:g}"
+                    " filled at Trading212 and is still working: the rest is cancelled so the"
+                    " shares get their stop.",
+                    f"cancel {oid}",
+                    pid,
+                    oid,
+                    {"filled": float(o["filled"])},
+                )
+            )
         else:
             matched += 1
 
@@ -505,6 +524,8 @@ def _book(conn: Conn, d: Difference) -> None:
     x, oid = d.data, d.order_id or 0
     if d.kind == "fill":
         book.fill(conn, oid, x["qty"], x["price"], x["at"], fees=x["fees"], actor=ACTOR)
+    elif d.kind == "part_fill":
+        book.cancel_order(conn, oid, book.PART_FILL, ACTOR)
     elif d.kind == "placed":
         book.place_order(conn, oid, x["ref"], actor=ACTOR)
     elif d.kind == "order_gone":
@@ -547,6 +568,8 @@ def booked_text(d: Difference) -> str:
         return f"order #{d.order_id} placed (Trading212 order {x['ref']})"
     if d.kind == "order_gone":
         return f"order #{d.order_id} {x['status'].replace('_', ' ')} ({x['reason']})"
+    if d.kind == "part_fill":
+        return f"order #{d.order_id} part filled ({x['filled']:g}): the rest cancelled"
     return f"dividend £{x['amount']:,.2f} paid on {x['at']}"
 
 

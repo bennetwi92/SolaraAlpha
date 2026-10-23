@@ -412,9 +412,12 @@ def _override(conn: Conn, order_id: int, type: str | None, price: float | None, 
         raise Refused(f"a {kind} order needs --price")
     if kind == str(o["type"]) and (price is None or price == o["price"]):
         return order_id
-    return book.replace_order(
-        conn, order_id, None, price, f"how to send it: {kind}", actor, type=kind
-    )
+    # the approved reason carries the exit's tag (book.exit_reason_for): keep it in front
+    ev = book.order_events(conn, order_id)
+    was = ev.loc[ev["status"] == "approved", "reason"]
+    why = f"how to send it: {kind}"
+    why = f"{was.iloc[-1]}: {why}" if not was.empty and was.iloc[-1] else why
+    return book.replace_order(conn, order_id, None, price, why, actor, type=kind)
 
 
 def _stop_back(
@@ -556,13 +559,17 @@ def settle(
         except t212.Unknown as e:
             record(conn, oid, "error", f"cancel unanswered: {e}", actor, {"ref": ref})
             continue
-        for _ in range(CONFIRM_SECONDS):
-            if client.order(ref) is None:
-                record(conn, oid, "cancel_sent", "confirmed gone", actor, {"ref": ref})
-                break
-            sleep(1)
-        else:
-            record(conn, oid, "error", "cancel not confirmed: tried again next turn", actor)
+        try:
+            for _ in range(CONFIRM_SECONDS):
+                if client.order(ref) is None:
+                    record(conn, oid, "cancel_sent", "confirmed gone", actor, {"ref": ref})
+                    break
+                sleep(1)
+            else:
+                record(conn, oid, "error", "cancel not confirmed: tried again next turn", actor)
+        except Exception as e:  # a blip while polling: the next turn confirms; the turn goes on
+            why = f"cancel not confirmed ({type(e).__name__}: {e}): tried again next turn"
+            record(conn, oid, "error", why, actor, {"ref": ref})
     return _absorb(conn, client.broker() if todo else br)
 
 
@@ -610,6 +617,26 @@ def waiting(conn: Conn, order_id: int, now: Any, prices: Prices, agent: bool = F
     if new and pd.Timestamp(now) - _approved_at(conn, order_id) < AGENT_GRACE:
         return "waits for the execution agent"
     return None
+
+
+def agent_send(
+    conn: Conn,
+    client: Client,
+    order_id: int,
+    now: Any,
+    prices: Prices,
+    actor: str = AGENT,
+    reason: str = "",
+    type: str | None = None,
+    price: float | None = None,
+) -> str:
+    """The agent's ``execute.py send``: how and when, never past what the book waits for (a
+    break not closed yet, the sale that pays for it, market hours); its own hold it may lift.
+    Raises :class:`Refused` while the order waits, else :func:`send`."""
+    why = waiting(conn, order_id, now, prices)
+    if why and not why.startswith("held by the agent"):
+        raise Refused(f"order {order_id} {why}")
+    return send(conn, client, order_id, now, prices, actor, reason, type, price)
 
 
 @dataclass

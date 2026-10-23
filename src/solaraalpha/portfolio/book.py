@@ -2161,6 +2161,16 @@ def undo_revision(
     else:  # take_partial / exit / add: cancel the order it created while it is unfilled
         key = "add_order_id" if action == "add" else "exit_order_id"
         oid = done.get(key)
+        if oid is not None and order_status(conn, int(oid)) == "cancelled":
+            # replaced since (the execution agent's type / price): undo the order now standing
+            purpose = str(_order(conn, int(oid))["purpose"])
+            od = orders(conn, pid)
+            later = od[
+                (od["purpose"] == purpose)
+                & (od["order_id"] > int(oid))
+                & od["status"].isin(OPEN_ORDER)
+            ]
+            oid = int(later["order_id"].iloc[-1]) if not later.empty else oid
         if (
             oid is None
             or order_status(conn, int(oid)) not in OPEN_ORDER
