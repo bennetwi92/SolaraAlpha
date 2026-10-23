@@ -316,6 +316,7 @@ def plan_run(
         scores,
         returns,
         drawdown=drawdown_from_store(conn, started, rules),
+        cash=cash,
     )
     out = PlanRun(
         run_id,

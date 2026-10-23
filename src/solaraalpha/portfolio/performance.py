@@ -50,7 +50,9 @@ def equity_curve(
 
     ``fills`` is :func:`solaraalpha.portfolio.book.fills` joined with each position's ``ticker``
     and ``currency``; ``prices`` maps ticker -> daily frame (``close`` in the quote currency). A
-    held ticker with no price on a day carries its last known close forward.
+    held ticker with no price on a day carries its last known close forward. An optional
+    ``split_factor`` column turns each fill's shares into today's units (Yahoo's closes are
+    adjusted back for splits); the cash it moved is unchanged.
     """
     if cash.empty and fills.empty:
         return pd.Series(dtype="float64", name="equity")
@@ -80,7 +82,7 @@ def equity_curve(
         money = to_account(float(f["price"]) * int(f["qty"]), str(f["currency"]))
         cash_flow[i] -= int(f["side"]) * money + float(f["commission"]) + float(f["fees"])
         held = shares.setdefault(str(f["ticker"]), np.zeros(len(days)))
-        held[i:] += int(f["side"]) * int(f["qty"])
+        held[i:] += int(f["side"]) * int(f["qty"]) * float(f.get("split_factor") or 1.0)
     cash_level = pd.Series(cash_flow.cumsum(), index=days)
 
     value = pd.Series(0.0, index=days)
@@ -227,6 +229,12 @@ def history_from_book(
 
     cash = book.cash(conn)  # type: ignore[arg-type]
     fl = book.fills_with_tickers(conn)  # type: ignore[arg-type]
+    # shares bought before a split count in today's units, as the split-adjusted closes do
+    splits = {int(p): book._splits(conn, int(p)) for p in set(fl["position_id"])}  # type: ignore[arg-type]
+    fl["split_factor"] = [
+        math.prod(f for at, f in splits[int(p)] if at > str(t))
+        for p, t in zip(fl["position_id"], fl["at"], strict=True)
+    ]
     eq = equity_curve(cash, fl, prices)
     fw = flows(cash)
     return eq, fw, summarise(eq, fw, bench)
