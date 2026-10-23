@@ -7,7 +7,8 @@ Fetches daily prices (check / clean / trim), evaluates the triggers in portfolio
 broken), finds new filings and headlines since the last daily run, and prints the report:
 Owner actions, Agent review needed, Watch breaks, Headlines, Errors. --save records a `daily`
 run with a price snapshot per ticker and the triggers table (the monitor agent reads it).
-Exits 1 only if a fetch errored, after reporting. See docs/decisions/0017.
+Exits 1 only if no stock's prices could be fetched, after reporting; other errors are saved
+(`error` triggers) for the desk errors. See docs/decisions/0017.
 """
 
 from __future__ import annotations
@@ -42,7 +43,11 @@ def main(argv: list[str] | None = None) -> None:
     if args.report:
         with args.report.open("a") as f:
             f.write(report + "\n")
-    if result.errors:
+    # Fail only when no stock could be checked (as scan.py does, #189): a per-ticker error is
+    # reported and saved for the desk errors, and failing the run on it would skip the monitor
+    # for every position (ADR 0024).
+    unpriced = {t for t, e in result.errors if e.startswith("prices:")}
+    if result.tickers and unpriced >= set(result.tickers):
         sys.exit(1)
 
 

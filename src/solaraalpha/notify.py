@@ -238,6 +238,8 @@ MEANS = {
     " (ADR 0027)",
     "monitor": "the position was not reviewed today: nothing changed, its stop order stands",
     "postmortem": "the closed trade has no post-mortem yet",
+    "daily": "that part of today's check was skipped for the stock; the rest of the daily job"
+    " and the monitor ran",
 }
 UNREVIEWED = "not reviewed today (never reached: the `max_agent_tickers` cap or the run ended)"
 
@@ -246,6 +248,8 @@ def _rerun(stage: str, ticker: str, run_id: int, position_id: int | None = None)
     """The command that re-runs a failed stage."""
     if stage in ("screen", "fundamentals") or (stage == "events" and position_id is None):
         return f"`uv run python scripts/scan.py {ticker}` (or Actions → Run one stock)"
+    if stage == "daily":
+        return "`uv run python scripts/daily.py` (tomorrow's run checks it again)"
     if stage == "macro":
         return f"`/macro --run {run_id}` in Claude Code"
     if stage == "pm":
@@ -269,6 +273,12 @@ def error_rows(conn: Conn, run_id: int, part: str) -> list[dict[str, str]]:
         for r in lab.to_dict("records")
         if part == "all" or (part == "pipeline") == (str(r["actor"]) == "pipeline")
     ]
+    if part in ("pipeline", "all"):  # the daily job's errors (kind ``error`` triggers)
+        trig = store.load_triggers(run_id, kind="error", conn=conn)
+        rows += [
+            {"ticker": str(r["ticker"]), "stage": "daily", "reason": str(r["detail"]["reason"])}
+            for r in (trig.to_dict("records") if len(trig) else [])
+        ]
     if part == "pipeline":
         return rows
     marks = ", ".join("?" * len(AGENT_STAGES))

@@ -1089,7 +1089,7 @@ def swap_for_exit(
     confirms it gone; only then do the smaller stop and the exit go out. Returns
     ``{"cancelled": id | None, "stop_order_id": id | None}``."""
     o = _order(conn, exit_order_id)
-    if o["purpose"] != "exit" or order_status(conn, exit_order_id) != "approved":
+    if o["purpose"] != "exit" or order_status(conn, exit_order_id) not in ("approved", "rejected"):
         raise ValueError(f"order {exit_order_id} is not an approved exit")
     pid = int(o["position_id"])
     st = position_state(conn, pid)

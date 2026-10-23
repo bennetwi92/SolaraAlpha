@@ -41,7 +41,9 @@ ENDED = frozenset({"filled", "not_filled", "cancelled", "expired"})
 
 @dataclass(frozen=True)
 class Difference:
-    kind: str  # fill / unknown_fill / placed / order_gone / unknown_order / ended_order /
+    kind: (
+        str  # fill / late_fill / unknown_fill / placed / order_gone / unknown_order / ended_order /
+    )
     # order_terms / position_missing / unknown_position / shares / avg_price / dividend /
     # cash
     ticker: str
@@ -202,7 +204,23 @@ def reconcile(conn: Conn, br: Broker) -> tuple[list[Difference], int]:
             b = row(oid)
             pid = int(b["position_id"])
             missing = round(o["fill_qty"]) - int(b["filled"])
-            if missing > 0:
+            if missing > 0 and b["status"] not in book.FILLABLE:
+                # an order the book ended (expired, cancelled by hand) filled at the broker
+                # before the cancel reached it: the book can't fill it, so the owner books it
+                diffs.append(
+                    Difference(
+                        "late_fill",
+                        tk,
+                        f"order #{oid} ({b['purpose']} {_side(o['side'])} {int(b['qty'])}) is"
+                        f" {b['status']} in the book but filled {missing} at"
+                        f" {_px(o['fill_price'])} on {when[:16]} at Trading212: those shares"
+                        " have no stop in the book; book them (and their stop) by hand.",
+                        None,
+                        pid,
+                        oid,
+                    )
+                )
+            elif missing > 0:
                 fees = f" --fees {o['taxes']:.2f}" if o["taxes"] else ""
                 diffs.append(
                     Difference(

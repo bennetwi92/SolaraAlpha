@@ -465,6 +465,56 @@ def test_a_swap_whose_exit_was_refused_gets_its_stop_back_out_of_hours(
     conn.close()
 
 
+def test_a_rejected_exit_puts_the_stop_back_at_once(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    fake = FakeBroker()
+    pid, _, _ = _open(conn, fake)
+    with conn:
+        exit_id = book.exit_position(conn, pid, "thesis_broken")
+    fake.fail_next = t212.T212Error(400, "/api-errors/x", "Bad", "instrument closed")
+    _turn(conn, fake, OPEN_AT)  # the stop swapped off, then Trading212 refused the exit
+    assert book.order_status(conn, exit_id) == "rejected"
+    assert _working(fake) == [(-1, "stop", 50.0, 1400.0)]  # every share protected again
+    _turn(conn, fake, NIGHT)
+    assert _working(fake) == [(-1, "stop", 50.0, 1400.0)]
+    conn.close()
+
+
+def test_an_exit_the_guards_refuse_never_takes_the_stop_off(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    fake = FakeBroker()
+    pid, stop_id, _ = _open(conn, fake)
+    with conn:
+        exit_id = book.exit_position(conn, pid, "thesis_broken")
+    prices = execution.prices_for(fake.broker(), lambda t: pd.DataFrame(), OPEN_AT)
+    with pytest.raises(Refused, match="band"):  # a limit 13% under the market
+        execution.send(conn, fake, exit_id, OPEN_AT, prices, "agent:execute", "", "limit", 1300.0)
+    assert book.order_status(conn, stop_id) == "placed"
+    assert _working(fake) == [(-1, "stop", 50.0, 1400.0)]
+    conn.close()
+
+
+def test_a_fill_on_an_order_the_book_ended_is_reported_not_a_crash(
+    db_backend: Path | None,
+) -> None:
+    from solaraalpha.portfolio import reconcile
+
+    conn = book.connect(db_backend)
+    fake = FakeBroker()
+    pid, oid = _entry(conn)
+    _turn(conn, fake, NIGHT)
+    ref = str(book.orders(conn, pid).set_index("order_id").loc[oid, "broker_ref"])
+    with conn:
+        book.expire_orders(conn, "2030-01-01")  # expired in the book, still working there
+    fake.fill(ref, price=1495.0)  # it filled at the open before the cancel reached it
+    _turn(conn, fake, OPEN_AT)
+    _turn(conn, fake, OPEN_AT)  # every later turn runs too
+    diffs, _ = reconcile.reconcile(conn, fake.broker())
+    late = [d for d in diffs if d.kind == "late_fill"]
+    assert len(late) == 1 and late[0].order_id == oid and "by hand" in late[0].text
+    conn.close()
+
+
 def test_an_order_placed_by_hand_is_never_cancelled(db_backend: Path | None) -> None:
     conn = book.connect(db_backend)
     fake = FakeBroker()
