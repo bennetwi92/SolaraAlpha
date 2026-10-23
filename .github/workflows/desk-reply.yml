@@ -22,9 +22,10 @@ env:
   SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
   SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
   SOLARA_TELEGRAM_CHAT: ${{ secrets.SOLARA_TELEGRAM_CHAT }}
-  # read-only lookups and the one post as the PM (.claude/skills/desk/SKILL.md)
+  # read-only lookups and the one post as the PM (.claude/skills/desk/SKILL.md); no bare Read /
+  # Grep beside the web (they reach outside the repo; reads inside it need no permission)
   ALLOWED_TOOLS: >-
-    Bash(uv run --no-sync python scripts/chat.py pending*),Bash(uv run --no-sync python scripts/chat.py read*),Bash(uv run --no-sync python scripts/chat.py post --as agent:pm *),Bash(uv run --no-sync python scripts/book.py list*),Bash(uv run --no-sync python scripts/book.py show *),Bash(uv run --no-sync python scripts/book.py revisions*),Bash(uv run --no-sync python scripts/portfolio.py),Bash(uv run --no-sync python scripts/record.py latest-run*),Bash(uv run --no-sync python scripts/record.py prior *),Bash(uv run --no-sync python scripts/pm_pack.py *),Read,Glob,Grep,WebSearch,WebFetch
+    Bash(uv run --no-sync python scripts/chat.py pending*),Bash(uv run --no-sync python scripts/chat.py read*),Bash(uv run --no-sync python scripts/chat.py post --as agent:pm *),Bash(uv run --no-sync python scripts/book.py list*),Bash(uv run --no-sync python scripts/book.py show *),Bash(uv run --no-sync python scripts/book.py revisions*),Bash(uv run --no-sync python scripts/portfolio.py),Bash(uv run --no-sync python scripts/record.py latest-run*),Bash(uv run --no-sync python scripts/record.py prior *),Bash(uv run --no-sync python scripts/pm_pack.py *),Glob,WebSearch,WebFetch
 
 jobs:
   reply:
