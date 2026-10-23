@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None) -> None:
             client = LiveClient()
             now = pd.Timestamp.now(tz="UTC")
             prices = execution.prices_for(client.broker(), execution._quotes(), now)
-            out = execution.send(
+            out = execution.agent_send(
                 conn, client, a.order_id, prices.now, prices, a.actor, a.reason, a.type, a.price
             )
             print(f"{execution.describe(conn, a.order_id, out)}")

@@ -366,6 +366,54 @@ def test_agent_override_and_cancel(db_backend: Path | None) -> None:
     conn.close()
 
 
+def test_the_agent_cannot_send_what_the_book_waits_for(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    fake = FakeBroker()
+    with conn:
+        book.cash_event(conn, "deposit", 5000.0)
+        pid, oid = book.draft_position(
+            conn, "JET2.L", 1600.0, 1400.0, 20, type="stop", payload={"wait_for_break": True}
+        )
+        book.approve_position(conn, pid)
+    prices = execution.Prices(bars(1500.0), OPEN_AT)  # no daily close above 1600 yet
+    with pytest.raises(Refused, match="waits for a daily close above"):
+        execution.agent_send(conn, fake, oid, OPEN_AT, prices, reason="early")
+    assert fake.working == {} and book.order_status(conn, oid) == "approved"
+    conn.close()
+
+
+def test_a_blip_while_confirming_a_cancel_does_not_stop_the_turn(
+    db_backend: Path | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn = book.connect(db_backend)
+    fake = FakeBroker()
+    _, stop_id, _ = _open(conn, fake)
+    with conn:
+        book.cancel_order(conn, stop_id, "by hand", book.OWNER)
+
+    def down(ref: str) -> None:
+        raise ConnectionError("Trading212 unreachable")
+
+    monkeypatch.setattr(fake, "order", down)
+    execution.settle(conn, fake, sleep=nap)  # recorded, not raised
+    log = execution.executions(conn)
+    assert log["reason"].str.contains("cancel not confirmed (ConnectionError", regex=False).any()
+    conn.close()
+
+
+def test_a_part_fill_on_a_working_buy_gets_its_stop(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    fake = FakeBroker()
+    pid, oid = _entry(conn)
+    _turn(conn, fake, NIGHT)
+    ref = str(book.orders(conn, pid).set_index("order_id").loc[oid, "broker_ref"])
+    fake.part_fill(ref, 20, 1495.0)  # 20 of 50 filled, the rest still working
+    _turn(conn, fake, OPEN_AT)
+    assert book.position_state(conn, pid).shares == 20
+    assert _working(fake) == [(-1, "stop", 20.0, 1400.0)]  # the rest cancelled, the 20 protected
+    conn.close()
+
+
 def test_undo_cancels_at_the_broker_too(db_backend: Path | None) -> None:
     conn = book.connect(db_backend)
     fake = FakeBroker()
@@ -380,6 +428,22 @@ def test_undo_cancels_at_the_broker_too(db_backend: Path | None) -> None:
         book.undo_revision(conn, rid, "too tight")
     _turn(conn, fake, NIGHT)
     assert _working(fake) == [(-1, "stop", 50.0, 1400.0)]  # the 1450 stop cancelled there too
+    conn.close()
+
+
+def test_the_agents_limit_keeps_the_exit_reason_and_its_undo(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    fake = FakeBroker()
+    pid, _, _ = _open(conn, fake)
+    with conn:
+        rid = book.propose_revision(conn, pid, "exit", {}, "thesis broken", "agent:monitor")
+    exit_id = int(book.orders(conn, pid, status="approved")["order_id"].iloc[0])
+    with conn:  # the agent sends it as a limit: a replacement order
+        new = execution._override(conn, exit_id, "limit", 1490.0, execution.AGENT)
+    assert new != exit_id and book.exit_reason_for(conn, new) == "thesis_broken"
+    with conn:
+        out = book.undo_revision(conn, rid, "changed my mind")
+    assert out["cancelled_order"] == new
     conn.close()
 
 

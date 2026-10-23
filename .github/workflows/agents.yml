@@ -41,8 +41,9 @@ permissions:
 
 env:
   MAX_TURNS: 60
-  # who places orders (ADR 0031): the execution job once it has keys and trading is not off
-  SOLARA_ORDERS_BY: ${{ (secrets.SOLARA_T212_KEY != '' && vars.SOLARA_T212_TRADING != 'off') && 'system' || 'owner' }}
+  # who places orders (ADR 0031): the execution job, once it has both keys and trading names the
+  # account (as its own gate needs; `off` or a mismatch leaves it to the owner)
+  SOLARA_ORDERS_BY: ${{ (secrets.SOLARA_T212_KEY != '' && secrets.SOLARA_T212_SECRET != '' && (vars.SOLARA_T212_TRADING || 'demo') == (vars.SOLARA_T212_ENV || 'demo')) && 'system' || 'owner' }}
   # Tools the skills need (and no more: the agents read the web, so a prompt injection must not
   # reach code or the book): the scripts the skills name, files written only under
   # data/processed/ (the packs and verdicts), and the web for research. No bare Read / Grep: they
