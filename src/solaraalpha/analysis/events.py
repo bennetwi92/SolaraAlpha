@@ -44,6 +44,7 @@ VOL_SESSIONS = 60  # return volatility for the z-score
 VOLUME_SESSIONS = 20  # baseline volume
 PRE_SESSIONS = 5  # run-up before the announcement (leakage / positioning)
 NOTICE = frozenset({"NOR"})  # "Notice of Results": a date, not news
+RUN_UP = frozenset({"TST"})  # trading statements: a pre-close update weeks before the results
 EVENT_QUANTILE = 0.9
 
 
@@ -113,8 +114,9 @@ def expected_events(
     Each past filing in a :data:`SCHEDULED` category is projected forward by whole years.
     Projections within ``tol_days`` of each other form one expected event, kept if it is
     backed by at least ``min_years`` distinct past years, and dropped if this cycle's filing
-    has already been published (one inside the cluster's window, widened by ``tol_days``, on
-    or before ``as_of``). Uses only filings published before ``as_of``.
+    has already been published (one of the cluster's categories, not a :data:`NOTICE` nor a
+    :data:`RUN_UP` update unless the cluster is one, inside the cluster's window widened by
+    ``tol_days``, on or before ``as_of``). Uses only filings published before ``as_of``.
 
     Columns: ``window_start`` / ``window_end`` / ``likely`` (median projection), ``years``
     (supporting years), ``last_seen`` (latest past filing in the cluster), ``types``,
@@ -136,7 +138,12 @@ def expected_events(
     for _, c in proj.groupby(cluster):
         n_years = c["published"].dt.year.nunique()
         start, end = c["proj"].min(), c["proj"].max()
-        filed = past["published"].between(start - pd.Timedelta(days=tol_days), now)
+        # this cycle's filing: same category, not a notice of results, not a trading update
+        # in the run-up (unless that is what the cluster is); an AGM notice is no results
+        types = set(c["type_code"])
+        kind = past["category"].isin(set(c["category"])) & ~past["type_code"].isin(NOTICE)
+        same = past[kind & (~past["type_code"].isin(RUN_UP) | past["type_code"].isin(types))]
+        filed = same["published"].between(start - pd.Timedelta(days=tol_days), now)
         if n_years < min_years or filed.any():
             continue
         c = c.sort_values("published")

@@ -130,6 +130,23 @@ def test_expected_events_drops_published_and_ignores_future() -> None:
     assert "Final Results" in set(ev["headline"])
 
 
+def test_expected_events_kept_through_the_notice_and_run_up() -> None:
+    run_up = pd.concat(
+        [
+            HISTORY,
+            _ann(
+                [
+                    ("2026-06-20 06:00", "NOR", "Financial Results", "Notice of Results"),
+                    ("2026-06-25 06:00", "TST", "Financial Results", "Pre-close Update"),
+                    ("2026-06-26 06:00", "NOAGM", "General Meetings", "Notice of AGM"),
+                ]
+            ),
+        ]
+    )
+    ev = expected_events(run_up, "2026-07-01", horizon_weeks=16)
+    assert "Final Results" in set(ev["headline"])  # the notice confirms the date, not the event
+
+
 def test_expected_events_overdue_stays_until_filed() -> None:
     ev = expected_events(HISTORY, "2026-07-14", horizon_weeks=4)
     fr = ev.iloc[0]

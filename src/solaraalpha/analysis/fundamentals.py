@@ -270,7 +270,9 @@ def metrics(
 
     ebitda = _last(fund, "annualEBITDA")
     net_debt = _last(fund, "annualTotalDebt") - _last(fund, "annualCashAndCashEquivalents")
-    m["roe"] = _div(ni, _last(fund, "annualStockholdersEquity"))  # NaN on zero equity (#213)
+    # NaN on zero or negative equity (#213): a loss over negative equity is no high return
+    equity = _last(fund, "annualStockholdersEquity")
+    m["roe"] = ni / equity if equity > 0 else np.nan
     # Negative EBITDA: leverage is not meaningful (runway is on the financing card), not -1
     m["net_debt_ebitda"] = net_debt / ebitda if ebitda > 0 else np.nan
     m["fcf_conversion"] = fcf / ni if ni > 0 else np.nan

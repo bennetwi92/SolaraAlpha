@@ -20,3 +20,9 @@ All three are reported by `check_prices` as before; only the trim changes.
 2023, and AET's 2021 suspension is still cut. Jet2 is unchanged (it had no blocking issues).
 Illiquid stocks now pass the data checks; whether they are tradeable is a separate question
 (no liquidity filter yet).
+
+**Amendment (2026-10-23).** A `duplicate_date` or `missing` issue on the *newest* bar (Yahoo's
+live or partial session: a repeated date, a null volume beside the close) no longer cuts the
+history: `trim_to_consistent` used to keep only rows after it, which left nothing and turned
+the stock into an ERROR. `clean_prices` keeps the last copy of a repeated date. The same issues
+mid-history still cut (`LATEST_BAR_OK` in `data/clean.py`).

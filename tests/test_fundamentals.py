@@ -135,6 +135,16 @@ def test_zero_equity_and_negative_ebitda() -> None:
     assert np.isnan(card.roe) and np.isnan(card.net_debt_ebitda)
 
 
+def test_a_loss_over_negative_equity_is_no_return_on_equity() -> None:
+    fund = _fund()
+    last = fund.loc[fund["field"] == "annualStockholdersEquity", "date"].max()
+    at = fund["date"] == last
+    fund.loc[at & (fund["field"] == "annualStockholdersEquity"), "value"] = -10e6
+    fund.loc[at & (fund["field"] == "annualNetIncome"), "value"] = -5e6
+    card = fundamentals_card(fund, _weekly())
+    assert np.isnan(card.roe)  # was +0.5: a top quality input for a distressed company
+
+
 def test_growth_direction() -> None:
     weekly = _weekly()
     up = fundamentals_card(_synthetic([1.0, 1.2, 1.5], [100, 120, 150]), weekly)

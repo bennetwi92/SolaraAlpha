@@ -126,3 +126,16 @@ def test_trim_ignores_dropped_rows() -> None:
     out = trim_to_consistent(clean_prices(df), check_prices(df))
     assert out.index[0] == df.index[0]
     assert out.index[-1] == df.index[-2]
+
+
+def test_a_bad_newest_bar_does_not_cut_the_history() -> None:
+    df = _daily(20)
+    dup = pd.concat([df, df.iloc[[-1]] * 1.001])  # Yahoo repeats the live session
+    out = trim_to_consistent(clean_prices(dup), check_prices(dup))
+    assert len(out) == 20 and out["close"].iloc[-1] == df["close"].iloc[-1] * 1.001
+    nv = df.copy()
+    nv.loc[nv.index[-1], "volume"] = np.nan  # a null volume beside the close
+    assert len(trim_to_consistent(clean_prices(nv), check_prices(nv))) == 20
+    mid = df.copy()
+    mid.loc[mid.index[10], "volume"] = np.nan  # mid-history it still cuts
+    assert trim_to_consistent(clean_prices(mid), check_prices(mid)).index[0] == df.index[11]
