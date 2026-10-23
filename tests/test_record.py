@@ -434,3 +434,30 @@ def test_trade_levels_required_on_a_research_act_and_validated() -> None:
         agents.Verdict.model_validate({**v, "trade": {**trade, "stop": 1600.0}})
     with pytest.raises(ValueError, match="stop_reason"):
         agents.Verdict.model_validate({**v, "trade": {**trade, "stop_reason": ""}})
+
+
+def test_latest_run_is_the_latest_full_weekly_scan(
+    db_backend: Path | None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    full = store.start_run("scan", {"tickers": [], "toolkit": None}, path=db_backend)
+    store.start_run("scan", {"tickers": ["JET2.L"], "toolkit": None}, path=db_backend)  # one stock
+    args = _args(db_backend)
+    record.main(["latest-run", *args])
+    assert capsys.readouterr().out.strip() == str(full)
+    started = str(store.run_info(full, path=db_backend)["started_at"])
+    record.main(["latest-run", "--since", started, *args])
+    assert capsys.readouterr().out.strip() == str(full)
+    with pytest.raises(SystemExit) as e:  # the pipeline run that just finished saved no full scan
+        record.main(["latest-run", "--since", "2999-01-01T00:00:00Z", *args])
+    assert e.value.code == 3
+
+
+def test_research_is_bound_by_the_screen_when_the_validator_errored(
+    db_backend: Path | None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run_id = _run(db_backend, label="WATCH")
+    store.save_label(run_id, "JET2.L", "validate", "ERROR", "pack failed", path=db_backend)
+    with pytest.raises(SystemExit) as e:
+        record.main(["verdict", _write(tmp_path, _verdict(run_id=run_id)), *_args(db_backend)])
+    assert e.value.code == 2
+    assert "research may not upgrade JET2.L from WATCH to ACT" in capsys.readouterr().out

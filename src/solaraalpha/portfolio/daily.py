@@ -99,12 +99,16 @@ def last_daily_run(conn: Conn) -> str | None:
 
 
 def latest_watch(conn: Conn) -> dict[str, dict[str, Any]]:
-    """WATCH tickers of the latest scan run with a screen label: their ``watch_on`` list (what
-    each WATCH toolkit waits for, #125), levels and technical cards."""
-    row = conn.execute("SELECT MAX(run_id) FROM labels WHERE stage = 'screen'").fetchone()
-    if not row or row[0] is None:
+    """WATCH tickers of the latest full weekly scan with a screen label (a one-stock scan is not
+    the week's watch list): their ``watch_on`` list (what each WATCH toolkit waits for, #125),
+    levels and technical cards."""
+    labelled = {
+        int(r[0]) for r in conn.execute("SELECT DISTINCT run_id FROM labels WHERE stage = 'screen'")
+    }
+    runs = [r for r in store.weekly_scans(conn) if r in labelled]
+    if not runs:
         return {}
-    run_id = int(row[0])
+    run_id = runs[-1]
     df = store.query(
         "SELECT ticker, watch_on FROM labels WHERE run_id = ? AND stage = 'screen'"
         " AND label = 'WATCH'",

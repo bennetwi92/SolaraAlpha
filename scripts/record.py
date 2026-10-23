@@ -8,7 +8,7 @@ uv run python scripts/record.py schema
 uv run python scripts/record.py error TICKER --run N --stage S --reason TEXT     # runner: skill failed
 uv run python scripts/record.py queue --run N --stage validate|research|monitor|postmortem|macro  # runner
 uv run python scripts/record.py members --run N --sector "_SECTOR:Travel & Leisure"   # tickers in a macro group
-uv run python scripts/record.py latest-run [--script scan|daily]                 # runner: which run
+uv run python scripts/record.py latest-run [--script scan|daily] [--since ISO]   # runner: which run
 uv run python scripts/record.py outcome --run N --stage S                        # runner: exit 1 if all ERROR
 uv run python scripts/record.py usage --run N --ticker T --stage S --file execution.json [--status success|failure] [--error TEXT]
 
@@ -38,6 +38,7 @@ import json
 import sys
 from pathlib import Path
 
+import pandas as pd
 from pydantic import ValidationError
 
 from solaraalpha import agents, store
@@ -246,16 +247,31 @@ def _queue(args: argparse.Namespace) -> None:
 
 
 def _latest_run(args: argparse.Namespace) -> None:
+    """The latest run of ``--script``; for ``scan`` the latest full weekly scan (a one-stock or
+    one-toolkit scan is never the week's run). ``--since``: exit 3 when that run started before
+    it (the scan that just finished was not a full one)."""
     conn = store.connect(args.db)
     try:
-        row = conn.execute(
-            "SELECT run_id FROM runs WHERE script = ? ORDER BY run_id DESC LIMIT 1", (args.script,)
-        ).fetchone()
+        if args.script == "scan":
+            runs = store.weekly_scans(conn)
+            run_id = runs[-1] if runs else None
+        else:
+            row = conn.execute(
+                "SELECT run_id FROM runs WHERE script = ? ORDER BY run_id DESC LIMIT 1",
+                (args.script,),
+            ).fetchone()
+            run_id = int(row[0]) if row else None
+        started = str(store.run_info(run_id, conn=conn)["started_at"]) if run_id else None
     finally:
         conn.close()
-    if not row:
+    if run_id is None:
         sys.exit(f"no {args.script} run in the DB")
-    print(int(row[0]))
+    if args.since and pd.Timestamp(started) < pd.Timestamp(args.since):
+        print(
+            f"no full {args.script} run since {args.since} (latest: run {run_id})", file=sys.stderr
+        )
+        sys.exit(3)
+    print(run_id)
 
 
 def _outcome(args: argparse.Namespace) -> None:
@@ -338,6 +354,7 @@ def main(argv: list[str] | None = None) -> None:
     mb.add_argument("--db", type=Path, default=None)
     lr = sub.add_parser("latest-run", help="the latest run id of a script")
     lr.add_argument("--script", default="scan")
+    lr.add_argument("--since", help="ISO time: exit 3 if the run started before it")
     lr.add_argument("--db", type=Path, default=None)
     oc = sub.add_parser("outcome", help="counts per stage; exit 1 when every item errored")
     oc.add_argument("--run", type=int, required=True)

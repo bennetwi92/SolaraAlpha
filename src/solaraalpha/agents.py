@@ -194,15 +194,19 @@ def load_verdict(text: str) -> Verdict:
 
 
 def previous_label(conn: Conn, run_id: int, ticker: str, stage: str) -> str | None:
-    """The label the agent is allowed to downgrade from: the nearest earlier stage present."""
+    """The label the agent is allowed to downgrade from: the nearest earlier stage present that
+    did not error (an errored validator leaves research bound by the screen's label)."""
+    errored = False
     for prev in PREVIOUS.get(stage, ()):
         row = conn.execute(
             "SELECT label FROM labels WHERE run_id = ? AND ticker = ? AND stage = ?",
             (run_id, ticker, prev),
         ).fetchone()
-        if row:
+        if row and str(row[0]) == "ERROR":
+            errored = True
+        elif row:
             return str(row[0])
-    return None
+    return "ERROR" if errored else None
 
 
 def check_downgrade(verdict: Verdict, previous: str | None) -> None:

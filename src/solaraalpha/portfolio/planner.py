@@ -197,6 +197,11 @@ def plan_run(
     if replan:
         from_run = from_run[~from_run["status"].isin(["rejected", "cancelled"])]
     done = set(from_run["ticker"])
+    # a stock already held or with an entry pending (from an earlier run) gets no second
+    # position: adding to it is the monitor's call (ADR 0024, ``add``)
+    active = existing[existing["status"].isin(["draft", "approved", "open"])]
+    active = active[~active["ticker"].isin(done)]
+    taken = dict(zip(active["ticker"], active["position_id"], strict=True))
 
     # Equity and cash at the run's closes (held tickers not in the run: last stored close).
     prices: dict[str, float] = {}
@@ -242,6 +247,9 @@ def plan_run(
             continue
         if c.ticker in done:
             skipped.append(c.ticker)
+            continue
+        if c.ticker in taken:
+            errors.append((c.ticker, f"already in the book (position {taken[c.ticker]})"))
             continue
         if reviewed and c.stage == "screen":
             errors.append((c.ticker, "not reviewed by the agents (beyond max_agent_tickers)"))

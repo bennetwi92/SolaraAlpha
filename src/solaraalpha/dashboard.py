@@ -216,10 +216,9 @@ def latest_prices(conn: Conn, tickers: Iterable[str]) -> dict[str, float]:
 
 
 def latest_scan_run(conn: Conn) -> int | None:
-    row = conn.execute(
-        "SELECT MAX(l.run_id) FROM labels l JOIN runs r USING (run_id) WHERE r.script = 'scan'"
-    ).fetchone()
-    return int(row[0]) if row and row[0] is not None else None
+    labelled = {int(r[0]) for r in conn.execute("SELECT DISTINCT run_id FROM labels")}
+    runs = [r for r in store.weekly_scans(conn) if r in labelled]
+    return runs[-1] if runs else None
 
 
 def labels_with_dates(conn: Conn) -> pd.DataFrame:

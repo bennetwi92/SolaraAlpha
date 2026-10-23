@@ -344,12 +344,9 @@ def changes_since(since: str | None) -> list[str] | None:
 
 
 def previous_scan(conn: Conn, run_id: int) -> str | None:
-    row = conn.execute(
-        "SELECT started_at FROM runs WHERE script = 'scan' AND run_id < ?"
-        " ORDER BY run_id DESC LIMIT 1",
-        (run_id,),
-    ).fetchone()
-    return str(row[0]) if row else None
+    """When the full weekly scan before ``run_id`` started (None: there was none)."""
+    before = [r for r in store.weekly_scans(conn) if r < run_id]
+    return str(store.run_info(before[-1], conn=conn)["started_at"]) if before else None
 
 
 def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str, Any]:

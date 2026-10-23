@@ -491,3 +491,16 @@ def test_render_empty() -> None:
     ):
         assert section in text
     assert "Checked: none" in text
+
+
+def test_the_watch_list_is_the_latest_full_weekly_scans(db_backend: Path | None) -> None:
+    from solaraalpha.portfolio.daily import latest_watch
+
+    week = store.start_run("scan", {"tickers": [], "toolkit": None}, path=db_backend)
+    store.save_label(week, "W.L", "screen", "WATCH", "coil", path=db_backend)
+    one = store.start_run("scan", {"tickers": ["X.L"], "toolkit": None}, path=db_backend)
+    store.save_label(one, "X.L", "screen", "WATCH", "coil", path=db_backend)  # a one-stock scan
+    conn = book.connect(db_backend)
+    watch = latest_watch(conn)
+    conn.close()
+    assert list(watch) == ["W.L"] and watch["W.L"]["run_id"] == week

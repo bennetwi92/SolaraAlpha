@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
-      go: ${{ steps.gate.outputs.go }}
+      go: ${{ steps.run.outputs.skip == 'true' && 'false' || steps.gate.outputs.go }}
       mode: ${{ steps.mode.outputs.mode }}
       run: ${{ steps.run.outputs.run }}
       validate: ${{ steps.queue.outputs.validate }}
@@ -104,13 +104,25 @@ jobs:
             run="${{ inputs.run_id }}"
           elif [ "${{ steps.mode.outputs.mode }}" = "daily" ]; then
             run=$(uv run --no-sync python scripts/record.py latest-run --script daily)
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            # the full weekly scan this pipeline run saved; none (a one-stock or subset run):
+            # no weekly agents, rather than re-running them on an older scan
+            set +e
+            run=$(uv run --no-sync python scripts/record.py latest-run --script scan --since "${{ github.event.workflow_run.run_started_at }}")
+            rc=$?
+            set -e
+            if [ "$rc" = "3" ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "agents skipped: the pipeline run saved no full weekly scan" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            elif [ "$rc" != "0" ]; then exit "$rc"; fi
           else
             run=$(uv run --no-sync python scripts/record.py latest-run --script scan)
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "agents: mode ${{ steps.mode.outputs.mode }}, run $run" >> "$GITHUB_STEP_SUMMARY"
       - id: queue
-        if: steps.gate.outputs.go == 'true'
+        if: steps.gate.outputs.go == 'true' && steps.run.outputs.skip != 'true'
         env:
           SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
           SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}

@@ -135,6 +135,18 @@ def test_act_without_agent_levels_is_reported_not_planned(scan_db: Path) -> None
     assert plan.stop_reason == "below the base: the breakout has failed"
 
 
+def test_a_stock_already_in_the_book_gets_no_second_position(scan_db: Path) -> None:
+    conn = book.connect(scan_db)
+    with conn:  # A.L held from an earlier week
+        pid, oid = book.draft_position(conn, "A.L", 1500.0, 1400.0, 10)
+        book.approve_position(conn, pid)
+        book.fill(conn, oid, 10, 1500.0)
+    out = plan_run(conn, 1)
+    conn.close()
+    assert ("A.L", f"already in the book (position {pid})") in out.plan_errors
+    assert not out.plans
+
+
 def test_kill_criteria_parsing() -> None:
     assert kill_criteria({}) == []
     assert kill_criteria({"kill_criteria": None}) == []
