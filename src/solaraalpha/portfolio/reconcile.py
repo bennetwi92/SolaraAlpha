@@ -1,7 +1,8 @@
 """Reconcile the book against Trading212: what the broker shows that the book doesn't, and back.
 
-Never writes to the broker (ADR 0030). :func:`reconcile` only reads; :func:`absorb` books into the
-book what the broker plainly shows (fills, orders placed, orders ended, dividends paid) as actor
+Never writes to the broker (ADR 0030; orders go out only through ``scripts/execute.py``, ADR
+0031). :func:`reconcile` only reads; :func:`absorb` books into the book what the broker plainly
+shows (fills, orders placed, orders ended, a cancel confirmed, dividends paid) as actor
 ``broker`` and leaves the rest for the owner (ADR 0030 amendment). Each :class:`Difference` says
 in plain words what differs and, when one fixes it, the ``book.py`` arguments to run
 (``command``, without the ``book.py`` prefix). Checked:
@@ -66,18 +67,20 @@ class Broker:
         return self.to_yahoo.get(t212) or re.sub(r"l\d*_EQ$", "", t212) + ".L"
 
 
-def fetch_broker() -> Broker:
-    """The live broker state (six read calls, the instrument list included)."""
+def fetch_broker(to_yahoo: Mapping[str, str] | None = None) -> Broker:
+    """The live broker state (six read calls, the instrument list included unless ``to_yahoo``
+    is given: it is rate-limited to one call per 50 s)."""
     from solaraalpha.data import trading212 as t212
 
-    lines = t212.lse_lines(t212.fetch_instruments())
+    if to_yahoo is None:
+        to_yahoo = {v: k for k, v in t212.lse_lines(t212.fetch_instruments()).items()}
     return Broker(
         positions=t212.fetch_positions(),
         pending=t212.fetch_pending(),
         history=t212.fetch_history(),
         dividends=t212.fetch_dividends(),
         transactions=t212.fetch_transactions(),
-        to_yahoo={v: k for k, v in lines.items()},
+        to_yahoo=to_yahoo,
     )
 
 
@@ -140,6 +143,20 @@ def _matcher(od: pd.DataFrame, br: Broker) -> Any:
         return oid
 
     return match, taken
+
+
+def _gone(ticker: str, b: Mapping[Any, Any], oid: int, status: str) -> Difference:
+    """A ``cancelling`` order the broker shows ended: the book ends it (absorbable)."""
+    return Difference(
+        "order_gone",
+        ticker,
+        f"order #{oid} ({b['purpose']} {_side(int(b['side']))} {int(b['qty'])}) is {status}:"
+        " the cancel is confirmed.",
+        f"cancel {oid} --reason 'cancelled at Trading212'",
+        int(b["position_id"]),
+        oid,
+        {"status": "cancelled", "reason": f"cancel confirmed ({status})"},
+    )
 
 
 def reconcile(conn: Conn, br: Broker) -> tuple[list[Difference], int]:
@@ -217,6 +234,8 @@ def reconcile(conn: Conn, br: Broker) -> tuple[list[Difference], int]:
                         oid,
                     )
                 )
+            elif b["status"] == "cancelling" and o["status"] != "filled":
+                diffs.append(_gone(tk, b, oid, str(o["status"])))  # part filled, then cancelled
             elif not _close(b["fill_price"], o["fill_price"]):
                 diffs.append(
                     Difference(
@@ -233,7 +252,9 @@ def reconcile(conn: Conn, br: Broker) -> tuple[list[Difference], int]:
                 matched += 1
         elif oid is not None:
             b = row(oid)
-            if b["status"] in book.LIVE_ORDER and b["status"] != "approved":
+            if b["status"] == "cancelling":  # the cancel the book asked for, confirmed
+                diffs.append(_gone(tk, b, oid, str(o["status"])))
+            elif b["status"] in book.LIVE_ORDER and b["status"] != "approved":
                 gone = f"order #{oid} ({b['purpose']} {_side(o['side'])} {int(b['qty'])} @ {_px(b['price'])}) is {o['status']} at Trading212"
                 if b["purpose"] == "stop":
                     diffs.append(
@@ -310,7 +331,7 @@ def reconcile(conn: Conn, br: Broker) -> tuple[list[Difference], int]:
                     oid,
                 )
             )
-        elif b["status"] == "approved":
+        elif b["status"] in ("approved", "sending"):
             diffs.append(
                 Difference(
                     "placed",
@@ -327,8 +348,11 @@ def reconcile(conn: Conn, br: Broker) -> tuple[list[Difference], int]:
             matched += 1
 
     # placed in the book, nowhere at the broker
-    for bo in od[od["status"].isin(["placed", "part_filled"])].to_dict("records"):
+    for bo in od[od["status"].isin(["placed", "part_filled", "cancelling"])].to_dict("records"):
         if int(bo["order_id"]) in taken:
+            continue
+        if bo["status"] == "cancelling":  # never reached the broker, or long gone from it
+            diffs.append(_gone(str(bo["ticker"]), bo, int(bo["order_id"]), "not at Trading212"))
             continue
         diffs.append(
             Difference(

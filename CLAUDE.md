@@ -115,17 +115,21 @@ Current state:
   words: per stock, numbered Trading212 steps (`portfolio/broker.py`: every approved order not
   yet placed, the order it replaces cancelled first, what to place once it fills, price alerts
   for the targets, why, what to tell back), then checks to report back (stop should have sold,
-  order past its date, dividend), alert changes, information, errors, undo commands.
+  order past its date, dividend), alert changes, information, errors, undo commands. Once the
+  execution job places the orders (`SOLARA_ORDERS_BY=system`, ADR 0031) the order steps give way
+  to its per-turn report (`notify.py --mode execute`: what was sent, booked, cancelled, refused).
 - **Desk errors** (docs/decisions/0032): every failure goes to the GitHub issue labelled
   `desk-errors` (what failed, what it means, what happened, the re-run command; repeats marked):
   the pipeline's ERRORs from `scan.yml` / `daily.yml`, the agents' ERRORs and unreviewed positions
-  from `agents.yml`, and a whole workflow failing from `desk-errors.yml` (no DB read). The serious
+  from `agents.yml`, the execution job's stops not at the broker, rejections and errors from
+  `execute.yml`, and a whole workflow failing from `desk-errors.yml` (no DB read). The serious
   ones (PM ERROR, a position unreviewed, a workflow failed) also head the inbox. ADR 0032 is the
   PM's review → delegate → approve loop (#239), built in slices; slices 1 (desk errors) and 2
   (the PM pack's "Must" cards) are built.
 - **No owner approval** (docs/decisions/0026): plans are approved as they are drafted and the
-  pipeline's revisions (pre-results trims / exits) are applied like the agents'; the owner only
-  places orders, sets alerts and reports placements and fills (`book.py reject` / `undo` override).
+  pipeline's revisions (pre-results trims / exits) are applied like the agents'; the execution
+  job places the orders (ADR 0031), so the owner only sets price alerts and reads the inbox
+  (`book.py reject` / `undo` override; an undo is cancelled at the broker by the next turn).
 - **Agents write through one door** (docs/decisions/0016): a `verdict.json` (schema:
   `record.py schema`) recorded with `scripts/record.py verdict`, which writes the `labels` row,
   a card under `model = stage` and the `evidence` rows on the same run. Agents can only
@@ -152,19 +156,29 @@ Current state:
   `trim_to_consistent` before use.
 - **Broker: Trading212, Stocks & Shares ISA** — long only, no margin, no commission, AIM has no
   stamp duty; not every AIM stock is offered there. Market, limit, stop (market) and stop-limit
-  orders and price alerts; **one open order per stock**, so the book never holds two live orders
-  for a stock: an exit / partial / add takes the stop order off until it fills or ends, a part
-  fill on a buy cancels the rest, no target orders (targets are price alerts). Breakout entries
-  are stop market orders (ADR 0026). **Trading212 API, read-only** (docs/decisions/0030):
-  `SOLARA_T212_KEY` / `SOLARA_T212_SECRET`, `SOLARA_T212_ENV` = `demo` (practice, default) / `live`;
-  GET only, never an order. The daily job first **books what it shows** (fills, orders placed or
-  ended, dividends paid; actor `broker`, ADR 0030 amendment) and raises the rest as `broker` owner
-  triggers with the `book.py` command to run; the scan drops stocks
-  Trading212 doesn't offer in GBX from the shortlist. Skipped silently without the keys.
-  **Order placement (ADR 0031, accepted, not built)**: an execution agent sends every order
-  through one guarded script, practice account only until the owner says otherwise; one order
-  per **unit** of stock (no OCO: live sells never exceed the shares held); stops swapped for an
-  exit only while the market is open; no orders by hand.
+  orders and price alerts; **one order per unit of stock** (ADR 0031): the sells working on a
+  holding never add up to more than it holds (Trading212 refuses the rest), so a buy (entry, add)
+  works beside the stop, a part fill on a buy cancels the rest, an exit goes out only once the
+  stop is swapped off its shares in market hours (a partial cuts the stop to the rest), no target
+  orders (targets are price alerts). Breakout entries are stop market orders (ADR 0026).
+  **Trading212 API** (docs/decisions/0030, 0031): `SOLARA_T212_KEY` / `SOLARA_T212_SECRET`,
+  `SOLARA_T212_ENV` = `demo` (practice, default) / `live`. The daily job first **books what it
+  shows** (fills, orders placed or ended, dividends paid; actor `broker`, ADR 0030 amendment) and
+  raises the rest as `broker` owner triggers with the `book.py` command to run; the scan drops
+  stocks Trading212 doesn't offer in GBX from the shortlist. Skipped silently without the keys.
+  **Orders go out through one door** (ADR 0031, built): `scripts/execute.py`
+  (`portfolio/execution.py`), only when `SOLARA_T212_TRADING` names the account (`off` by default;
+  `demo` in `execute.yml` only; `live` is the owner's to set). The **execution job** runs every 15
+  minutes in the London session and after each Agents run: it books fills, sends the stop on new
+  shares at once, sends what the book approved (exits only in market hours, the stop swapped off
+  first; an exit unfilled at 15:45 London is cancelled and the stop put back before the close),
+  writes `sending` before each call and lists the broker's orders before ever sending again, and
+  cancels at the broker (confirmed gone) whatever the book cancels (`cancelling` until then); the
+  **execution agent** (`/execute`) decides how and when a new order goes out (else the code sends
+  it as booked after 30 minutes), never what. Guards: approved, long only, per-unit sells, 10%
+  price band, free cash, position cap, circuit breaker. Every action is a row in `executions`.
+  The inbox reports what went out; it gives order steps only while the owner places them
+  (`SOLARA_ORDERS_BY` = owner); no orders by hand.
 - **Portfolio rules** (capital, risk per trade, position / sector / heat limits, entry validity,
   long-only, the pre-results event policy, the drawdown circuit breaker) live in `config/portfolio.toml`, read through `portfolio.rules.load_rules`. The owner
   set them on 2026-10-20 (`confirmed = true`: £5,000, 2% risk (1-3% by the PM's conviction, ADR 0027), 5 positions, 25% / 40% position
@@ -234,6 +248,9 @@ Current state:
 | Backtest the screen point-in-time and sweep the band thresholds (report only; bands unchanged) | `uv run python scripts/backtest.py [TICKERS...] [--years 5] [--step N] [--out FILE]` |
 | Label scorecard (forward returns per label / toolkit band) and trade journal | `uv run python scripts/learn.py scorecard [--since D]` / `journal` / `agents` (cost, tokens, minutes) / `agents-value` (did downgrades avoid losers; calibration) |
 | Book vs Trading212 (read-only API): fills, orders, holdings, dividends, cash; prints the commands to fix (`--book`: books fills, placed / ended orders, dividends first) | `uv run python scripts/book.py reconcile [--book]` |
+| Execution turn (the 15-minute job, code only): book fills, stops at once, send what is approved, swap stops for exits in market hours, the 15:45 exit deadline | `uv run python scripts/execute.py turn [--agent] [--report FILE]` (needs `SOLARA_T212_TRADING=demo`; `log [--since ISO]` reads the executions) |
+| Execution agent: how and when each order goes out (never what) | `/execute` in Claude Code → `scripts/execution_pack.py`, then `execute.py send ID [--type market\|limit] [--price P] --reason` / `hold ID --until ISO --reason` / `cancel ID --reason` / `note [ID] --reason` |
+| Swap a stop off an approved exit by hand (market hours; owner mode only) | `uv run python scripts/book.py swap EXIT_ORDER_ID` |
 | Results DB: which is in use, copy local ↔ Turso | `uv run python scripts/db.py status` / `push [--from PATH] [--append-new-runs]` / `pull [--to PATH]` |
 | Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `relative_strength` / `fundamentals` / `jet2_value` / `scan` |
 | Notebooks | `make notebook` |
@@ -349,6 +366,9 @@ src/solaraalpha/        importable package — all reusable code lives here
                         hit rate / average R / expectancy by exit reason and set-up
     reconcile.py        the book against Trading212 (fills, orders, holdings, dividends, net cash):
                         Difference rows with the book.py command; absorb books the plain ones — 0030
+    execution.py        orders to Trading212 through one guarded door: London calendar, guards
+                        (check), send (sending first; the stop-for-exit swap), settle (cancel,
+                        confirm, book the end state), turn, the agent's queue and pack — 0031
     shadow.py           shadow book: systematic baselines beside every decision, append-only
                         `shadow` table, record (scan / plan time) and load — 0028
 scripts/                thin CLI entry points (argparse) that call into the package
@@ -360,7 +380,8 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
                         (weekday daily check), agents.yml (unattended agents after both; inert
                         without a Claude secret), stock.yml (one stock), book.yml (book.py, plan.py,
                         weekly_pack.py against Turso, from GitHub), desk-errors.yml (a failed run →
-                        the desk-errors issue and the inbox)
+                        the desk-errors issue and the inbox), execute.yml (the execution job: every
+                        15 minutes in the session and after Agents; the only one that may trade)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
 .claude/skills/validate/  agent skill: re-checks a run's screen labels against the pack; downgrade only
@@ -372,14 +393,18 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
                         the PM memo; the buck stops here — 0027
 .claude/skills/monitor/   agent skill: structural change or noise on a triggered position; proposes one action
 .claude/skills/postmortem/  agent skill: post-mortem of a closed trade from its pack; setup / execution scores
+.claude/skills/execute/   agent skill: the execution trader: how and when each approved order goes to Trading212
+                        through execute.py (send, hold, lapse, one retry), never what — 0031
 .claude/agents/senior-quant.md  subagent: senior quant persona (technical / levels / RS toolkits, signal research,
                         trade simulation, memos to owner + PM); `claude --agent senior-quant` or delegate
 .claude/agents/portfolio-manager.md  subagent: PM persona (the book as a whole, allocation and rotations,
                         oversight of the agents, phases B / C, memos to owner); `claude --agent portfolio-manager`
+.claude/agents/execution-trader.md  subagent: execution trader persona (how and when orders reach the broker,
+                        fills vs plan, the execution code and guards); `claude --agent execution-trader`
 .claude/agents/fundamental-strategist.md  subagent: fundamentals / balance sheet / valuation / macro / policy
                         specialist (fundamentals toolkit, expectations, financing risk, event gaps, #214);
                         `claude --agent fundamental-strategist`
-.claude/hooks/guard_live_writes.py  PreToolUse guard the three subagents load: blocks live book / DB
+.claude/hooks/guard_live_writes.py  PreToolUse guard the four subagents load: blocks live book / DB
                         writes, workflow runs and inbox posts unless `SOLARA_ALLOW_WRITES=1`
 notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure; fakes.py (FakeTurso), conftest.py (db_backend)
@@ -429,7 +454,7 @@ GitHub issues are the backlog and the hand-off between threads/agents.
 
 ### Desk ownership
 
-The three subagents (`.claude/agents/`) each own an area; one owner per file. Others propose in
+The four subagents (`.claude/agents/`) each own an area; one owner per file. Others propose in
 the owner's issue rather than edit. Status lives in each agent's issue, never in its file.
 Decision rules live in the skills (`.claude/skills/`), never duplicated in a subagent file.
 
@@ -438,6 +463,7 @@ Decision rules live in the skills (`.claude/skills/`), never duplicated in a sub
 | `analysis/technical.py`, `levels.py`, `relative_strength.py`, `regime.py` (method), `backtest.py`, `scorecard.py`; the `fit.rank_score` formula and its test; `portfolio/shadow.py`; `docs/research/`; ADR 0029 | `senior-quant` | #210 |
 | `analysis/fundamentals.py`, `financing.py`, `events.py`, `jet2_value.py`; `data/fundamentals.py`, `announcements.py`; `catalysts.py`; `value_models`; the `growth` input to the rank; the fundamental content of `/events`, `/research`, `/macro` | `fundamental-strategist` | #214 |
 | `pm.py`, `portfolio/planner.py`, `plan.py`, `fit.py` (slots, sector, heat), `review.py`; the `/pm`, `/validate`, `/monitor`, `/postmortem` skills and the agent chain (`agents.yml`, failures, cost) | `portfolio-manager` | ADR 0027 phases; its current issue |
+| `portfolio/execution.py`, `scripts/execute.py`, `scripts/execution_pack.py`, the order calls in `data/trading212.py`, `execute.yml`, the `/execute` skill | `execution-trader` | #244 |
 | ADR 0022, bands, rank weights, `config/portfolio.toml`, the book and broker mechanics, data sources, anything unlisted; every live write (`SOLARA_ALLOW_WRITES=1`) | owner | — |
 - One issue = one deliverable. Title is imperative ("Persist events notes to the DB").
 - Body: **Context** (why, links to ADRs/PRs), **Scope** (what's in / out), **Acceptance**

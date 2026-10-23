@@ -20,9 +20,13 @@ def _load(name: str) -> Any:
     return json.loads((FIX / f"t212_{name}.json").read_text())
 
 
-def test_no_write_endpoint_anywhere() -> None:
+def test_one_write_door_behind_the_trading_switch() -> None:
+    """Every write goes through ``_write``, which checks ``trading_allowed`` first and uses the
+    session without retries (ADR 0031); reads keep the retrying session."""
     src = inspect.getsource(t212)
-    assert not re.search(r"\.(post|put|patch|delete|request)\(", src)
+    assert re.findall(r"\.(post|put|patch|delete|request)\(", src) == ["request"]
+    write = inspect.getsource(t212._write)
+    assert ".request(" in write and "trading_allowed()" in write and "_plain()" in write
     assert "session().get(" in src
 
 
@@ -87,8 +91,12 @@ def test_lse_lines_by_short_name() -> None:
 
 
 class _Resp:
-    def __init__(self, payload: Any, headers: dict[str, str] | None = None) -> None:
-        self.payload, self.headers = payload, headers or {}
+    def __init__(
+        self, payload: Any, headers: dict[str, str] | None = None, status_code: int = 200
+    ) -> None:
+        self.payload, self.headers, self.status_code = payload, headers or {}, status_code
+        self.content = b"" if payload is None else b"x"
+        self.text = json.dumps(payload)
 
     def raise_for_status(self) -> None:
         pass
@@ -163,3 +171,92 @@ def test_live_read_endpoints() -> None:
     assert t212.fetch_summary()["currency"] == "GBP"
     assert list(t212.fetch_positions().columns) == t212.POSITION_COLS
     assert list(t212.fetch_pending().columns) == t212.ORDER_COLS
+
+
+class _Writer:
+    """A no-retry session that answers each request in turn (or raises)."""
+
+    def __init__(self, answers: list[Any]) -> None:
+        self.answers, self.calls = answers, []  # type: ignore[var-annotated]
+
+    def request(self, method: str, url: str, **kw: Any) -> _Resp:
+        self.calls.append((method, url, kw.get("json")))
+        a = self.answers.pop(0)
+        if isinstance(a, Exception):
+            raise a
+        return a
+
+    def get(self, url: str, **kw: Any) -> _Resp:
+        return self.request("GET", url, **kw)
+
+
+@pytest.fixture
+def trading(keys: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "t212_trading", "demo")
+
+
+def test_place_sends_once_in_pence(trading: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    w = _Writer([_Resp(_load("place_limit"))])
+    monkeypatch.setattr(t212, "_plain", lambda: w)
+    o = t212.place("limit", "AAZl_EQ", 1, 1, 274.0)
+    assert w.calls == [
+        (
+            "POST",
+            "https://demo.trading212.com/api/v0/equity/orders/limit",
+            {
+                "ticker": "AAZl_EQ",
+                "quantity": 1,
+                "limitPrice": 274.0,
+                "timeValidity": "GOOD_TILL_CANCEL",
+            },
+        )
+    ]
+    assert o["id"] == "900000010" and o["status"] == "new" and o["price"] == 274.0
+    assert t212.order_body("stop", "AAZl_EQ", 73, -1, 337.0) == {
+        "ticker": "AAZl_EQ",
+        "quantity": -73,
+        "stopPrice": 337.0,
+        "timeValidity": "GOOD_TILL_CANCEL",
+    }
+    assert t212.order_body("market", "AAZl_EQ", 5, -1, None) == {
+        "ticker": "AAZl_EQ",
+        "quantity": -5,
+    }
+
+
+def test_write_errors(trading: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    import requests
+
+    now = 1000.0
+    monkeypatch.setattr(t212.time, "time", lambda: now)
+    w = _Writer(
+        [
+            _Resp(_load("error_not_owned"), status_code=400),
+            _Resp(_load("error_rate"), {"x-ratelimit-reset": "1003"}, status_code=429),
+            requests.Timeout("read timed out"),
+            _Resp({"x": 1}, status_code=502),
+            _Resp(None, status_code=200),
+            _Resp({"type": "/api-errors/entity-not-found"}, status_code=404),
+        ]
+    )
+    monkeypatch.setattr(t212, "_plain", lambda: w)
+    monkeypatch.setattr(t212.time, "sleep", lambda s: None)
+    with pytest.raises(t212.T212Error) as e:
+        t212.place("limit", "AAZl_EQ", 1, -1, 510.0)
+    assert e.value.status == 400 and e.value.type == "/api-errors/selling-equity-not-owned"
+    assert "owned: 0.0" in e.value.detail and not e.value.rate_limited
+    with pytest.raises(t212.T212Error) as e:
+        t212.place("stop", "AAZl_EQ", 1, 1, 510.0)
+    assert e.value.rate_limited and e.value.type == "TooManyRequests"
+    assert t212._reset["https://demo.trading212.com/api/v0/equity/orders/stop"] == 1003.0
+    with pytest.raises(t212.Unknown, match="Timeout"):
+        t212.place("limit", "AAZl_EQ", 1, 1, 274.0)
+    with pytest.raises(t212.Unknown, match="HTTP 502"):
+        t212.place("limit", "AAZl_EQ", 1, 1, 274.0)
+    t212.cancel("900000010")  # 200, empty body
+    assert w.calls[-1][:2] == (
+        "DELETE",
+        "https://demo.trading212.com/api/v0/equity/orders/900000010",
+    )
+    assert t212.fetch_order("900000010") is None  # 404: no longer working
+    assert len(w.calls) == 6  # each call sent once, none retried

@@ -1,11 +1,19 @@
-"""Trading212 public API (v0, beta), read-only: the owner's own account and the instrument list.
+"""Trading212 public API (v0, beta): the owner's own account, the instrument list, and orders.
 
 HTTP Basic with ``settings.t212_key`` / ``t212_secret``; ``settings.t212_env`` picks the practice
 (``demo``) or the real (``live``) account, and a key only works on the account it was made for.
-**GET only**: nothing here places, amends or cancels an order (ADR 0030). List endpoints are
-followed through ``nextPagePath``; when a response says no calls are left in the window
-(``x-ratelimit-remaining: 0``) the next call to that endpoint first sleeps until
-``x-ratelimit-reset`` instead of retrying into a 429. Not cached: the point is the broker's state now.
+Reads (ADR 0030) follow list endpoints through ``nextPagePath``; when a response says no calls
+are left in the window (``x-ratelimit-remaining: 0``, or a 429) the next call to that endpoint
+first sleeps until ``x-ratelimit-reset`` (a whole-second epoch) instead of retrying into a 429.
+Not cached: the point is the broker's state now.
+
+**Orders** (ADR 0031): :func:`place` and :func:`cancel` are called only by
+:mod:`solaraalpha.portfolio.execution` (``scripts/execute.py``, the one door with the guards).
+They refuse unless ``settings.t212_trading`` names the account in ``t212_env`` (``off`` by
+default; ``live`` only when the owner sets it), and they never retry: the API is not idempotent,
+so a call that may have reached the broker raises :class:`Unknown` and the caller lists the
+orders before ever sending again. A refusal comes back as :class:`T212Error` from the problem
+JSON (``type``, ``title``, ``detail``).
 
 Prices of LSE lines are in pence (the instrument's ``currency`` GBX), even where an order's
 ``currency`` reads GBP; money in ``walletImpact`` / cash / dividends is in GBP. Timestamps are
@@ -17,12 +25,14 @@ from __future__ import annotations
 
 import re
 import time
+from functools import cache
 from typing import Any
 
 import pandas as pd
+import requests
 
 from solaraalpha.config import settings
-from solaraalpha.data.http import DEFAULT_TIMEOUT, session
+from solaraalpha.data.http import DEFAULT_TIMEOUT, USER_AGENT, session
 from solaraalpha.log import get_logger
 
 log = get_logger(__name__)
@@ -38,24 +48,110 @@ def configured() -> bool:
     return bool(settings.t212_key.get_secret_value() and settings.t212_secret.get_secret_value())
 
 
-def _get(path: str, **params: Any) -> Any:
+class T212Error(Exception):
+    """Trading212 refused a call: HTTP ``status`` and its problem JSON. A 4xx means the call did
+    nothing at the broker (a 429 only that it came too soon)."""
+
+    def __init__(self, status: int, type: str = "", title: str = "", detail: str = "") -> None:
+        self.status, self.type, self.title, self.detail = status, type, title, detail
+        super().__init__(f"{status} {type or title}: {detail or title}".strip())
+
+    @property
+    def rate_limited(self) -> bool:
+        return self.status == 429
+
+
+class Unknown(Exception):
+    """A write that may or may not have reached the broker (timeout, connection lost, 5xx)."""
+
+
+def parse_error(status: int, payload: Any) -> T212Error:
+    """Problem JSON (``type``, ``title``, ``status``, ``detail``; a 429 has ``code`` /
+    ``context``) -> :class:`T212Error`."""
+    p = payload if isinstance(payload, dict) else {}
+    kind = str(p.get("type") or (p.get("context") or {}).get("type") or p.get("code") or "")
+    return T212Error(status, kind, str(p.get("title") or ""), str(p.get("detail") or ""))
+
+
+def _url(path: str) -> tuple[str, str]:
+    """``(url, rate-limit key)``; one key per endpoint, an order id counts as one endpoint."""
     env = settings.t212_env
     if env not in BASE:
         raise ValueError(f"SOLARA_T212_ENV must be demo or live, not {env!r}")
     if not configured():
         raise RuntimeError("Trading212 keys not set (SOLARA_T212_KEY / SOLARA_T212_SECRET)")
     url = BASE[env] + (path if path.startswith(API) else API + path)
-    key = url.split("?")[0]
+    return url, re.sub(r"/\d+$", "/{id}", url.split("?")[0])
+
+
+def _wait(key: str) -> None:
     wait = _reset.pop(key, 0.0) - time.time()
     if wait > 0:
         log.info("Trading212 rate limit: sleeping %.0fs", wait)
         time.sleep(min(wait + 1, 120))
-    auth = (settings.t212_key.get_secret_value(), settings.t212_secret.get_secret_value())
-    resp = session().get(url, params=params or None, auth=auth, timeout=DEFAULT_TIMEOUT)
+
+
+def _limits(key: str, resp: requests.Response) -> None:
+    if resp.status_code == 429 or resp.headers.get("x-ratelimit-remaining") == "0":
+        _reset[key] = float(resp.headers.get("x-ratelimit-reset", 0) or 0)
+
+
+def _auth() -> tuple[str, str]:
+    return (settings.t212_key.get_secret_value(), settings.t212_secret.get_secret_value())
+
+
+def _get(path: str, **params: Any) -> Any:
+    url, key = _url(path)
+    _wait(key)
+    resp = session().get(url, params=params or None, auth=_auth(), timeout=DEFAULT_TIMEOUT)
+    _limits(key, resp)
     resp.raise_for_status()
-    if resp.headers.get("x-ratelimit-remaining") == "0":
-        _reset[key] = float(resp.headers.get("x-ratelimit-reset", 0))
     return resp.json()
+
+
+@cache
+def _plain() -> requests.Session:
+    """A session with no retries: an order call is sent once (the API is not idempotent)."""
+    s = requests.Session()
+    s.headers["User-Agent"] = USER_AGENT
+    return s
+
+
+def trading_allowed() -> str | None:
+    """Why orders may not be sent now (None: they may): ``t212_trading`` must name the account
+    in ``t212_env`` (ADR 0031: practice only until the owner sets ``live``)."""
+    mode, env = settings.t212_trading, settings.t212_env
+    if mode == "off":
+        return "SOLARA_T212_TRADING is off: nothing is sent to Trading212"
+    if mode not in BASE:
+        return f"SOLARA_T212_TRADING must be off, demo or live, not {mode!r}"
+    if mode != env:
+        return f"SOLARA_T212_TRADING is {mode} but the account (SOLARA_T212_ENV) is {env}"
+    if not configured():
+        return "Trading212 keys not set (SOLARA_T212_KEY / SOLARA_T212_SECRET)"
+    return None
+
+
+def _write(method: str, path: str, body: dict[str, Any] | None = None) -> Any:
+    why = trading_allowed()
+    if why:
+        raise RuntimeError(why)
+    url, key = _url(path)
+    _wait(key)
+    try:
+        resp = _plain().request(method, url, json=body, auth=_auth(), timeout=DEFAULT_TIMEOUT)
+    except requests.RequestException as e:
+        raise Unknown(f"{method} {path}: {type(e).__name__}: {e}") from e
+    _limits(key, resp)
+    if resp.status_code >= 500:
+        raise Unknown(f"{method} {path}: HTTP {resp.status_code} {resp.text[:200]}")
+    if resp.status_code >= 400:
+        try:
+            payload = resp.json()
+        except ValueError:
+            payload = {"title": resp.text[:200]}
+        raise parse_error(resp.status_code, payload)
+    return resp.json() if resp.content else None
 
 
 def _pages(path: str, **params: Any) -> list[dict[str, Any]]:
@@ -275,3 +371,46 @@ def fetch_transactions() -> pd.DataFrame:
 def fetch_instruments() -> pd.DataFrame:
     """Every instrument Trading212 offers (one call; rate-limited to one per 50 s)."""
     return parse_instruments(_get("/equity/metadata/instruments"))
+
+
+# ---------------------------------------------------------------------------- orders (ADR 0031)
+
+ORDER_PATHS = {"market": "market", "limit": "limit", "stop": "stop"}
+
+
+def order_body(type: str, t212: str, qty: int, side: int, price: float | None) -> dict[str, Any]:
+    """The request body: ``quantity`` negative for a sell, prices in the quote currency (pence
+    for GBX lines, tested 2026-10-21), limit and stop orders good till cancelled."""
+    if type not in ORDER_PATHS:
+        raise ValueError(f"order type must be one of {tuple(ORDER_PATHS)}, got {type!r}")
+    body: dict[str, Any] = {"ticker": t212, "quantity": int(qty) * (1 if side > 0 else -1)}
+    if type == "limit":
+        body |= {"limitPrice": price, "timeValidity": "GOOD_TILL_CANCEL"}
+    elif type == "stop":
+        body |= {"stopPrice": price, "timeValidity": "GOOD_TILL_CANCEL"}
+    return body
+
+
+def place(type: str, t212: str, qty: int, side: int, price: float | None) -> dict[str, Any]:
+    """Place one order (sent once); returns it parsed as :func:`parse_pending` rows are."""
+    body = order_body(type, t212, qty, side, price)
+    return _order(_write("POST", f"/equity/orders/{ORDER_PATHS[type]}", body))
+
+
+def cancel(order_id: str) -> None:
+    """Ask Trading212 to cancel a working order. 404: it is not working (gone or never there)."""
+    _write("DELETE", f"/equity/orders/{order_id}")
+
+
+def fetch_order(order_id: str) -> dict[str, Any] | None:
+    """A working order by id, None once it is no longer working (404: filled, cancelled ...;
+    the history gives its end state)."""
+    url, key = _url(f"/equity/orders/{order_id}")
+    _wait(key)
+    resp = _plain().get(url, auth=_auth(), timeout=DEFAULT_TIMEOUT)
+    _limits(key, resp)
+    if resp.status_code == 404:
+        return None
+    if resp.status_code >= 400:
+        raise parse_error(resp.status_code, resp.json() if resp.content else {})
+    return _order(resp.json())

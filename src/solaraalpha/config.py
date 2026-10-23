@@ -30,13 +30,26 @@ class Settings(BaseSettings):
     # Hosted results DB (Turso). Unset: the local SQLite file at db_path is used.
     turso_url: str = ""
     turso_token: SecretStr = SecretStr("")
-    # Trading212 API, read-only (ADR 0030). Unset: no broker reconcile, no tradable check.
+    # Trading212 API (ADR 0030, 0031). Unset: no broker reconcile, no tradable check, no orders.
     t212_key: SecretStr = SecretStr("")
     t212_secret: SecretStr = SecretStr("")
     t212_env: str = "demo"  # demo (practice account) / live
+    # Orders are sent only when this names the account in t212_env (ADR 0031): off (default,
+    # nothing is sent) / demo; live is the owner's to set, never an agent's or a default.
+    t212_trading: str = "off"
+    # Who places the book's orders: owner (the inbox gives the steps) / system (the execution
+    # job sends them; the inbox reports what was sent). Read by the notifications only.
+    orders_by: str = "owner"
 
     @field_validator(
-        "turso_url", "turso_token", "t212_key", "t212_secret", "t212_env", mode="before"
+        "turso_url",
+        "turso_token",
+        "t212_key",
+        "t212_secret",
+        "t212_env",
+        "t212_trading",
+        "orders_by",
+        mode="before",
     )
     @classmethod
     def _unquote(cls, v: object) -> object:
