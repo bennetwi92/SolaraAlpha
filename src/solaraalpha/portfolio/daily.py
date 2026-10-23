@@ -92,8 +92,11 @@ class DailyResult:
 
 
 def last_daily_run(conn: Conn) -> str | None:
+    """When the last daily run that finished started: one that saved its triggers (a run that
+    crashed first saved none, and its window is looked at again rather than lost)."""
     row = conn.execute(
-        "SELECT started_at FROM runs WHERE script = 'daily' ORDER BY run_id DESC LIMIT 1"
+        "SELECT started_at FROM runs WHERE script = 'daily' AND run_id IN"
+        " (SELECT run_id FROM triggers) ORDER BY run_id DESC LIMIT 1"
     ).fetchone()
     return str(row[0]) if row else None
 

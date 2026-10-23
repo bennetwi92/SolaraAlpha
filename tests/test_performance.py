@@ -208,3 +208,24 @@ def test_history_script_offline(
     book.connect(empty).close()
     portfolio_cli.main(["--history", "--db", str(empty)])
     assert "No history yet" in capsys.readouterr().out
+
+
+def test_a_split_does_not_move_the_equity_curve(db_backend: Path | None) -> None:
+    from solaraalpha.portfolio import book
+    from solaraalpha.portfolio.performance import history_from_book
+
+    conn = book.connect(db_backend)
+    with conn:
+        book.cash_event(conn, "deposit", 5000.0, at="2026-09-01T08:00:00+00:00")
+        pid, oid = book.draft_position(
+            conn, "JET2.L", 1000.0, 900.0, 100, at="2026-09-01T09:00:00+00:00"
+        )
+        book.approve_position(conn, pid, at="2026-09-01T09:00:00+00:00")
+        book.fill(conn, oid, 100, 1000.0, at="2026-09-02T09:00:00+00:00")
+        book.split(conn, pid, "2:1", at="2026-09-10T07:00:00+00:00")
+    days = pd.bdate_range("2026-09-01", "2026-09-18", tz="UTC")
+    adjusted = pd.DataFrame({"close": 500.0}, index=days)  # Yahoo: 1000p before, adjusted back
+    adjusted.attrs["currency"] = "GBp"
+    eq, _, _ = history_from_book(conn, {"JET2.L": adjusted})
+    conn.close()
+    assert eq.iloc[-1] == pytest.approx(5000.0)  # 200 shares x 500p + £4,000 cash

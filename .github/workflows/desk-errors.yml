@@ -6,7 +6,7 @@ name: Desk errors
 
 on:
   workflow_run:
-    workflows: ["Weekly pipeline", "Daily check", "Agents", "Book", "Execution", "Desk reply"]
+    workflows: ["Weekly pipeline", "Daily check", "Agents", "Book", "Execution", "Desk reply", "Run one stock"]
     types: [completed]
 
 permissions:
@@ -15,7 +15,11 @@ permissions:
 
 jobs:
   report:
-    if: github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'timed_out'
+    # cancelled too: a run queued behind the shared `book` group is dropped when a newer one
+    # queues (GitHub keeps one pending run per group); Execution and Desk reply come round again
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'timed_out'
+      || (github.event.workflow_run.conclusion == 'cancelled' && github.event.workflow_run.name != 'Execution' && github.event.workflow_run.name != 'Desk reply')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

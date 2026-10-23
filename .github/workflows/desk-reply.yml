@@ -63,7 +63,9 @@ jobs:
           set -e
           if [ "$rc" = "0" ]; then echo "ask=true" >> "$GITHUB_OUTPUT"; elif [ "$rc" != "3" ]; then exit "$rc"; fi
       - name: The PM answers (/desk)
+        id: desk
         if: steps.pending.outputs.ask == 'true'
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -71,3 +73,16 @@ jobs:
           github_token: ${{ github.token }}  # the action otherwise wants an OIDC token (id-token: write)
           prompt: "/desk"
           claude_args: '--max-turns 30 --allowedTools "${{ env.ALLOWED_TOOLS }}"'
+      # /desk failed before its post: say so in the thread (which also stops the 10-minute retry
+      # of the same message all day), then fail the run so the desk errors report it
+      - name: The PM could not answer
+        if: steps.desk.outcome == 'failure'
+        run: |
+          set +e
+          uv run --no-sync python scripts/chat.py pending > /dev/null
+          rc=$?
+          set -e
+          if [ "$rc" = "0" ]; then
+            uv run --no-sync python scripts/chat.py post --as agent:pm "I couldn't answer that just now (the run failed: see the desk-errors issue). Ask again and I'll pick it up."
+          fi
+          exit 1

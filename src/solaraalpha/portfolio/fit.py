@@ -78,6 +78,7 @@ def fit(
     returns: Mapping[str, pd.Series] | None = None,
     sectors: Mapping[str, str] | None = None,
     drawdown: float | None = None,
+    cash: float | None = None,
 ) -> FitReport:
     """Check ``plans`` against the book in rank order (highest ``scores`` first, ties by ticker).
 
@@ -92,7 +93,9 @@ def fit(
     (26-week weekly-return correlation with a holding > 0.7) and the plan's **event** flag only
     flag. **Circuit breaker** (#143): with ``rules.circuit_breaker`` on and ``drawdown`` (equity
     vs its high, <= 0) below ``-rules.max_drawdown_new_entries``, every plan is rejected with
-    ``circuit breaker: drawdown X% > Y%``; open positions are untouched.
+    ``circuit breaker: drawdown X% > Y%``; open positions are untouched. **Cash**: with
+    ``cash`` (GBP to spend, default ``equity.cash``), the pending entries' and accepted plans'
+    value may not take it below ``cash_buffer`` x equity (each plan is sized against all of it).
     """
     tripped = (
         rules.circuit_breaker
@@ -124,6 +127,11 @@ def fit(
             for sec, val in df.groupby("sector")["value"].sum().items():
                 by_sector[str(sec)] = by_sector.get(str(sec), 0.0) + float(val)
 
+    free = (
+        (equity.cash if cash is None else cash)
+        - rules.cash_buffer * equity.equity
+        - _sum(pending, "value")
+    )
     accepted: list[TradePlan] = []
     rejected: list[tuple[TradePlan, str]] = []
     flags: dict[str, list[str]] = {}
@@ -159,10 +167,13 @@ def fit(
         elif equity.equity > 0 and (risk_total + plan.risk_amount) / equity.equity > rules.max_heat:
             heat = (risk_total + plan.risk_amount) / equity.equity
             reason = f"heat would be {heat:.1%} > max_heat {rules.max_heat:.1%}"
+        elif plan.position_value > free + 0.01:
+            reason = f"cash: needs £{plan.position_value:,.0f}, £{max(free, 0):,.0f} free"
         if reason:
             rejected.append((plan, f"rejected_by_fit: {reason}"))
             continue
         accepted.append(plan)
+        free -= plan.position_value
         risk_total += plan.risk_amount
         by_sector[sec] = by_sector.get(sec, 0.0) + plan.position_value
     return FitReport(accepted, rejected, flags, [p.ticker for p in order], drawdown, bool(tripped))

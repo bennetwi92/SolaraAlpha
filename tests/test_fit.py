@@ -222,3 +222,17 @@ def test_circuit_breaker_off_below_and_above_the_limit() -> None:
         ("A.L", "rejected_by_fit: circuit breaker: drawdown 12% > 10%"),
         ("B.L", "rejected_by_fit: circuit breaker: drawdown 12% > 10%"),
     ]
+
+
+def test_the_weeks_plans_share_the_cash() -> None:
+    plans = [plan("A.L", value=3000.0), plan("B.L", value=3000.0), plan("C.L", value=1500.0)]
+    scores = {"A.L": 0.9, "B.L": 0.5, "C.L": 0.1}
+    roomy = rules(max_positions=10, max_sector_pct=1.0, max_heat=1.0)
+    # £8,000 cash, £500 buffer (5% of £10,000): A takes 3,000, B 3,000, C's 1,500 still fits
+    rep = fit(plans, EMPTY, EMPTY, EQ, roomy, scores, sectors=SECTORS)
+    assert [p.ticker for p in rep.accepted] == ["A.L", "B.L", "C.L"]
+    # a pending entry's planned cost is spoken for: C no longer fits
+    pending = holdings(("D.L", 1000.0, 50.0))
+    rep = fit(plans, EMPTY, pending, EQ, roomy, scores, sectors=SECTORS)
+    assert [p.ticker for p in rep.accepted] == ["A.L", "B.L"]
+    assert rep.rejected[0][1] == "rejected_by_fit: cash: needs £1,500, £500 free"

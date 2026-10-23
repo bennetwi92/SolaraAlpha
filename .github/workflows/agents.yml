@@ -465,7 +465,7 @@ jobs:
       - if: steps.agent.outcome == 'failure'
         run: |
           ticker=$(uv run --no-sync python -c "from solaraalpha.portfolio import book; c = book.connect(); print(book.position_state(c, ${{ matrix.position }}).ticker)")
-          uv run --no-sync python scripts/record.py error "$ticker" --run "${{ needs.gate.outputs.run }}" --stage monitor \
+          uv run --no-sync python scripts/record.py error "$ticker" --run "${{ needs.gate.outputs.run }}" --stage monitor --if-missing \
             --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }}, position ${{ matrix.position }})" || true
 
   postmortem:
@@ -505,7 +505,7 @@ jobs:
       - if: steps.agent.outcome == 'failure'
         run: |
           ticker=$(uv run --no-sync python -c "from solaraalpha.portfolio import book; c = book.connect(); print(book.position_state(c, ${{ matrix.position }}).ticker)")
-          uv run --no-sync python scripts/record.py error "$ticker" --run "${{ needs.gate.outputs.run }}" --stage postmortem \
+          uv run --no-sync python scripts/record.py error "$ticker" --run "${{ needs.gate.outputs.run }}" --stage postmortem --if-missing \
             --position "${{ matrix.position }}" \
             --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }}, position ${{ matrix.position }})" || true
 

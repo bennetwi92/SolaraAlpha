@@ -14,6 +14,7 @@ from solaraalpha.data.announcements import Issuer
 from solaraalpha.portfolio import book
 from solaraalpha.portfolio.daily import Fetchers, render_daily, run_daily
 from solaraalpha.portfolio.triggers import (
+    Trigger,
     entry_break,
     event_due,
     filing_triggers,
@@ -250,6 +251,10 @@ def world(db_backend: Path | None) -> tuple[Path | None, dict[str, pd.DataFrame]
     )
     store.save_label(scan, "JET2.L", "screen", "ACT", "all ACT", path=db_backend)
     prev = store.start_run("daily", {}, path=db_backend)
+    # it finished: it saved its triggers (a crashed run did not, and its window is looked at again)
+    store.save_triggers(
+        prev, [Trigger("W.L", "error", None, None, {"reason": "news: x"})], path=db_backend
+    )
     conn = book.connect(db_backend)
     with conn:
         conn.execute(
@@ -430,6 +435,9 @@ def test_one_failure_does_not_stop_the_rest(
     assert "W.L** closed 805.0" in out and "place entry order" in out  # the others still ran
     conn = book.connect(db)
     err = store.load_triggers(kind="error", conn=conn)
+    err = err[
+        err["run_id"] == err["run_id"].max()
+    ]  # this run's (the fixture's earlier run has one)
     assert list(err["ticker"]) == ["JET2.L"] and err["position_id"].isna().all()
     md = notify.desk_errors(conn, int(err["run_id"].iloc[0]), "pipeline")
     conn.close()
@@ -504,3 +512,16 @@ def test_the_watch_list_is_the_latest_full_weekly_scans(db_backend: Path | None)
     watch = latest_watch(conn)
     conn.close()
     assert list(watch) == ["W.L"] and watch["W.L"]["run_id"] == week
+
+
+def test_a_daily_run_that_crashed_does_not_move_the_window(db_backend: Path | None) -> None:
+    from solaraalpha.portfolio.daily import last_daily_run
+
+    done = store.start_run("daily", {}, path=db_backend)
+    store.save_triggers(done, [Trigger("W.L", "error", None, None, {})], path=db_backend)
+    store.start_run("daily", {}, path=db_backend)  # crashed before saving its triggers
+    conn = book.connect(db_backend)
+    since = last_daily_run(conn)
+    started = str(store.run_info(done, conn=conn)["started_at"])
+    conn.close()
+    assert since == started
