@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from solaraalpha import store
+from solaraalpha import notify, store
 from solaraalpha.data.announcements import Issuer
 from solaraalpha.portfolio import book
 from solaraalpha.portfolio.daily import Fetchers, render_daily, run_daily
@@ -423,13 +424,36 @@ def test_one_failure_does_not_stop_the_rest(
         "run_daily",
         lambda conn, save, args: run_daily(conn, _fetchers(frames, fail="JET2.L"), save, args),
     )
-    with pytest.raises(SystemExit) as e:
-        daily_cli.main(["--db", str(db)] if db else [])
-    assert e.value.code == 1
+    daily_cli.main(["--save", *(["--db", str(db)] if db else [])])  # no exit: the monitor runs
     out = capsys.readouterr().out
     assert "- JET2.L: prices: ConnectionError: Yahoo down" in out
     assert "W.L** closed 805.0" in out and "place entry order" in out  # the others still ran
-    assert "saved run" not in out
+    conn = book.connect(db)
+    err = store.load_triggers(kind="error", conn=conn)
+    assert list(err["ticker"]) == ["JET2.L"] and err["position_id"].isna().all()
+    md = notify.desk_errors(conn, int(err["run_id"].iloc[0]), "pipeline")
+    conn.close()
+    assert md and "**JET2.L** `daily` failed: prices: ConnectionError: Yahoo down" in md
+
+
+def test_the_daily_job_fails_when_no_stock_could_be_checked(
+    world: tuple[Path | None, dict[str, pd.DataFrame]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db, frames = world
+
+    def down(ticker: str) -> pd.DataFrame:
+        raise ConnectionError("Yahoo down")
+
+    monkeypatch.setattr(
+        daily_cli,
+        "run_daily",
+        lambda conn, save, args: run_daily(
+            conn, dataclasses.replace(_fetchers(frames), daily=down), save, args
+        ),
+    )
+    with pytest.raises(SystemExit) as e:
+        daily_cli.main(["--db", str(db)] if db else [])
+    assert e.value.code == 1
 
 
 def test_market_regime_heads_the_report(

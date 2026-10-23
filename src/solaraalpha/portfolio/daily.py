@@ -396,7 +396,9 @@ def run_daily(
         )
 
     if run_id is not None:
-        store.save_triggers(run_id, result.triggers, conn=conn)
+        # the errors too (kind ``error``), so the desk errors report them without the job failing
+        errs = [Trigger(t, "error", None, None, {"reason": e}, today) for t, e in result.errors]
+        store.save_triggers(run_id, result.triggers + errs, conn=conn)
     return result
 
 

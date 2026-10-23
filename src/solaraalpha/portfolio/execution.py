@@ -309,14 +309,20 @@ def breaker_tripped(conn: Conn, now: Any, rules: Rules) -> float | None:
 
 
 def check(
-    conn: Conn, order_id: int, last: float | None, now: Any, rules: Rules | None = None
+    conn: Conn,
+    order_id: int,
+    last: float | None,
+    now: Any,
+    rules: Rules | None = None,
+    sell_room: bool = True,
 ) -> None:
     """Refuse (:class:`Refused`) an order the guards don't let out (ADR 0031): it must be
     approved (or rejected once, for the agent's retry), long only, the side its purpose says;
     nothing else of the position still cancelling at the broker; a sell within the shares not
     already under a working sell; a limit (or buy stop) within :data:`PRICE_BAND` of ``last``;
     a buy inside the free cash and the position cap, and none while the circuit breaker is on.
-    A sell stop is not price-checked: its job is to be below the market."""
+    A sell stop is not price-checked: its job is to be below the market. ``sell_room`` False
+    skips the per-unit check (an exit before its swap: the stop still holds the shares)."""
     rules = rules or load_rules()
     o = book._order(conn, order_id)
     status = book.order_status(conn, order_id)
@@ -338,7 +344,7 @@ def check(
             f"order #{int(busy['order_id'].iloc[0])} of the position is still cancelling at"
             " Trading212: confirm it gone first"
         )
-    if side == -1:
+    if side == -1 and sell_room:
         try:
             book.check_sell(conn, order_id)
         except ValueError as e:
@@ -411,6 +417,31 @@ def _override(conn: Conn, order_id: int, type: str | None, price: float | None, 
     )
 
 
+def _stop_back(
+    conn: Conn,
+    client: Client,
+    position_id: int,
+    now: Any,
+    prices: Prices,
+    actor: str,
+    rules: Rules,
+    sleep: Callable[[float], None],
+) -> None:
+    """An exit that did not go out after its swap (refused or rejected): the stop back on every
+    share at once, so the holding never waits for a later turn without one."""
+    if book.position_status(conn, position_id) != "open":
+        return
+    with conn:
+        new = book.protect(conn, position_id, actor=actor)
+    if new is None or book.order_status(conn, new) != "approved":
+        return
+    why = "the stop back: the exit did not go out"
+    try:
+        send(conn, client, new, now, prices, actor, why, rules=rules, sleep=sleep)
+    except Refused as e:  # e.g. the old stop still cancelling: the next turn sends it
+        record(conn, new, "refused", str(e), actor)
+
+
 def send(
     conn: Conn,
     client: Client,
@@ -441,6 +472,10 @@ def send(
                 "an exit goes out only in market hours, before"
                 f" {deadline_text(now)}: the stop stays on until then"
             )
+        # every guard the swap can't change first: a refusal after it leaves the shares bare
+        if not client.ticker(ticker):
+            raise Refused(f"Trading212 doesn't offer {ticker} in GBX")
+        check(conn, order_id, prices.last(ticker), now, rules, sell_room=False)
         with conn:
             swapped = book.swap_for_exit(conn, order_id, actor)
         if swapped["cancelled"] is not None:
@@ -449,13 +484,18 @@ def send(
             new = swapped["stop_order_id"]
             if new is not None and book.order_status(conn, int(new)) == "approved":
                 send(conn, client, int(new), now, prices, actor, "the stop on the shares left")
-        if book.order_status(conn, order_id) != "approved":
+        if book.order_status(conn, order_id) not in ("approved", "rejected"):
             record(conn, order_id, "dropped", "the position changed during the swap", actor)
             return "dropped"
     t212_ticker = client.ticker(ticker)
     if not t212_ticker:
         raise Refused(f"Trading212 doesn't offer {ticker} in GBX")
-    check(conn, order_id, prices.last(ticker), now, rules)
+    try:
+        check(conn, order_id, prices.last(ticker), now, rules)
+    except Refused:
+        if o["purpose"] == "exit":
+            _stop_back(conn, client, pid, now, prices, actor, rules, sleep)
+        raise
     side, qty = int(o["side"]), int(o["qty"])
     px = None if pd.isna(o["price"]) else float(o["price"])
     terms = {"type": str(o["type"]), "qty": qty, "side": side, "price": px, "t212": t212_ticker}
@@ -471,6 +511,8 @@ def send(
                 return "refused"
             book.order_event(conn, order_id, "rejected", actor=actor, reason=str(e))
             record(conn, order_id, "rejected", str(e), actor, {**terms, "status": e.status})
+        if o["purpose"] == "exit":
+            _stop_back(conn, client, pid, now, prices, actor, rules, sleep)
         return "rejected"
     except t212.Unknown as e:
         with conn:
@@ -624,12 +666,13 @@ def turn(
                 )
                 record(conn, oid, "unknown", "never reached Trading212: back to approved", actor)
 
-    if not exit_window(now):  # an exit refused after its swap: the stop back on every share
-        work = od[(od["purpose"] == "exit") & (od["status"] == "approved")]
-        for pid in dict.fromkeys(int(x) for x in work["position_id"]):
-            if book.position_status(conn, pid) == "open":
-                with conn:
-                    book.protect(conn, pid, actor=actor)
+    # an exit refused after its swap (out of the window) or rejected: the stop back on every share
+    back = ["rejected"] if exit_window(now) else ["rejected", "approved"]
+    work = od[(od["purpose"] == "exit") & od["status"].isin(back)]
+    for pid in dict.fromkeys(int(x) for x in work["position_id"]):
+        if book.position_status(conn, pid) == "open":
+            with conn:
+                book.protect(conn, pid, actor=actor)
 
     if past_deadline(now):
         work = od[(od["purpose"] == "exit") & od["status"].isin(["placed", "part_filled"])]

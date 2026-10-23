@@ -340,3 +340,24 @@ def test_scan_reviews_open_positions_and_leaves_the_stop_to_the_monitor(
     conn = book.connect()
     assert len(book.orders(conn, pid)) == 2 and book.position_state(conn, pid).stop == 1400.0
     conn.close()
+
+
+def test_scan_reviews_a_held_stock_it_also_screens(
+    stubs: dict[str, float],
+    fake_turso: FakeTurso,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    conn = book.connect()
+    with conn:
+        pid, oid = book.draft_position(
+            conn, "HELD.L", 1500.0, 1400.0, 100, at="2026-09-13T18:00:00+00:00"
+        )
+        book.approve_position(conn, pid)
+        book.fill(conn, oid, 100, 1500.0, at="2026-09-14T09:00:00+00:00")
+    conn.close()
+    scan.main(["HELD.L", "--save"])  # screened and reviewed in the same run: no key clash
+    assert "HELD.L     review hold" in capsys.readouterr().out
+    cards = store.load_cards(1, "HELD.L")
+    assert cards["review"]["position_id"] == pid and "position" in cards
+    steps = store.load_steps("HELD.L")
+    assert steps["toolkit"].is_unique and "screen" in set(steps["stage"])

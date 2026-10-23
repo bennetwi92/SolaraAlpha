@@ -257,11 +257,30 @@ def review_positions(
         if run_id is not None:
             with conn:
                 item.event_revision_id = propose_event_action(conn, state, card, rules, run_id)
-                rows = [(s.stage, s.toolkit, s.status, s.reason) for s in steps]
+                # a held stock the scan also screened has its cards and steps in this run
+                # already (same date, same keys): save only what the review adds
+                saved = {
+                    str(r[0])
+                    for r in conn.execute(
+                        "SELECT DISTINCT model FROM results WHERE run_id = ? AND ticker = ?",
+                        (run_id, state.ticker),
+                    ).fetchall()
+                }
+                done = {
+                    str(r[0])
+                    for r in conn.execute(
+                        "SELECT toolkit FROM steps WHERE run_id = ? AND ticker = ?",
+                        (run_id, state.ticker),
+                    ).fetchall()
+                }
+                rows = [
+                    (s.stage, s.toolkit, s.status, s.reason) for s in steps if s.toolkit not in done
+                ]
+                new = {m: c for m, c in {**cards, "review": card}.items() if m not in saved}
                 store.save_ticker(
                     run_id,
                     state.ticker,
-                    {**cards, "review": card},
+                    new,
                     x.fetched("daily"),
                     x.fetched("fund"),
                     steps=rows,
