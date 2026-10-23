@@ -43,8 +43,13 @@ env:
   MAX_TURNS: 60
   # who places orders (ADR 0031): the execution job once it has keys and trading is not off
   SOLARA_ORDERS_BY: ${{ (secrets.SOLARA_T212_KEY != '' && vars.SOLARA_T212_TRADING != 'off') && 'system' || 'owner' }}
-  # Tools the skills need: our scripts, files, and the web for research.
-  ALLOWED_TOOLS: Bash(uv run python scripts/*),Bash(uv run --no-sync python scripts/*),Read,Write,Edit,Glob,Grep,WebSearch,WebFetch
+  # Tools the skills need (and no more: the agents read the web, so a prompt injection must not
+  # reach code or the book): the scripts the skills name, files written only under
+  # data/processed/ (the packs and verdicts), and the web for research. No bare Read / Grep: they
+  # would reach outside the repo (the environment, with its secrets); reads and greps inside the
+  # repo need no permission. A value model in config/value_models.toml adds its script here.
+  ALLOWED_TOOLS: >-
+    Bash(uv run python scripts/announcement.py *),Bash(uv run --no-sync python scripts/announcement.py *),Bash(uv run python scripts/chat.py *),Bash(uv run --no-sync python scripts/chat.py *),Bash(uv run python scripts/events.py *),Bash(uv run --no-sync python scripts/events.py *),Bash(uv run python scripts/jet2_value.py *),Bash(uv run --no-sync python scripts/jet2_value.py *),Bash(uv run python scripts/monitor_pack.py *),Bash(uv run --no-sync python scripts/monitor_pack.py *),Bash(uv run python scripts/pm_pack.py *),Bash(uv run --no-sync python scripts/pm_pack.py *),Bash(uv run python scripts/postmortem_pack.py *),Bash(uv run --no-sync python scripts/postmortem_pack.py *),Bash(uv run python scripts/record.py *),Bash(uv run --no-sync python scripts/record.py *),Bash(uv run python scripts/validate_pack.py *),Bash(uv run --no-sync python scripts/validate_pack.py *),Bash(uv run python scripts/plan.py --dry-run *),Bash(uv run --no-sync python scripts/plan.py --dry-run *),Edit(data/processed/**),Glob,WebSearch,WebFetch
   # The desk thread's Telegram mirror (ADR 0033); unset, the agents still post to the DB thread.
   SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
   SOLARA_TELEGRAM_CHAT: ${{ secrets.SOLARA_TELEGRAM_CHAT }}

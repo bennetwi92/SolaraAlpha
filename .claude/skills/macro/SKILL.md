@@ -56,12 +56,13 @@ not a gate). `ERROR` if the research could not be done.
 
 ## Step 4: Record
 
-Write `verdict.json` per `uv run python scripts/record.py schema` with `stage: "macro"`,
+Write `verdict.json` in `data/processed/macro/<run>/<name>/` (the agents may write files only
+under `data/processed/`) per `uv run python scripts/record.py schema` with `stage: "macro"`,
 `ticker: "_SECTOR:<name>"`, `run_id`, `label`, `confidence`, `reasons`, `scores`, `evidence`,
 `note_md`, and in `checks` as strings: `{"members": "A.L,B.L", "drivers": "fuel,consumer"}`.
 
 ```
-uv run python scripts/record.py verdict <dir>/verdict.json --actor agent:macro
+uv run python scripts/record.py verdict data/processed/macro/<run>/<name>/verdict.json --actor agent:macro
 ```
 
 The downgrade rule does not apply to macro notes (there is no screen label for a sector).
