@@ -239,9 +239,13 @@ def metrics(
     ratios = ratios[ratios.index <= as_of]
     both = ratios.dropna(subset=["pe", "fwd_pe"])
     fresh = len(both) > 0 and as_of - both.index[-1] <= pd.Timedelta(weeks=FRESH_WEEKS)
-    m["fwd_eps_growth"] = (
-        float(both["pe"].iloc[-1] / both["fwd_pe"].iloc[-1] - 1) if fresh else np.nan
-    )
+    # pe / fwd_pe = forward EPS / TTM EPS; over |TTM| (as _growth does) so a loss turning to a
+    # profit, or shrinking, counts as growth: the sign of the TTM EPS is the sign of the P/E
+    if fresh:
+        pe_t, pe_f = float(both["pe"].iloc[-1]), float(both["fwd_pe"].iloc[-1])
+        m["fwd_eps_growth"] = (pe_t / pe_f - 1) * float(np.sign(pe_t))
+    else:
+        m["fwd_eps_growth"] = np.nan
     m["eps_revision"] = np.nan
     fwd = (ratios["mcap"] / ratios["fwd_pe"]).dropna()  # forward earnings, in money
     if fresh and len(fwd):

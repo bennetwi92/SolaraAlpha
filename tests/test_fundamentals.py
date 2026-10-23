@@ -145,6 +145,16 @@ def test_a_loss_over_negative_equity_is_no_return_on_equity() -> None:
     assert np.isnan(card.roe)  # was +0.5: a top quality input for a distressed company
 
 
+def test_a_loss_turning_to_a_profit_is_forward_growth() -> None:
+    fund = _fund()
+    last = fund.loc[fund["field"] == "trailingPeRatio", "date"].max()
+    at = fund["date"] == last
+    fund.loc[at & (fund["field"] == "trailingPeRatio"), "value"] = -20.0  # a loss now
+    fund.loc[at & (fund["field"] == "trailingForwardPeRatio"), "value"] = 15.0  # a profit ahead
+    card = fundamentals_card(fund, _weekly())
+    assert card.fwd_eps_growth == pytest.approx(7 / 3)  # (15/20 + 1): was -7/3, the most bearish
+
+
 def test_growth_direction() -> None:
     weekly = _weekly()
     up = fundamentals_card(_synthetic([1.0, 1.2, 1.5], [100, 120, 150]), weekly)

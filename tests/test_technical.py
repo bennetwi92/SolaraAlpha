@@ -87,6 +87,14 @@ def test_assess_position_hold_then_exit() -> None:
     assert pos.action == "exit" and pos.score == -1
 
 
+def test_the_trail_ignores_the_entry_weeks_high_before_the_entry() -> None:
+    df = _weekly(_wiggle(81, 0.0))
+    entry = df.index[80]  # the last week: the position has seen only its entry week
+    df.loc[entry, "high"] = df.loc[entry, "close"] * 1.5  # a spike before the entry that week
+    pos = assess_position(df, entry)
+    assert pos.stop < df.loc[entry, "close"] and pos.action == "hold"  # was a stop above the close
+
+
 def test_assess_position_short_and_errors() -> None:
     df = _weekly(_wiggle(120, -0.01))
     pos = assess_position(df, "2021-06-01", side=-1, entry_price=float(df["close"].iloc[75]))

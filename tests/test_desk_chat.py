@@ -136,3 +136,36 @@ def test_unanswered_since_the_pm_posted(db_backend: Path | None, telegram: _Tele
         assert desk_chat.unanswered(conn).empty
     finally:
         conn.close()
+
+
+def test_a_message_pulled_while_the_pm_wrote_still_waits(
+    db_backend: Path | None, telegram: _Telegram
+) -> None:
+    conn = desk_chat.connect(db_backend)
+    try:
+        # the owner wrote (Telegram time 1792300001, 2026) before the PM's reply below was
+        # posted, but it reached the thread only after it
+        desk_chat.post("agent:pm", "Answering your earlier question.", conn=conn)
+        telegram.updates = [_msg(1, 42, "And what about AVG?")]
+        desk_chat.pull_owner(conn)
+        assert list(desk_chat.unanswered(conn)["text"]) == ["And what about AVG?"]
+        desk_chat.post("agent:pm", "Weekly allocation done.", 12, "_BOOK", conn=conn)
+        assert len(desk_chat.unanswered(conn)) == 1  # the weekly /pm update answers nobody
+    finally:
+        conn.close()
+
+
+def test_the_same_update_is_stored_once(
+    db_backend: Path | None, telegram: _Telegram, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    telegram.updates = [_msg(1, 42, "Hello?")]
+    stale = telegram.post
+    # another job pulled meanwhile: this one asks Telegram from before that pull
+    monkeypatch.setattr(telegram, "post", lambda url, json, timeout: stale(url, {}, timeout))
+    conn = desk_chat.connect(db_backend)
+    try:
+        desk_chat.pull_owner(conn)
+        desk_chat.pull_owner(conn)
+        assert list(desk_chat.thread(conn=conn)["text"]) == ["Hello?"]
+    finally:
+        conn.close()

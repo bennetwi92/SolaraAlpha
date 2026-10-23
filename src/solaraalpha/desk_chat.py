@@ -118,8 +118,12 @@ def pull_owner(conn: store.Conn) -> int:
         at = datetime.fromtimestamp(m["date"], UTC).isoformat()
         rows.append((at, "owner", m["text"], None, None, u["update_id"]))
     if rows:
-        with conn:
-            conn.executemany("INSERT INTO chat VALUES (?, ?, ?, ?, ?, ?)", rows)
+        with conn:  # another job may have pulled the same update meanwhile: once each
+            conn.executemany(
+                "INSERT INTO chat SELECT ?, ?, ?, ?, ?, ?"
+                " WHERE NOT EXISTS (SELECT 1 FROM chat WHERE update_id = ?)",
+                [(*r, r[-1]) for r in rows],
+            )
     return len(rows)
 
 
@@ -141,12 +145,15 @@ def pull(path: Path | None = None) -> int:
 
 
 def unanswered(conn: store.Conn, by: str = "agent:pm") -> pd.DataFrame:
-    """The owner's messages since ``by`` last posted (oldest first): what the desk reply job
-    (``desk-reply.yml``) wakes the PM for. Pull first (:func:`pull_owner`)."""
+    """The owner's messages since ``by`` last answered (oldest first): what the desk reply job
+    (``desk-reply.yml``) wakes the PM for. Pull first (:func:`pull_owner`). An answer is a post
+    with no run (the weekly ``/pm`` update carries its run and answers nobody); "since" is the
+    order the thread received them in, so a message pulled while the PM was writing still
+    waits even though Telegram dates it before the reply."""
     return store.query(
-        "SELECT at, text FROM chat WHERE author = 'owner'"
-        " AND at > COALESCE((SELECT MAX(at) FROM chat WHERE author = ?), '')"
-        " ORDER BY at, rowid",
+        "SELECT at, text FROM chat WHERE author = 'owner' AND rowid >"
+        " COALESCE((SELECT MAX(rowid) FROM chat WHERE author = ? AND run_id IS NULL), 0)"
+        " ORDER BY rowid",
         conn,
         [by],
     )
