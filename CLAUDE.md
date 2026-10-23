@@ -124,6 +124,8 @@ Current state:
   to the owner's Telegram, and the owner's replies there come back into the thread as `owner`
   (questions and context, never a bypass of a skill or the book; pulled by every agent read and
   by `daily.py --save`, `scan.py --save` and each `execute.py turn`, inside Telegram's 24-hour hold).
+  **The PM answers the owner**: `desk-reply.yml` every 10 minutes 06:30-23:30 UK runs `/desk`
+  (answer-only, one post as `agent:pm`) only when the owner wrote since the PM last posted.
   Every agent skill reads it
   before deciding (`chat.py read`) and posts one short update after recording (`chat.py post`).
 - **Desk errors** (docs/decisions/0032): every failure goes to the GitHub issue labelled
@@ -239,7 +241,8 @@ Current state:
 | Post-mortem pack for a closed position (record + weekly bars, hindsight labelled) | `uv run python scripts/postmortem_pack.py POSITION_ID` / `--since ISO` |
 | Post-mortem (agent): set-up, what worked / failed, signal right or wrong, rule proposals | `/postmortem POSITION_ID` in Claude Code → `record.py verdict ... --position ID` |
 | Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `revision FILE --position ID` / `prior JET2.L [--stage research]` / `schema`; runner: `error TICKER --run N --stage S --reason ...` / `queue --run N --stage S` / `latest-run` / `outcome --run N --stage S` / `usage --run N --ticker T --stage S --file execution.json` |
-| Desk thread: read (pulls the owner's Telegram replies first) / post / find the Telegram chat id | `uv run python scripts/chat.py read [--last 30] [--ticker T]` / `post --as agent:NAME [--run N] [--ticker T] (TEXT \| --file F)` / `chats` |
+| Desk thread: read (pulls the owner's Telegram replies first) / post / the owner's unanswered messages / find the Telegram chat id | `uv run python scripts/chat.py read [--last 30] [--ticker T]` / `post --as agent:NAME [--run N] [--ticker T] (TEXT \| --file F)` / `pending` (exit 3 = none) / `chats` |
+| PM answers the owner in the desk thread (agent; answer-only) | `/desk` in Claude Code |
 | Daily check: prices, triggers (stops, targets, gaps, breaks), new filings and headlines | `uv run python scripts/daily.py [--save] [--report FILE]` |
 | Notify the owner only when something needs them (exit 3 = nothing) | `uv run python scripts/notify.py --mode daily\|weekly --run N [--channel stdout\|github-issue]` |
 | Desk errors for a run / a failed workflow (exit 3 = nothing) | `uv run python scripts/notify.py --mode errors --run N --part pipeline\|agents [--channel github-errors]` / `--mode job-failed --workflow NAME --url URL` |
@@ -392,7 +395,8 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
                         without a Claude secret), stock.yml (one stock), book.yml (book.py, plan.py,
                         weekly_pack.py against Turso, from GitHub), desk-errors.yml (a failed run →
                         the desk-errors issue and the inbox), execute.yml (the execution job: every
-                        15 minutes in the session and after Agents; the only one that may trade)
+                        15 minutes in the session and after Agents; the only one that may trade),
+                        desk-reply.yml (every 10 minutes 06:30-23:30 UK: the PM answers the owner)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
 .claude/skills/validate/  agent skill: re-checks a run's screen labels against the pack; downgrade only
@@ -404,6 +408,7 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
                         the PM memo; the buck stops here — 0027
 .claude/skills/monitor/   agent skill: structural change or noise on a triggered position; proposes one action
 .claude/skills/postmortem/  agent skill: post-mortem of a closed trade from its pack; setup / execution scores
+.claude/skills/desk/      agent skill: the PM answering the owner's desk-thread messages; read-only + one post — 0033
 .claude/skills/execute/   agent skill: the execution trader: how and when each approved order goes to Trading212
                         through execute.py (send, hold, lapse, one retry), never what — 0031
 .claude/agents/senior-quant.md  subagent: senior quant persona (technical / levels / RS toolkits, signal research,

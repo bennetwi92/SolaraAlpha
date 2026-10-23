@@ -6,7 +6,7 @@ name: Desk errors
 
 on:
   workflow_run:
-    workflows: ["Weekly pipeline", "Daily check", "Agents", "Book", "Execution"]
+    workflows: ["Weekly pipeline", "Daily check", "Agents", "Book", "Execution", "Desk reply"]
     types: [completed]
 
 permissions:
