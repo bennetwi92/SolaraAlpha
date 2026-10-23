@@ -124,9 +124,7 @@ def _num(v: Any) -> float | None:
 
 def weekly_scan(conn: Conn, run_id: int) -> bool:
     """Whether ``run_id`` is a full weekly scan (``scan.py`` over the watchlist, no toolkit)."""
-    info = store.run_info(run_id, conn=conn)
-    args = json.loads(str(info["args"]) or "{}")
-    return info["script"] == "scan" and not args.get("tickers") and not args.get("toolkit")
+    return run_id in store.weekly_scans(conn)
 
 
 def inputs_for(conn: Conn, run_id: int, ticker: str, as_seen: str) -> Inputs:

@@ -821,6 +821,18 @@ def run_info(run_id: int, path: Path | None = None, conn: Conn | None = None) ->
     return {str(k): v for k, v in df.iloc[0].items()}
 
 
+def weekly_scans(conn: Conn) -> list[int]:
+    """Run ids of the full weekly scans (``scan.py`` over the watchlist, no ticker list and no
+    toolkit), oldest first: a one-stock scan is never "the week's run"."""
+    rows = conn.execute("SELECT run_id, args FROM runs WHERE script = 'scan' ORDER BY run_id")
+    out = []
+    for run_id, args in rows.fetchall():
+        a = json.loads(str(args or "{}"))
+        if not a.get("tickers") and not a.get("toolkit"):
+            out.append(int(run_id))
+    return out
+
+
 def latest(model: str, path: Path | None = None) -> pd.DataFrame:
     """Most recent ``model`` card per ticker, one row each — for screening across stocks."""
     df = load_results(model=model, path=path)
