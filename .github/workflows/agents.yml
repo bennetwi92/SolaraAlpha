@@ -43,6 +43,9 @@ env:
   MAX_TURNS: 60
   # Tools the skills need: our scripts, files, and the web for research.
   ALLOWED_TOOLS: Bash(uv run python scripts/*),Bash(uv run --no-sync python scripts/*),Read,Write,Edit,Glob,Grep,WebSearch,WebFetch
+  # The desk thread's Telegram mirror (ADR 0033); unset, the agents still post to the DB thread.
+  SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
+  SOLARA_TELEGRAM_CHAT: ${{ secrets.SOLARA_TELEGRAM_CHAT }}
 
 jobs:
   gate:

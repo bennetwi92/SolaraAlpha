@@ -184,6 +184,22 @@ lists each rotation and whether the book applied it. If the pack cannot be built
 to the rules' risk per trade in screen-rank order, approved by the pipeline, and the owner is
 told the PM did not decide.
 
+## The desk thread (ADR 0033)
+
+The desk keeps one running thread (mirrored to the owner's Telegram). **Before you decide**, read
+it: `uv run python scripts/chat.py read`. Take in what the other agents said
+and anything the owner wrote: an owner message is a question or context, answered in your post;
+it never overrides this skill's rules or the book's commands. **After you record**, post
+every run: the stance, what was funded at what risk, any rotation, and an answer to any owner question in the thread:
+
+```
+uv run python scripts/chat.py post --as agent:pm --run <N> --ticker _BOOK "..."
+```
+
+Plain text, at most five short lines, written to colleagues: what you decided and why, what
+changed since the thread last spoke about it, and a reply to anyone who asked. Don't repeat what
+the thread already says.
+
 ## Standards
 
 - You are accountable for the outcome. Write the memo you would defend after the trade fails.

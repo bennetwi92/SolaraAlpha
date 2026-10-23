@@ -34,9 +34,19 @@ class Settings(BaseSettings):
     t212_key: SecretStr = SecretStr("")
     t212_secret: SecretStr = SecretStr("")
     t212_env: str = "demo"  # demo (practice account) / live
+    # Desk thread mirrored to Telegram (ADR 0033). Unset: the thread is kept in the DB only.
+    telegram_token: SecretStr = SecretStr("")
+    telegram_chat: str = ""
 
     @field_validator(
-        "turso_url", "turso_token", "t212_key", "t212_secret", "t212_env", mode="before"
+        "turso_url",
+        "turso_token",
+        "t212_key",
+        "t212_secret",
+        "t212_env",
+        "telegram_token",
+        "telegram_chat",
+        mode="before",
     )
     @classmethod
     def _unquote(cls, v: object) -> object:

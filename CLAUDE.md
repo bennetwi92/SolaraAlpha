@@ -116,6 +116,12 @@ Current state:
   yet placed, the order it replaces cancelled first, what to place once it fills, price alerts
   for the targets, why, what to tell back), then checks to report back (stop should have sold,
   order past its date, dividend), alert changes, information, errors, undo commands.
+- **Desk thread** (docs/decisions/0033): one running chat the agents post to, like a team chat.
+  The thread is the `chat` table in the results DB (`desk_chat.py`), so every agent reads what was
+  said before it posts; with `SOLARA_TELEGRAM_TOKEN` / `SOLARA_TELEGRAM_CHAT` each post is also sent
+  to the owner's Telegram, and the owner's replies there come back into the thread as `owner`
+  (questions and context, never a bypass of a skill or the book). Every agent skill reads it
+  before deciding (`chat.py read`) and posts one short update after recording (`chat.py post`).
 - **Desk errors** (docs/decisions/0032): every failure goes to the GitHub issue labelled
   `desk-errors` (what failed, what it means, what happened, the re-run command; repeats marked):
   the pipeline's ERRORs from `scan.yml` / `daily.yml`, the agents' ERRORs and unreviewed positions
@@ -217,6 +223,7 @@ Current state:
 | Post-mortem pack for a closed position (record + weekly bars, hindsight labelled) | `uv run python scripts/postmortem_pack.py POSITION_ID` / `--since ISO` |
 | Post-mortem (agent): set-up, what worked / failed, signal right or wrong, rule proposals | `/postmortem POSITION_ID` in Claude Code → `record.py verdict ... --position ID` |
 | Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `revision FILE --position ID` / `prior JET2.L [--stage research]` / `schema`; runner: `error TICKER --run N --stage S --reason ...` / `queue --run N --stage S` / `latest-run` / `outcome --run N --stage S` / `usage --run N --ticker T --stage S --file execution.json` |
+| Desk thread: read (pulls the owner's Telegram replies first) / post / find the Telegram chat id | `uv run python scripts/chat.py read [--last 30] [--ticker T]` / `post --as agent:NAME [--run N] [--ticker T] (TEXT \| --file F)` / `chats` |
 | Daily check: prices, triggers (stops, targets, gaps, breaks), new filings and headlines | `uv run python scripts/daily.py [--save] [--report FILE]` |
 | Notify the owner only when something needs them (exit 3 = nothing) | `uv run python scripts/notify.py --mode daily\|weekly --run N [--channel stdout\|github-issue]` |
 | Desk errors for a run / a failed workflow (exit 3 = nothing) | `uv run python scripts/notify.py --mode errors --run N --part pipeline\|agents [--channel github-errors]` / `--mode job-failed --workflow NAME --url URL` |
@@ -271,6 +278,8 @@ src/solaraalpha/        importable package — all reusable code lives here
   value_models.py       register of per-stock value models (config/value_models.toml) for research
   dashboard.py          render_dashboard: one self-contained HTML page from the DB (inline CSS,
                         base64 PNG charts, md_to_html for the pack) — #136
+  desk_chat.py          the desk thread: append-only `chat` table, post (+ Telegram), pull the
+                        owner's replies, read / render — 0033
   notify.py             owner notifications: daily and weekly inbox messages in plain words (broker
                         steps, checks, alerts, info, errors, undo); channels stdout / GitHub inbox
                         issue — 0021, 0026
