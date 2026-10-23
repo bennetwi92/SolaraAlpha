@@ -45,6 +45,9 @@ env:
   SOLARA_ORDERS_BY: ${{ (secrets.SOLARA_T212_KEY != '' && vars.SOLARA_T212_TRADING != 'off') && 'system' || 'owner' }}
   # Tools the skills need: our scripts, files, and the web for research.
   ALLOWED_TOOLS: Bash(uv run python scripts/*),Bash(uv run --no-sync python scripts/*),Read,Write,Edit,Glob,Grep,WebSearch,WebFetch
+  # The desk thread's Telegram mirror (ADR 0033); unset, the agents still post to the DB thread.
+  SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
+  SOLARA_TELEGRAM_CHAT: ${{ secrets.SOLARA_TELEGRAM_CHAT }}
 
 jobs:
   gate:

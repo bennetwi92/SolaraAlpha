@@ -79,3 +79,10 @@ or leave it; never retry the same thing.
 Nothing to write by hand: every command records itself (the `executions` table), and the job
 reports to the inbox. If the pack can't be read or a command fails for a reason you can't fix,
 `note` it and stop; the code carries on without you.
+
+## The desk thread (ADR 0033)
+
+Read it first: `uv run --no-sync python scripts/chat.py read --last 20`. When the turn sent,
+held, retried or let lapse an order, post one line per stock after your commands: what went
+out, at what, and why (`uv run --no-sync python scripts/chat.py post --as agent:execute --ticker
+<TICKER> "..."`). A turn with nothing decided is silent.

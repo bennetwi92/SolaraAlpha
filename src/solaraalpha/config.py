@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # Who places the book's orders: owner (the inbox gives the steps) / system (the execution
     # job sends them; the inbox reports what was sent). Read by the notifications only.
     orders_by: str = "owner"
+    # Desk thread mirrored to Telegram (ADR 0033). Unset: the thread is kept in the DB only.
+    telegram_token: SecretStr = SecretStr("")
+    telegram_chat: str = ""
 
     @field_validator(
         "turso_url",
@@ -49,6 +52,8 @@ class Settings(BaseSettings):
         "t212_env",
         "t212_trading",
         "orders_by",
+        "telegram_token",
+        "telegram_chat",
         mode="before",
     )
     @classmethod

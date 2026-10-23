@@ -2,7 +2,8 @@
 """PreToolUse guard for the desk subagents (.claude/agents/*.md): no live writes by default.
 
 Blocks a Bash command that would write the book or the results DB, trigger a workflow, post to
-the inbox or send / cancel an order at Trading212 (``execute.py``), unless the session was started with SOLARA_ALLOW_WRITES=1 (the owner's go-ahead:
+the inbox or the desk thread, or send / cancel an order at Trading212 (``execute.py``), unless
+the session was started with SOLARA_ALLOW_WRITES=1 (the owner's go-ahead:
 `SOLARA_ALLOW_WRITES=1 claude --agent portfolio-manager`). A script segment with `--db PATH`
 writes a local file, so it is allowed. Stdlib only; reads the hook JSON on stdin.
 """
@@ -30,6 +31,7 @@ ALWAYS = [  # outward-facing: a local --db does not make these safe
     re.compile(r"\bgh\s+(?:workflow\s+run|run\s+rerun)\b"),
     re.compile(r"notify\.py\b.*--channel\s+github-issue"),
     re.compile(r"execute\.py\b.*\b(?:turn|send|cancel)\b"),  # orders at Trading212 (ADR 0031)
+    re.compile(r"chat\.py\s+post\b"),  # the desk thread, sent to Telegram (ADR 0033)
 ]
 
 

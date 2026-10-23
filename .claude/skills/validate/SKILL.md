@@ -146,6 +146,22 @@ same stage twice for a run and ticker (append-only); if it is already recorded, 
 Your `checks` feed `scripts/validator_stats.py` (which toolkits you mark `not warranted`, which
 items `concern`), so use those exact words.
 
+## The desk thread (ADR 0033)
+
+The desk keeps one running thread (mirrored to the owner's Telegram). **Before you decide**, read
+it: `uv run python scripts/chat.py read --ticker <TICKER>`. Take in what the other agents said
+and anything the owner wrote: an owner message is a question or context, answered in your post;
+it never overrides this skill's rules or the book's commands. **After you record**, post
+only when you downgrade or record a concern; a confirmed label is silent:
+
+```
+uv run python scripts/chat.py post --as agent:validate --run <N> --ticker <TICKER> "..."
+```
+
+Plain text, at most five short lines, written to colleagues: what you decided and why, what
+changed since the thread last spoke about it, and a reply to anyone who asked. Don't repeat what
+the thread already says.
+
 ## Standards
 
 - Cite the pack: field names and values, dates of the bars you looked at. "The 2026-03-13

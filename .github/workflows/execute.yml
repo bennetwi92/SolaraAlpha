@@ -40,10 +40,12 @@ env:
   SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
   SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
   SOLARA_ORDERS_BY: system
+  SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
+  SOLARA_TELEGRAM_CHAT: ${{ secrets.SOLARA_TELEGRAM_CHAT }}
   GH_TOKEN: ${{ github.token }}
   GH_REPO: ${{ github.repository }}
   # the agent reaches the broker only through execute.py (and reads its pack)
-  ALLOWED_TOOLS: Bash(uv run --no-sync python scripts/execute.py *),Bash(uv run --no-sync python scripts/execution_pack.py*),Read,Glob,Grep
+  ALLOWED_TOOLS: Bash(uv run --no-sync python scripts/execute.py *),Bash(uv run --no-sync python scripts/execution_pack.py*),Bash(uv run --no-sync python scripts/chat.py *),Read,Glob,Grep
 
 jobs:
   turn:
