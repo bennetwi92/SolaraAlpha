@@ -15,7 +15,7 @@ After the pipeline, every **open position** in the book is reviewed (portfolio.r
 toolkits re-run with the position's entry, the trailing stop (context for the daily monitor,
 which sets stops: ADR 0024, never drafted here), deterioration since entry and the horizon rule
 judged into a `review` card; an exit is reported, never drafted. Add --save to record the scan as one run in
-the results DB (every stock's cards, steps, a `labels` row per stock and input snapshots),
+the results DB (every stock's cards, steps, a `labels` row per stock and input snapshots) and pull the owner's Telegram replies into the desk thread (ADR 0033),
 --report FILE to append a markdown summary (GitHub Actions: "$GITHUB_STEP_SUMMARY") and
 --run-id-file FILE to write the saved run id. A saved full scan also records the screen's
 shadow-book baselines (top 5 by rank, random 2 from the shortlist; ADR 0028). Exits 1 if any toolkit errored (after reporting
@@ -31,6 +31,7 @@ from typing import Any
 
 import pandas as pd
 
+from solaraalpha import desk_chat
 from solaraalpha.catalysts import fresh_catalysts
 from solaraalpha.data import trading212
 from solaraalpha.pipeline import (
@@ -192,6 +193,8 @@ def main(argv: list[str] | None = None) -> None:
 
     inputs = [Inputs(t) for t in args.tickers or watchlist()]
     run_id = start_run("scan", vars(args)) if args.save else None
+    if args.save:
+        desk_chat.pull()  # the weekend's only scheduled pull (ADR 0033)
     catalysts: dict[str, str] | None = None  # ticker -> one-line reason (#193)
     if args.toolkit:
         params = {k: _value(v) for k, v in (kv.split("=", 1) for kv in args.param)}

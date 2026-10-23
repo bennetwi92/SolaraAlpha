@@ -36,3 +36,11 @@ chat app suits a running conversation better.
 replies). Messages sent to Telegram are on Telegram's servers; nothing beyond what the inbox
 already says should go there (no keys, no account numbers). Later: the pipeline could post scan
 and daily summaries to the same thread.
+
+**Amendment (2026-10-23).** Telegram keeps a bot's undelivered updates for 24 hours only, and the
+pull ran only when an agent read the thread, so an owner message sent on a quiet day could be
+dropped before anything read it. The scheduled jobs now pull too (`desk_chat.pull`, never fails
+the job): `execute.py turn` (every 15 minutes in the London session), `daily.py --save` (weekday
+evenings) and `scan.py --save` (Sunday). The gap left is Saturday: a message sent Friday evening
+after the daily job is lost if nothing reads before Saturday evening. Offline tests blank the
+Telegram settings, as they do the Trading212 keys.

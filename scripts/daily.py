@@ -16,6 +16,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from solaraalpha import desk_chat
 from solaraalpha.portfolio import book
 from solaraalpha.portfolio.daily import render_daily, run_daily
 
@@ -27,6 +28,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--db", type=Path, default=None, help="local DB file (default: configured DB)")
     p.add_argument("--run-id-file", type=Path, help="write the saved run id to this file")
     args = p.parse_args(argv)
+    if args.save:
+        desk_chat.pull(args.db)
     conn = book.connect(args.db)
     try:
         result = run_daily(conn, save=args.save, args=vars(args))

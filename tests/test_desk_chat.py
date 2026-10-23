@@ -102,3 +102,22 @@ def test_failed_send_keeps_the_post(
 def test_empty_message_refused(db_backend: Path | None) -> None:
     with pytest.raises(ValueError):
         desk_chat.post("agent:pm", "  ", path=db_backend)
+
+
+def test_pull_for_jobs(db_backend: Path | None, telegram: _Telegram) -> None:
+    telegram.updates = [_msg(1, 42, "Anything on JET2?"), _msg(2, 7, "someone else")]
+    assert desk_chat.pull(db_backend) == 1
+    assert desk_chat.pull(db_backend) == 0
+    assert list(desk_chat.thread(path=db_backend)["author"]) == ["owner"]
+
+
+def test_pull_never_raises(monkeypatch: pytest.MonkeyPatch, telegram: _Telegram) -> None:
+    def boom(path: Path | None = None) -> None:
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(desk_chat, "connect", boom)
+    assert desk_chat.pull() == 0
+
+
+def test_pull_off_without_telegram(db_backend: Path | None) -> None:
+    assert desk_chat.pull(db_backend) == 0

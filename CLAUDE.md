@@ -122,7 +122,9 @@ Current state:
   The thread is the `chat` table in the results DB (`desk_chat.py`), so every agent reads what was
   said before it posts; with `SOLARA_TELEGRAM_TOKEN` / `SOLARA_TELEGRAM_CHAT` each post is also sent
   to the owner's Telegram, and the owner's replies there come back into the thread as `owner`
-  (questions and context, never a bypass of a skill or the book). Every agent skill reads it
+  (questions and context, never a bypass of a skill or the book; pulled by every agent read and
+  by `daily.py --save`, `scan.py --save` and each `execute.py turn`, inside Telegram's 24-hour hold).
+  Every agent skill reads it
   before deciding (`chat.py read`) and posts one short update after recording (`chat.py post`).
 - **Desk errors** (docs/decisions/0032): every failure goes to the GitHub issue labelled
   `desk-errors` (what failed, what it means, what happened, the re-run command; repeats marked):
