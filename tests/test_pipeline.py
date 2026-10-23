@@ -329,6 +329,14 @@ def test_real_toolkits_share_one_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
     assert lev.status in ("act", "watch", "pass") and "compressed" in lev.reason
 
 
+def test_technical_skips_position_until_a_week_closes_after_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(toolkits, "fetch_daily", lambda ticker: _daily())
+    tech = run_toolkit("technical", Inputs("TEST.L"), {"entry_date": "2026-10-14"})
+    assert tech.status in ("act", "watch", "pass") and set(tech.cards) == {"technical"}
+
+
 def _step(toolkit: str, label: str, reason: str = "", **fields: object) -> Step:
     @dataclass(frozen=True)
     class C:
