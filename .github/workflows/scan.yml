@@ -39,6 +39,8 @@ jobs:
       - run: uv sync --no-default-groups
       - name: Pipeline
         env:
+          SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
+          SOLARA_TELEGRAM_CHAT: ${{ secrets.SOLARA_TELEGRAM_CHAT }}
           SOLARA_T212_KEY: ${{ secrets.SOLARA_T212_KEY }}
           SOLARA_T212_SECRET: ${{ secrets.SOLARA_T212_SECRET }}
           SOLARA_T212_ENV: ${{ vars.SOLARA_T212_ENV || 'demo' }}

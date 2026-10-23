@@ -123,6 +123,23 @@ def pull_owner(conn: store.Conn) -> int:
     return len(rows)
 
 
+def pull(path: Path | None = None) -> int:
+    """Pull the owner's new Telegram messages into the thread from a scheduled job, so none
+    outlives Telegram's 24-hour hold on undelivered updates. Never raises: a job's own work
+    matters more than the pull. Returns how many were added."""
+    if not enabled():
+        return 0
+    try:
+        conn = connect(path)
+        try:
+            return pull_owner(conn)
+        finally:
+            conn.close()
+    except Exception as e:
+        log.warning("desk thread pull failed: %s", e)
+        return 0
+
+
 def thread(
     last: int = 30,
     ticker: str | None = None,

@@ -10,14 +10,16 @@ from fakes import FakeTurso, start_fake_turso
 
 @pytest.fixture(autouse=True)
 def no_broker_keys(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Offline tests never reach the owner's Trading212 account, whatever the environment
-    holds (network tests keep the keys)."""
+    """Offline tests never reach the owner's Trading212 account or Telegram chat, whatever the
+    environment holds (network tests keep the keys)."""
     if request.node.get_closest_marker("network"):
         return
     from solaraalpha.config import settings
 
     monkeypatch.setattr(settings, "t212_key", SecretStr(""))
     monkeypatch.setattr(settings, "t212_secret", SecretStr(""))
+    monkeypatch.setattr(settings, "telegram_token", SecretStr(""))
+    monkeypatch.setattr(settings, "telegram_chat", "")
 
 
 @pytest.fixture

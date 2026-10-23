@@ -18,7 +18,8 @@ when, never what; every one needs its --reason and goes through the guards (appr
 book, long only, per-unit sells, 10% price band, free cash, position cap, circuit breaker).
 
 Orders go out only when SOLARA_T212_TRADING names the account in SOLARA_T212_ENV (demo; live is
-the owner's to set). Never wrap these in another transaction: `sending` is written before each
+the owner's to set). turn also pulls the owner's Telegram replies into the desk thread (ADR
+0033). Never wrap these in another transaction: `sending` is written before each
 call. --db PATH for a local file.
 """
 
@@ -30,6 +31,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from solaraalpha import desk_chat
 from solaraalpha.portfolio import book, execution
 from solaraalpha.portfolio.execution import AGENT, LiveClient, Refused
 
@@ -83,6 +85,7 @@ def main(argv: list[str] | None = None) -> None:
     conn = book.connect(a.db)
     try:
         if a.cmd == "turn":
+            desk_chat.pull(a.db)  # every 15 minutes in the session (ADR 0033)
             res = execution.turn(conn, LiveClient(), agent=a.agent)
             text = _report(res)
             print(text)
