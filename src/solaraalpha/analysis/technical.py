@@ -215,11 +215,16 @@ def assess_position(
     price = float(entry_price if entry_price is not None else sc.loc[held[0], "close"])
     initial_stop = price - side * STOP_ATR * float(sc.loc[before[-1], "atr"])
     w = weekly.loc[held]
+    # the entry week's high / low may come from sessions before the entry: count only what the
+    # position saw for sure (the entry price and that week's close)
+    high, low = w["high"].copy(), w["low"].copy()
+    high.iloc[0] = max(price, float(w["close"].iloc[0]))
+    low.iloc[0] = min(price, float(w["close"].iloc[0]))
     if side == 1:
-        trail = w["high"].cummax() - STOP_ATR * sc.loc[held, "atr"]
+        trail = high.cummax() - STOP_ATR * sc.loc[held, "atr"]
         stop = trail.clip(lower=initial_stop).cummax()
     else:
-        trail = w["low"].cummin() + STOP_ATR * sc.loc[held, "atr"]
+        trail = low.cummin() + STOP_ATR * sc.loc[held, "atr"]
         stop = trail.clip(upper=initial_stop).cummin()
     # A week's close is judged against the stop set at the end of the previous week.
     live_stop = stop.shift().fillna(initial_stop)
