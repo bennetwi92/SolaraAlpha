@@ -140,6 +140,18 @@ def pull(path: Path | None = None) -> int:
         return 0
 
 
+def unanswered(conn: store.Conn, by: str = "agent:pm") -> pd.DataFrame:
+    """The owner's messages since ``by`` last posted (oldest first): what the desk reply job
+    (``desk-reply.yml``) wakes the PM for. Pull first (:func:`pull_owner`)."""
+    return store.query(
+        "SELECT at, text FROM chat WHERE author = 'owner'"
+        " AND at > COALESCE((SELECT MAX(at) FROM chat WHERE author = ?), '')"
+        " ORDER BY at, rowid",
+        conn,
+        [by],
+    )
+
+
 def thread(
     last: int = 30,
     ticker: str | None = None,

@@ -44,3 +44,11 @@ the job): `execute.py turn` (every 15 minutes in the London session), `daily.py 
 evenings) and `scan.py --save` (Sunday). The gap left is Saturday: a message sent Friday evening
 after the daily job is lost if nothing reads before Saturday evening. Offline tests blank the
 Telegram settings, as they do the Trading212 keys.
+
+**Amendment (2026-10-23): the PM answers.** The owner wants an answer without waiting for the next
+agent run. `desk-reply.yml` runs every 10 minutes, 06:30-23:30 Europe/London, every day: it pulls
+the owner's messages and, only when the owner has written since `agent:pm` last posted
+(`chat.py pending`, `desk_chat.unanswered`), runs the `/desk` skill: the PM, answer-only (read-only
+tools plus one post as `agent:pm`; no verdicts, no book writes, a request to change something gets
+the command or goes into the next `/pm` run). No message, no Claude run. A failed reply fails the
+workflow (`desk-errors.yml`) and is retried on the next tick while the message stays unanswered.

@@ -1,0 +1,72 @@
+# Desk reply (docs/decisions/0033): every 10 minutes, 06:30-23:30 UK time, pull the owner's
+# Telegram messages into the desk thread and, only when the owner has written since the PM last
+# posted, run the PM's answer-only skill (/desk) to reply there. Nothing written: no Claude run.
+# Inert without a Claude secret, the Telegram secrets or the Turso secrets. The PM reads and
+# answers; it changes nothing in the book (the skill's tools are read-only plus its one post).
+name: Desk reply
+
+on:
+  schedule:
+    - cron: "*/10 5-23 * * *"  # UTC; the gate keeps 06:30-23:30 Europe/London (BST and GMT)
+  workflow_dispatch:
+
+concurrency:
+  group: desk-reply
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+  SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+  SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
+  SOLARA_TELEGRAM_CHAT: ${{ secrets.SOLARA_TELEGRAM_CHAT }}
+  # read-only lookups and the one post as the PM (.claude/skills/desk/SKILL.md)
+  ALLOWED_TOOLS: >-
+    Bash(uv run --no-sync python scripts/chat.py pending*),Bash(uv run --no-sync python scripts/chat.py read*),Bash(uv run --no-sync python scripts/chat.py post --as agent:pm *),Bash(uv run --no-sync python scripts/book.py list*),Bash(uv run --no-sync python scripts/book.py show *),Bash(uv run --no-sync python scripts/book.py revisions*),Bash(uv run --no-sync python scripts/portfolio.py),Bash(uv run --no-sync python scripts/record.py latest-run*),Bash(uv run --no-sync python scripts/record.py prior *),Bash(uv run --no-sync python scripts/pm_pack.py *),Read,Glob,Grep,WebSearch,WebFetch
+
+jobs:
+  reply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - id: gate
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          now=$(TZ=Europe/London date +%H%M)
+          if [ "${{ github.event_name }}" = "schedule" ] && { [ "$now" -lt 630 ] || [ "$now" -ge 2330 ]; }; then
+            echo "go=false" >> "$GITHUB_OUTPUT"; echo "outside 06:30-23:30 UK ($now)" >> "$GITHUB_STEP_SUMMARY"
+          elif { [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -z "$ANTHROPIC_API_KEY" ]; } || [ -z "$SOLARA_TURSO_URL" ] || [ -z "$SOLARA_TELEGRAM_TOKEN" ] || [ -z "$SOLARA_TELEGRAM_CHAT" ]; then
+            echo "go=false" >> "$GITHUB_OUTPUT"; echo "skipped: Claude, Turso or Telegram secrets not set" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.go == 'true'
+      - uses: astral-sh/setup-uv@v3
+        if: steps.gate.outputs.go == 'true'
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+        if: steps.gate.outputs.go == 'true'
+      - id: pending
+        name: Anything from the owner the PM has not answered?
+        if: steps.gate.outputs.go == 'true'
+        run: |
+          set +e
+          uv run --no-sync python scripts/chat.py pending >> "$GITHUB_STEP_SUMMARY"
+          rc=$?
+          set -e
+          if [ "$rc" = "0" ]; then echo "ask=true" >> "$GITHUB_OUTPUT"; elif [ "$rc" != "3" ]; then exit "$rc"; fi
+      - name: The PM answers (/desk)
+        if: steps.pending.outputs.ask == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}  # the action otherwise wants an OIDC token (id-token: write)
+          prompt: "/desk"
+          claude_args: '--max-turns 30 --allowedTools "${{ env.ALLOWED_TOOLS }}"'

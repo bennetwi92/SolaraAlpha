@@ -121,3 +121,18 @@ def test_pull_never_raises(monkeypatch: pytest.MonkeyPatch, telegram: _Telegram)
 
 def test_pull_off_without_telegram(db_backend: Path | None) -> None:
     assert desk_chat.pull(db_backend) == 0
+
+
+def test_unanswered_since_the_pm_posted(db_backend: Path | None, telegram: _Telegram) -> None:
+    telegram.updates = [_msg(1, 42, "Why no JET2?")]
+    conn = desk_chat.connect(db_backend)
+    try:
+        assert desk_chat.unanswered(conn).empty
+        desk_chat.pull_owner(conn)
+        assert list(desk_chat.unanswered(conn)["text"]) == ["Why no JET2?"]
+        desk_chat.post("agent:monitor", "Holding AVG.L.", conn=conn)
+        assert len(desk_chat.unanswered(conn)) == 1  # only the PM's post answers
+        desk_chat.post("agent:pm", "JET2 failed the liquidity floor.", conn=conn)
+        assert desk_chat.unanswered(conn).empty
+    finally:
+        conn.close()
