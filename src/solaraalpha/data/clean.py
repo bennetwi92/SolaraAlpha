@@ -19,6 +19,10 @@ BLOCKING = frozenset({"missing", "non_positive_price", "gap", "stale", "duplicat
 # For series used only for close-to-close returns (indices, ETFs, FX as comparisons): volume
 # doesn't matter, and a missing or duplicated day is dropped / de-duplicated by clean_prices.
 CLOSE_ONLY_BLOCKING = frozenset({"non_positive_price", "gap", "stale"})
+# On the newest bar these are the live / partial session Yahoo sometimes sends (a repeated date,
+# a null volume beside the close): clean_prices keeps the last copy, and they never cut the
+# whole history (the cut would leave nothing).
+LATEST_BAR_OK = frozenset({"duplicate_date", "missing"})
 
 
 def check_prices(
@@ -95,8 +99,12 @@ def trim_to_consistent(
     from its first date on. The cutoff differs per stock; check how much is left.
 
     Issues on rows no longer in ``df`` (e.g. a no-trade bar with no close, dropped by
-    :func:`clean_prices`) don't cut: they aren't in the data being used."""
-    dates = issues.loc[issues["check"].isin(blocking), "date"].dropna()
+    :func:`clean_prices`) don't cut: they aren't in the data being used, nor do
+    :data:`LATEST_BAR_OK` issues on the newest bar."""
+    block = issues[issues["check"].isin(blocking)].dropna(subset=["date"])
+    if not df.empty:
+        block = block[~((block["date"] == df.index.max()) & block["check"].isin(LATEST_BAR_OK))]
+    dates = block["date"]
     dates = dates[dates.isin(df.index)]
     return df if dates.empty else df[df.index > dates.max()]
 
