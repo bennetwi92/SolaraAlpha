@@ -1,0 +1,1 @@
+{"type":"/api-errors/selling-equity-not-owned","title":"Selling equity not owned","status":400,"detail":"Selling more equities than owned, owned: 0.0","traceId":"00000000000000000000000000000000"}

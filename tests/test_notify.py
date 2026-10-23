@@ -240,7 +240,8 @@ def test_daily_renders_each_item_type(
 
 
 def test_one_order_per_stock_steps(db_backend: Path | None) -> None:
-    """A placed stop is cancelled before an exit, an add, or its replacement (ADR 0026)."""
+    """A placed stop is cancelled before its replacement, and swapped off before an exit sells
+    the shares under it (one order per unit, ADR 0031)."""
     conn = book.connect(db_backend)
     with conn:
         pid, oid = book.draft_position(
@@ -269,14 +270,20 @@ def test_one_order_per_stock_steps(db_backend: Path | None) -> None:
         )
     (t,) = broker.tasks(conn)
     assert t.title == "Sell 40 of your 100 shares"
-    assert t.steps[0].startswith(f"Cancel your stop order #{new_stop}")
-    assert t.steps[1].startswith("Place **Sell 40 · Market order**")
-    assert t.steps[2] == (
-        "When it has filled, put the stop back on the rest:"
-        " **Sell 60 · Stop order · stop price 1,450p**"
-    )
+    exit_id = int(book.orders(conn, pid, status="approved")["order_id"].iloc[0])
+    assert t.steps == [
+        f"In market hours (never overnight), tell me `swap {exit_id}`: I take the stop off the"
+        " shares you sell, then you cancel it in Trading212 and place what I give you"
+    ]
     assert t.why == "trim (the weekly review)"
-    # the stop is off at the broker but the book keeps its level for the heat and the triggers
+    # the swap: the stop cut to the 60 shares left, then the sale
+    with conn:
+        swapped = book.swap_for_exit(conn, exit_id)
+    assert swapped["cancelled"] == new_stop
+    (t,) = broker.tasks(conn)
+    assert t.steps[0].startswith(f"Cancel your stop order #{new_stop}")
+    assert t.steps[1].startswith("Place **Sell 60 · Stop order · stop price 1,450p**")
+    assert t.steps[2].startswith("Place **Sell 40 · Market order**")
     assert book.position_state(conn, pid).stop == 1450.0
     conn.close()
 

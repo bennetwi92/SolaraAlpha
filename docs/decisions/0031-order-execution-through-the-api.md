@@ -1,7 +1,8 @@
 # 0031 — Orders through the Trading212 API, by an execution agent, on the practice account
 
 **Status:** accepted (owner, 2026-10-21; the answers to the open questions are under "Owner's
-answers"), not built yet; practice checks "As tested" below, build proposed in epic #244 (#245-#250). Amends 0026 (the
+answers"); **built 2026-10-23** (epic #244, #245-#250; "As built" at the end). Practice checks
+"As tested" below; the market-hours checks run in the first practice week. Amends 0026 (the
 owner places every order), 0030 ("never an order") and the one-open-order rule of 0026 / 0030.
 
 **Context.** Since ADR 0026 the owner places every order the book approves, from the inbox.
@@ -157,3 +158,61 @@ could fill.
   next session before the execution job relies on them.
 - End state: only the book's two orders working (AAZ stop sell 73 @ 337p, AVG stop buy 158 @
   790p), and nothing of the test left.
+
+**Owner's answers to the build's open questions (2026-10-23).** The price for the 10% band is
+Trading212's current price for a stock held, else the last daily close. The in-session deadline
+for an unfilled exit is **15:45 London** (45 minutes before the close; 11:45 on a half day). A
+GitHub scheduled run starting late is accepted on practice. A stop-limit sell counts like a stop
+(any working sell reserves its shares).
+
+**As built (2026-10-23).**
+
+- **The book is the intent; the job makes the broker match it.** New order statuses:
+  `sending` (written and committed before the call), `rejected` (Trading212 refused it; the code
+  never sends it again, the agent may retry once, then the owner decides) and `cancelling` (an
+  order that may be working at the broker, until the broker confirms it gone or filled; a fill
+  that races the cancel is booked). `book.cancel_order` picks `cancelling` or `cancelled`. A turn
+  cancels at the broker every working order the book is cancelling or has ended, polls
+  `GET /{id}` until 404, then books the end state from the history (`reconcile.absorb`, which now
+  also confirms cancels and places a `sending` order it finds). Nothing new goes out for a
+  position while one of its orders is cancelling.
+- **One order per unit** in the book: `book.sell_room` / `check_sell` (the sells that may be
+  working never sell more than is held), `protect` sizes the stop to the shares no working exit
+  sells, an add or an entry works beside the stop (an add's raised stop replaces the stop at
+  once), `exit_position` no longer takes the stop off; `book.swap_for_exit` (and `book.py swap`
+  by hand) cuts the stop for a partial or takes it off for a full exit.
+- **`scripts/execute.py`** (`portfolio/execution.py`) is the one door: `turn` (code only),
+  `send` / `cancel` / `hold` / `note` (the agent's). Guards as decided; the band applies to
+  limit orders and buy stops only: a sell stop is below the market by design and is never
+  refused on price (a holding without a stop is the worse failure). No daily caps (practice).
+  Writes go through `trading212._write`: refused unless `SOLARA_T212_TRADING` names the account
+  in `SOLARA_T212_ENV`, a session with no retries, the rate limit waited out from
+  `x-ratelimit-reset`, a 4xx parsed from the problem JSON (a 429 did nothing: back to approved),
+  a timeout / connection error / 5xx is `Unknown` (the order stays `sending` until the next list
+  matches it; one the broker never shows goes back to `approved` the turn after).
+- **The agent is an overlay, not a dependency.** With a Claude secret set, a new non-stop order
+  waits up to 30 minutes for `/execute` (how and when: send as booked, an exit at market or a
+  limit, a buy limit at or below the booked one, hold until a time, let it lapse, one retry after
+  a rejection), then the code sends it as booked. Stops never wait. Every action, the code's and
+  the agent's, is a row in the append-only `executions` table with its reason.
+- **`.github/workflows/execute.yml`**: every 15 minutes 07:00-16:45 UTC on weekdays and after
+  each Agents run, in the `book` concurrency group; `SOLARA_T212_TRADING` is `demo` there unless
+  the owner sets the repository variable. The inbox (`notify.py --mode execute`) reports each turn
+  that sent, booked, cancelled or refused something; a stop not at the broker heads it and goes to
+  the desk-errors issue with any rejection or error (`--mode execute-errors`). The other workflows
+  set `SOLARA_ORDERS_BY=system` once the keys are there, and the daily / weekly inbox stop giving
+  order steps.
+- **London calendar** in code (weekdays 08:00-16:30, England & Wales bank holidays and the 12:30
+  half days for 2026-2027; a warning once a year is missing).
+- **Practice run through the built code (2026-10-23, 16:08 UTC, market shut).** With
+  `SOLARA_T212_TRADING=demo` for that one process and the book untouched: `trading212.place`
+  limit buy 1 AAZ at 256p (30% under the 365p last) → `new`, id returned, in 0.66 s;
+  `fetch_order` found it working; `cancel` answered in 0.22 s and the first `GET /{id}` poll
+  (1.2 s later) was already 404; the history showed it `cancelled`, nothing filled. A limit sell
+  of 1 AAZ with all 73 under the book's stop → `T212Error` 400
+  `/api-errors/selling-equity-not-owned` ("Selling more equities than owned, owned: 0.0"),
+  parsed as the code expects. Afterwards only the book's two orders were working (AAZ stop sell
+  73 @ 337p, AVG stop buy 158 @ 790p).
+- **Still to run in market hours** (the first practice week, before the owner signs the epic
+  off): cancel while open, DAY expiry, a fill as the API shows it, a stop triggering.
+

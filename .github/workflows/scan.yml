@@ -23,6 +23,10 @@ permissions:
   contents: read
   issues: write
 
+env:
+  # who places orders (ADR 0031): the execution job once it has keys and trading is not off
+  SOLARA_ORDERS_BY: ${{ (secrets.SOLARA_T212_KEY != '' && vars.SOLARA_T212_TRADING != 'off') && 'system' || 'owner' }}
+
 jobs:
   scan:
     runs-on: ubuntu-latest

@@ -226,7 +226,8 @@ def test_event_policy_decided_in_advance(db_backend: Path | None) -> None:
     assert rv["reason"].iloc[0] == "event due 2026-10-19 (confirmed): policy trim"
     od = book.orders(conn, pid).set_index("purpose")
     assert od.loc["exit", "qty"] == 30 and od.loc["exit", "status"] == "approved"
-    assert od.loc["stop", "status"] == "cancelled"  # one order per stock: off for the sale
+    # the stop stays on until the exit is swapped for it in market hours (ADR 0031)
+    assert od.loc["stop", "status"] in book.LIVE_ORDER
     with conn:
         book.undo_revision(conn, int(rid), "holding through")
         c = review(

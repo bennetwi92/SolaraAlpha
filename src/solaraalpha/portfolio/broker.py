@@ -1,12 +1,13 @@
 """What the owner does in Trading212: the book's orders as step-by-step broker instructions.
 
-Trading212 (Stocks & Shares ISA) takes market, limit, stop (market) and stop-limit orders, holds
-**one open order per stock**, and sets price alerts. Nothing waits for the owner's approval (ADR
-0026): every order the book has approved and the owner has not yet marked placed is a
-:class:`Task` here, in the order to do it. A task cancels the order its new one replaces (a stop
-moved, the stop taken off for an exit or an add) and says what to place once it fills (the stop
-for the shares bought, the stop back on after a part sale), with the price alerts for the targets.
-The owner reports back with ``book.py placed`` / ``fill`` (or by telling Claude).
+Trading212 (Stocks & Shares ISA) takes market, limit, stop (market) and stop-limit orders and
+sets price alerts; the sells working on a holding never add up to more than it holds (one order
+per unit of stock, ADR 0031). Nothing waits for the owner's approval (ADR 0026): every order the
+book has approved and nobody has yet placed is a :class:`Task` here, in the order to do it. A
+task cancels the order its new one replaces (a stop moved or swapped for an exit) and says what
+to place once it fills (the stop for the shares bought), with the price alerts for the targets.
+These are the owner's steps only while the execution job doesn't place orders (``orders_by`` =
+owner); the owner reports back with ``book.py placed`` / ``fill`` (or by telling Claude).
 """
 
 from __future__ import annotations
@@ -95,10 +96,11 @@ def _placed_ids(conn: Conn) -> set[int]:
 
 
 def _cancels(conn: Conn) -> pd.DataFrame:
-    """Every ``cancelled`` / ``expired`` order event (``order_id``, ``at``, ``actor``, ``reason``)."""
+    """Every ``cancelling`` / ``cancelled`` / ``expired`` order event (``order_id``, ``at``,
+    ``actor``, ``reason``)."""
     return query(
         "SELECT order_id, at, actor, reason FROM order_events"
-        " WHERE status IN ('cancelled', 'expired') ORDER BY event_id",
+        " WHERE status IN ('cancelling', 'cancelled', 'expired') ORDER BY event_id",
         conn,
     )
 
@@ -142,15 +144,21 @@ def tasks(conn: Conn) -> list[Task]:
         st = book.position_state(conn, pid)
         mine = od[od["position_id"] == pid].set_index("order_id")
         task = Task(ticker, pid, "", [])
-        for rec in group.to_dict("records"):
+        # a stop cut for a partial exit comes before the exit: Trading212 holds the shares
+        group = group.assign(_first=group["purpose"] != "stop").sort_values(["_first", "order_id"])
+        for rec in group.drop(columns="_first").to_dict("records"):
             o = {str(k): v for k, v in rec.items()}
             oid = int(o["order_id"])
             task.at = max(task.at, str(o["created_at"]))
-            # the placed orders it replaces: cancelled in the same booking (same time)
-            gone = cancels[
-                (cancels["at"] == o["created_at"])
-                & cancels["order_id"].isin([i for i in mine.index if i in placed and i != oid])
-            ]
+            # the placed orders it replaces: cancelled in the same booking (same time), or the
+            # stop swapped off for this exit when no smaller stop replaces it
+            at_broker = [i for i in mine.index if i in placed and i != oid]
+            same = (cancels["at"] == o["created_at"]) & cancels["order_id"].isin(at_broker)
+            if o["purpose"] == "exit" and not (group["purpose"] == "stop").any():
+                same |= (cancels["reason"] == book.SWAP.format(oid)) & cancels["order_id"].isin(
+                    at_broker
+                )
+            gone = cancels[same]
             for g in gone["order_id"]:
                 old = mine.loc[int(g)]
                 what = {"stop": "stop order", "entry": "buy order"}.get(
@@ -231,22 +239,26 @@ def _steps(
         task.title = (
             "Sell everything" if rest <= 0 else f"Sell {qty:,} of your {st.shares:,} shares"
         )
-        task.steps.append(f"Place {_bold(o, ccy)} (#{oid})")
-        if rest > 0 and level is not None:
+        working = mine["status"].isin(["placed", "part_filled"])
+        if (
+            (mine["purpose"] == "stop") & working
+        ).any():  # Trading212 holds the shares under the stop: swap it first
             task.steps.append(
-                f"When it has filled, put the stop back on the rest:"
-                f" **Sell {rest:,} · Stop order · stop price {price(level, ccy)}**"
+                "In market hours (never overnight), tell me `swap "
+                f"{oid}`: I take the stop off the shares you sell, then you cancel it in"
+                " Trading212 and place what I give you"
             )
+            task.reply = f"`swap {oid}`"
+            return
+        task.steps.append(f"Place {_bold(o, ccy)} (#{oid})")
         task.reply = f"`placed {oid}`; when it fills: `fill {oid} --qty N --price P`"
     elif purpose == "add":
         task.title = f"Add {qty:,} shares to a winner"
-        task.steps.append(f"Place {_bold(o, ccy)} (#{oid})")
+        task.steps.append(f"Place {_bold(o, ccy)} (#{oid}); your stop stays on")
         if level is not None:
             task.steps.append(
-                "When it fills, put the stop back on everything:"
-                f" **Sell {st.shares + qty:,} · Stop order · stop price {price(level, ccy)}**."
-                " If it hasn't filled by the close, cancel it and put back"
-                f" **Sell {st.shares:,} · Stop order · stop price {price(level, ccy)}**"
+                "When it fills, I'll give you the stop for everything:"
+                f" **Sell {st.shares + qty:,} · Stop order · stop price {price(level, ccy)}**"
             )
         task.reply = f"`placed {oid}`; then `fill {oid} --qty N --price P` or `unfilled {oid}`"
     else:
@@ -308,7 +320,7 @@ def cancels_since(conn: Conn, since: str) -> list[Task]:
         task = Task(ticker, pid, "Cancel an order", [], at=str(gone["at"].iloc[-1]))
         for _, g in sent.groupby("purpose", sort=False):
             last = g.iloc[-1]
-            if last["status"] not in ("cancelled", "expired"):
+            if last["status"] not in ("cancelling", "cancelled", "expired"):
                 continue
             what = {"stop": "stop order", "entry": "buy order"}.get(str(last["purpose"]), "order")
             task.steps.append(

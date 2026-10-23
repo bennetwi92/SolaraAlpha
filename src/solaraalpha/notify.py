@@ -6,7 +6,10 @@ nothing waits for an approval), then what to check and report back (a stop that 
 sold, an order past its date, a dividend), price alerts to change, what happened that needs
 nothing, the undo commands for the automatic changes, and errors. :func:`weekly_message` is the
 week's trades as the same steps, the positions held and the money in a few lines, with a link to
-the full pack. Channels are one ``send(markdown)`` function each; only ``stdout`` and the GitHub
+the full pack. Once the execution job places the orders (``settings.orders_by`` = system, ADR
+0031) the steps give way to a line on what is waiting to go out, and :func:`execute_message`
+reports each turn: what was sent, filled, cancelled or refused; :func:`execute_errors` puts a
+stop that could not be placed (shares unprotected) on the desk-errors issue and heads the inbox. Channels are one ``send(markdown)`` function each; only ``stdout`` and the GitHub
 ``inbox`` issue (posted by the workflow with ``gh``) exist. Story map S7.8, S12.7.
 """
 
@@ -38,7 +41,10 @@ DESK_BODY = (
     " it means, what happened automatically, the command to re-run it. Silent while nothing fails."
 )
 BROKER = broker.BROKER
-ONE_ORDER = "Do each stock's steps in order: Trading212 holds one order per stock."
+ONE_ORDER = (
+    "Do each stock's steps in order: Trading212 never sells more than you hold, counting the"
+    " sells already working."
+)
 HOW_TO_REPLY = (
     "Tell Claude what you did in plain words (“placed 15”, “15 filled 120 at 1,541p”,"
     " “15 didn't fill”), or run the same as `book.py` commands (Actions → Book)."
@@ -375,11 +381,110 @@ def desk_errors(conn: Conn, run_id: int, part: str = "all") -> str | None:
     return "\n".join(lines) + "\n"
 
 
+NOTABLE = (
+    "booked",
+    "sent",
+    "rejected",
+    "refused",
+    "cancel",
+    "cancel_sent",
+    "swap",
+    "dropped",
+    "error",
+)
+
+
+def _unprotected(conn: Conn, ex: pd.DataFrame) -> list[str]:
+    """Stops refused or rejected in ``ex`` that are still not at the broker: shares without
+    their stop."""
+    out = []
+    bad = ex[ex["action"].isin(["rejected", "refused"]) & ex["order_id"].notna()]
+    for oid in dict.fromkeys(int(x) for x in bad["order_id"]):
+        purpose = str(book._order(conn, oid)["purpose"])
+        if purpose == "stop" and book.order_status(conn, oid) in ("approved", "rejected"):
+            why = bad.loc[bad["order_id"] == oid, "reason"].iloc[-1]
+            tk = _ticker_of(conn, oid)
+            out.append(f"{tk}: stop #{oid} not at {BROKER} ({why}); the shares have no stop")
+    return out
+
+
+def execute_message(conn: Conn, since: str) -> str | None:
+    """The inbox after an execution turn (ADR 0031): what went to Trading212, what filled, what
+    was cancelled or refused since ``since``, in plain words; None when nothing happened."""
+    from solaraalpha.portfolio import execution
+
+    ex = execution.executions(conn, since)
+    ex = ex[ex["action"].isin(NOTABLE)]
+    if ex.empty:
+        return None
+    head = _unprotected(conn, ex)
+    parts = [f"## Solara — orders, {pd.Timestamp(since).strftime('%a %-d %b %H:%M')} UTC", ""]
+    if head:
+        parts += [f"> **Desk error:** {'; '.join(head)}. Details on the `{DESK_LABEL}` issue.", ""]
+    words = {
+        "sent": "sent",
+        "rejected": "**rejected by Trading212**",
+        "refused": "not sent",
+        "cancel": "cancelled",
+        "cancel_sent": "cancel confirmed",
+        "swap": "stop swapped off for the exit",
+        "dropped": "dropped (the position changed)",
+        "error": "**error**",
+    }
+    filled = [
+        (f"{_ticker_of(conn, int(r['order_id']))}: " if not pd.isna(r["order_id"]) else "")
+        + str(r["reason"])
+        for r in ex[ex["action"] == "booked"].to_dict("records")
+    ]
+    done = []
+    for r in ex[ex["action"] != "booked"].to_dict("records"):
+        oid = None if pd.isna(r["order_id"]) else int(r["order_id"])
+        what = execution.describe(conn, oid, words[r["action"]]) if oid else words[r["action"]]
+        tk = f"{_ticker_of(conn, oid)}: " if oid else ""
+        who = "" if r["actor"] == execution.ACTOR else f" ({r['actor']})"
+        done.append(f"{tk}{what}{who}" + (f" — {r['reason']}" if r["reason"] else ""))
+    if filled:
+        parts += _section(f"Booked from {BROKER}", filled)
+    if done:
+        parts += _section(f"At {BROKER}", done)
+    parts += ["Nothing to do by hand: the execution job places and cancels every order.", ""]
+    return "\n".join(parts).rstrip() + "\n"
+
+
+def _ticker_of(conn: Conn, order_id: int) -> str:
+    return str(book._position(conn, int(book._order(conn, order_id)["position_id"]))["ticker"])
+
+
+def execute_errors(conn: Conn, since: str) -> str | None:
+    """The desk-errors entry for an execution turn: stops not at the broker (the shares are
+    unprotected), orders Trading212 rejected, broker or agent errors; None when nothing failed."""
+    from solaraalpha.portfolio import execution
+
+    ex = execution.executions(conn, since)
+    means = "Means: a holding without its stop until it is placed."
+    lines = [f"- **{x}**. {means}" for x in _unprotected(conn, ex)]
+    rerun = "Re-run: `gh workflow run execute.yml`"
+    for r in ex[ex["action"].isin(["rejected", "error"])].to_dict("records"):
+        oid = None if pd.isna(r["order_id"]) else int(r["order_id"])
+        if oid and r["action"] == "rejected" and book._order(conn, oid)["purpose"] == "stop":
+            continue  # already above, as unprotected shares
+        what = f"order #{oid} ({_ticker_of(conn, oid)})" if oid else "the execution job"
+        lines.append(f"- {what} {r['action']}: {r['reason']}. {rerun}.")
+    if not lines:
+        return None
+    return (
+        f"## Execution — {pd.Timestamp(since).strftime('%a %-d %b %Y %H:%M')} UTC\n\n"
+        + "\n".join(lines)
+        + "\n"
+    )
+
+
 JOB_FAILED = {
     "Weekly pipeline": "the scan did not finish: no plan this week until it is re-run",
     "Daily check": "today's prices, triggers and broker fills were not checked",
     "Agents": "some agents did not run or record: see the desk errors above it, or the run",
     "Book": "the book command did not complete: nothing changed unless the run says so",
+    "Execution": "orders were not sent or settled this turn: the next turn tries again",
 }
 
 
@@ -390,6 +495,25 @@ def job_failed_message(workflow: str, conclusion: str, url: str) -> str:
         f"> **Desk error:** the **{workflow}** workflow ended `{conclusion}`. Means: {means}."
         f" Run: {url}\n"
     )
+
+
+def by_system() -> bool:
+    """Whether the execution job places the book's orders (ADR 0031), not the owner."""
+    from solaraalpha.config import settings
+
+    return settings.orders_by == "system"
+
+
+def _system_line(conn: Conn) -> list[str]:
+    od = book.orders(conn)
+    n = int((od["status"] == "approved").sum())
+    if not n:
+        return [f"Nothing waiting to go to {BROKER}.", ""]
+    return [
+        f"{n} {'order waits' if n == 1 else 'orders wait'} to go to {BROKER}: the execution job"
+        " sends them (stops at once, exits in market hours); nothing to place by hand.",
+        "",
+    ]
 
 
 def _todo(tasks: list[broker.Task]) -> list[str]:
@@ -438,6 +562,8 @@ def daily_message(
         todo = [t for t in todo if "revisions" in only and t.at >= started]
     if "revisions" in only:
         todo += broker.cancels_since(conn, started)
+    if by_system():  # the execution job places them; its turns report what went out
+        todo = []
     checks, info = owner_items(conn, run_id) if "actions" in only else ([], [])
     alerts, more, undo = changes(conn, started) if "revisions" in only else ([], [], [])
     errs = errors(conn, run_id) if "errors" in only else []
@@ -445,7 +571,10 @@ def daily_message(
     if not (todo or checks or info or alerts or more or errs or head):
         return None
     parts = [f"## Solara — {_day(started)}", "", *head]
-    parts += _todo(todo) or [f"Nothing to place in {BROKER} today.", ""]
+    if by_system():
+        parts += _system_line(conn)
+    else:
+        parts += _todo(todo) or [f"Nothing to place in {BROKER} today.", ""]
     if checks:
         parts += _section("Check and tell me", checks)
     if alerts:
@@ -489,8 +618,11 @@ def weekly_message(conn: Conn, run_id: int, summary_url: str | None = None) -> s
     pm = pack.plan.pm  # the portfolio manager's stance heads the week, its memo follows the steps
     if pm:
         parts += [f"Your PM: {str(pm.get('reasons') or '').split('; ')[0]}", ""]
-    todo = broker.tasks(conn) + broker.cancels_since(conn, pack.started_at)
-    parts += _todo(todo) or [f"Nothing to place in {BROKER}.", ""]
+    if by_system():
+        parts += _system_line(conn)
+    else:
+        todo = broker.tasks(conn) + broker.cancels_since(conn, pack.started_at)
+        parts += _todo(todo) or [f"Nothing to place in {BROKER}.", ""]
     if pm:
         parts += ["### From your PM", "", str(pm.get("note_md") or pm.get("reasons") or ""), ""]
     elif any(c.stage != "screen" for c in pack.plan.candidates):

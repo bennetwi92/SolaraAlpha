@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """PreToolUse guard for the desk subagents (.claude/agents/*.md): no live writes by default.
 
-Blocks a Bash command that would write the book or the results DB, trigger a workflow or post
-to the inbox or the desk thread, unless the session was started with SOLARA_ALLOW_WRITES=1 (the
-owner's go-ahead: `SOLARA_ALLOW_WRITES=1 claude --agent portfolio-manager`). A script segment with `--db PATH`
+Blocks a Bash command that would write the book or the results DB, trigger a workflow, post to
+the inbox or the desk thread, or send / cancel an order at Trading212 (``execute.py``), unless
+the session was started with SOLARA_ALLOW_WRITES=1 (the owner's go-ahead:
+`SOLARA_ALLOW_WRITES=1 claude --agent portfolio-manager`). A script segment with `--db PATH`
 writes a local file, so it is allowed. Stdlib only; reads the hook JSON on stdin.
 """
 
@@ -16,11 +17,12 @@ import sys
 
 BOOK_WRITES = (
     "new|approve|amend|reject|placed|fill|unfilled|cancel|expire|cash|split|corporate-close"
-    "|accept|decline|undo|exit"
+    "|accept|decline|undo|exit|swap"
 )
 DB_WRITES = [
     re.compile(rf"book\.py\s+(?:--db\s+\S+\s+)?(?:{BOOK_WRITES})\b"),
     re.compile(r"record\.py\s+(?:verdict|revision|error|usage)\b"),
+    re.compile(r"execute\.py\s+(?:--db\s+\S+\s+)?(?:hold|note|error)\b"),
     re.compile(r"plan\.py\b(?!.*--dry-run)"),
     re.compile(r"db\.py\s+push\b"),
     re.compile(r"scripts/\S+\.py\b.*--save\b"),
@@ -28,6 +30,7 @@ DB_WRITES = [
 ALWAYS = [  # outward-facing: a local --db does not make these safe
     re.compile(r"\bgh\s+(?:workflow\s+run|run\s+rerun)\b"),
     re.compile(r"notify\.py\b.*--channel\s+github-issue"),
+    re.compile(r"execute\.py\b.*\b(?:turn|send|cancel)\b"),  # orders at Trading212 (ADR 0031)
     re.compile(r"chat\.py\s+post\b"),  # the desk thread, sent to Telegram (ADR 0033)
 ]
 
