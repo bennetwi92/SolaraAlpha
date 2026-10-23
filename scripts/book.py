@@ -26,11 +26,14 @@ uv run python scripts/book.py reconcile [--book]      # book vs Trading212 (--bo
 uv run python scripts/book.py stats [--since DATE]   # drafted / approved / amended / rejected by deciding stage
 uv run python scripts/book.py exit POSITION_ID --reason stop|trailing_stop|target|thesis_broken|time|discretionary|corporate_action
                                  [--type market|limit] [--price P] [--qty N]
+uv run python scripts/book.py swap EXIT_ORDER_ID      # market hours: the stop off for the exit
 
 A first fill on an entry order opens the position and drafts its protective stop order
-(approved, so it appears in `tickets` at once). Trading212 holds one order per stock (ADR 0026):
-a part fill on a buy cancels the rest of it, and an exit or add takes the stop order off until it
-fills or ends (then the stop is drafted again for the shares held). A stop or
+(approved, so it appears in `tickets` at once). One order per unit of stock (ADR 0031): the sells
+working on a holding never add up to more than it holds, so a buy (entry, add) works beside the
+stop, a part fill on a buy cancels the rest of it, and an exit is sent only once the stop is
+swapped off it (`swap`, in market hours; a partial cuts the stop to the shares left). An order
+that may be at the broker is `cancelling` until it is confirmed gone (`cancel`). A stop or
 exit fill that brings the shares to zero closes the position (exit reason, P&L, R-multiple,
 holding weeks) and cancels its remaining orders; `show` adds MFE / MAE from daily prices.
 Dividends recorded against a position count in its net P&L; a split scales the shares, the
@@ -262,8 +265,8 @@ def _tickets(conn: Conn, a: argparse.Namespace) -> None:
 def _fill(conn: Conn, a: argparse.Namespace) -> None:
     out = book.fill(conn, a.order_id, a.qty, a.price, a.at, a.commission, a.fees)
     status = out["order_status"]
-    if status == "cancelled":  # a part fill on a buy: the rest is cancelled (ADR 0026)
-        status = "part filled, the rest cancelled (one order per stock)"
+    if status in ("cancelled", "cancelling"):  # a part fill on a buy: the rest is cancelled
+        status = "part filled, the rest cancelled (the shares held get their stop)"
     msg = f"order {a.order_id} {status}; position holds {out['shares']} shares"
     if out["opened"]:
         msg += "; position opened"
@@ -419,7 +422,22 @@ def _undo(conn: Conn, a: argparse.Namespace) -> None:
 @command("exit")
 def _exit(conn: Conn, a: argparse.Namespace) -> None:
     oid = book.exit_position(conn, a.position_id, a.reason, a.type, a.price, a.qty)
-    print(f"exit order {oid} approved ({a.reason}); place it, then `fill {oid} ...`")
+    print(
+        f"exit order {oid} approved ({a.reason}); in market hours `swap {oid}` takes the stop"
+        f" off it, then place it and `fill {oid} ...`"
+    )
+
+
+@command("swap")
+def _swap(conn: Conn, a: argparse.Namespace) -> None:
+    done = book.swap_for_exit(conn, a.order_id)
+    if done["cancelled"] is None:
+        print(f"no live stop on exit order {a.order_id}'s position: place the exit")
+        return
+    msg = f"stop order {done['cancelled']} off for exit order {a.order_id}"
+    if done["stop_order_id"]:
+        msg += f"; stop order {done['stop_order_id']} on the shares left (see `tickets`)"
+    print(msg + ". Cancel it in Trading212, then place the new orders.")
 
 
 @command("unfilled")
@@ -564,6 +582,8 @@ def build_parser() -> argparse.ArgumentParser:
     xo.add_argument("--type", choices=("market", "limit"), default="market")
     xo.add_argument("--price", type=float, help="limit price (quote currency)")
     xo.add_argument("--qty", type=int, help="default: all shares")
+    sw = sub.add_parser("swap", help="take the stop off an approved exit (market hours)")
+    sw.add_argument("order_id", type=int)
 
     return p
 

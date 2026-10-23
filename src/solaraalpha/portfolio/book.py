@@ -64,8 +64,9 @@ CREATE TABLE IF NOT EXISTS order_events (
     event_id   INTEGER PRIMARY KEY,
     order_id   INTEGER NOT NULL REFERENCES orders,
     at         TEXT NOT NULL,
-    status     TEXT NOT NULL,                 -- draft / approved / placed / part_filled / filled /
-                                              -- not_filled / cancelled / expired
+    status     TEXT NOT NULL,                 -- draft / approved / sending / placed / rejected /
+                                              -- part_filled / filled / not_filled / cancelling /
+                                              -- cancelled / expired
     broker_ref TEXT,
     actor      TEXT NOT NULL,
     reason     TEXT NOT NULL
@@ -86,6 +87,16 @@ CREATE TABLE IF NOT EXISTS cash (
     currency    TEXT NOT NULL,
     position_id INTEGER,
     note        TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS executions (
+    execution_id INTEGER PRIMARY KEY,
+    at           TEXT NOT NULL,
+    order_id     INTEGER,                     -- NULL: a note on the turn, not one order
+    action       TEXT NOT NULL,               -- sent / refused / rejected / unknown / cancel_sent /
+                                              -- hold / pass / note / error (ADR 0031)
+    detail       TEXT NOT NULL,               -- JSON
+    actor        TEXT NOT NULL,
+    reason       TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS entry_conditions (
     position_id INTEGER NOT NULL REFERENCES positions,
@@ -143,19 +154,27 @@ POSITION_TRANSITIONS: dict[str, frozenset[str | None]] = {
 }
 ORDER_TRANSITIONS: dict[str, frozenset[str | None]] = {
     "draft": frozenset({None}),
-    "approved": frozenset({None, "draft"}),  # a protective stop is born approved
-    "placed": frozenset({"approved"}),
-    "part_filled": frozenset({"approved", "placed", "part_filled"}),
-    "filled": frozenset({"approved", "placed", "part_filled"}),
-    "not_filled": frozenset({"approved", "placed", "part_filled"}),
-    "cancelled": frozenset({"draft", "approved", "placed", "part_filled"}),
+    # a protective stop is born approved; a send the broker never saw goes back to approved
+    "approved": frozenset({None, "draft", "sending"}),
+    "sending": frozenset({"approved", "rejected"}),  # written before the call (ADR 0031)
+    "placed": frozenset({"approved", "sending"}),
+    "rejected": frozenset({"sending"}),  # the broker refused it; sent again only on purpose
+    "part_filled": frozenset({"approved", "sending", "placed", "part_filled"}),
+    "filled": frozenset({"approved", "sending", "placed", "part_filled", "cancelling"}),
+    "not_filled": frozenset({"approved", "sending", "placed", "part_filled", "cancelling"}),
+    # an order at the broker is cancelling until the broker confirms it gone (or filled)
+    "cancelling": frozenset({"sending", "placed", "part_filled"}),
+    "cancelled": frozenset(
+        {"draft", "approved", "sending", "placed", "rejected", "part_filled", "cancelling"}
+    ),
     "expired": frozenset({"approved", "placed"}),
 }
-OPEN_ORDER = frozenset({"draft", "approved", "placed", "part_filled"})  # may still (part) fill
-LIVE_ORDER = frozenset({"approved", "placed", "part_filled"})  # at (or going to) the broker
-FILLABLE = frozenset({"approved", "placed", "part_filled"})
-PART_FILL = "part fill: the rest cancelled (one order per stock)"
-ONE_ORDER = "one order per stock: off while the {} is worked"
+OPEN_ORDER = frozenset({"draft", "approved", "sending", "placed", "rejected", "part_filled"})
+LIVE_ORDER = frozenset({"approved", "sending", "placed", "part_filled"})  # at / going to the broker
+AT_BROKER = frozenset({"sending", "placed", "part_filled", "cancelling"})  # may be working there
+FILLABLE = frozenset({"approved", "sending", "placed", "part_filled", "cancelling"})
+PART_FILL = "part fill: the rest cancelled so the shares held get their stop"
+SWAP = "taken off for exit order #{} (Trading212 holds the shares under a stop)"
 
 
 def connect(path: Path | None = None) -> Conn:
@@ -377,7 +396,10 @@ def add_fill(
         (order_id, t, int(qty), float(price), float(commission), float(fees)),
     )
     assert cur.lastrowid is not None
-    order_event(conn, order_id, "filled" if done == total else "part_filled", actor=actor, at=t)
+    if done == total:
+        order_event(conn, order_id, "filled", actor=actor, at=t)
+    elif status != "cancelling":  # a part fill racing a cancel: still cancelling at the broker
+        order_event(conn, order_id, "part_filled", actor=actor, at=t)
     return cur.lastrowid
 
 
@@ -580,8 +602,8 @@ class PositionState:
     avg_cost: float  # running average cost of the shares held, quote currency
     realised_pnl: float  # account currency, net of commission and fees
     costs: float  # commission + fees so far, account currency
-    stop: float | None  # the live stop order's price; while an exit or add is worked (one
-    # order per stock, ADR 0026) the stop level it goes back on at
+    stop: float | None  # the live stop order's price; while an exit sells every share (the
+    # stop swapped for it, ADR 0031) the stop level it goes back on at
     initial_stop: float | None  # planned stop at entry (drafted payload), else the first stop order
     risk_at_stop: float  # (avg_cost - stop) x shares, account currency, floored at 0
     r_unit: float  # initial risk per share x initial shares, account currency (0 if unknown)
@@ -672,9 +694,9 @@ def position_state(conn: Conn, position_id: int) -> PositionState:
 
 
 def _stop_level(od: pd.DataFrame, ev: pd.DataFrame) -> float | None:
-    """The stop level of an open position with no live stop order (taken off while an exit or
-    an add is worked at the broker, ADR 0026): the latest of the stop orders' prices and the
-    ``stop_raised`` levels, a raise winning a tie."""
+    """The stop level of an open position with no live stop order (swapped for an exit at the
+    broker, ADR 0031): the latest of the stop orders' prices and the ``stop_raised`` levels, a
+    raise winning a tie."""
     found: list[tuple[str, int, float]] = []
     for at, px in zip(
         od.loc[od["purpose"] == "stop", "created_at"],
@@ -787,13 +809,24 @@ def reject_position(conn: Conn, position_id: int, reason: str, actor: str = OWNE
     cancel_open_orders(conn, position_id, reason=f"rejected: {reason}", actor=actor, at=t)
 
 
+def cancel_order(
+    conn: Conn, order_id: int, reason: str, actor: str = OWNER, at: str | None = None
+) -> str:
+    """Cancel an open order: ``cancelled`` when it never reached the broker, ``cancelling`` when
+    it may be working there (sending / placed / part filled), until the broker confirms it gone
+    (ADR 0031: cancel, confirm, then place). Returns the status recorded."""
+    status = "cancelling" if order_status(conn, order_id) in AT_BROKER else "cancelled"
+    order_event(conn, order_id, status, actor=actor, reason=reason, at=at)
+    return status
+
+
 def cancel_open_orders(
     conn: Conn, position_id: int, reason: str, actor: str = OWNER, at: str | None = None
 ) -> list[int]:
     od = orders(conn, position_id)
     ids = [int(o) for o in od.loc[od["status"].isin(OPEN_ORDER), "order_id"]]
     for oid in ids:
-        order_event(conn, oid, "cancelled", actor=actor, reason=reason, at=at)
+        cancel_order(conn, oid, reason, actor, at)
     return ids
 
 
@@ -806,25 +839,29 @@ def replace_order(
     actor: str = OWNER,
     at: str | None = None,
     status: str | None = None,
+    type: str | None = None,
 ) -> int:
-    """Cancel ``order_id`` and add a copy with the new ``qty`` / ``price``; returns the new id.
+    """Cancel ``order_id`` and add a copy with the new ``qty`` / ``price`` / ``type``; returns
+    the new id.
 
     The copy starts ``draft`` if the old order was a draft, else ``approved`` (a placed order's
-    replacement has to be placed again). Rows are never mutated.
+    replacement has to be placed again, once the old one is confirmed gone). Rows are never
+    mutated.
     """
     old = _order(conn, order_id)
     old_status = order_status(conn, order_id)
     if old_status not in OPEN_ORDER:
         raise ValueError(f"order {order_id} is {old_status}; nothing to replace")
     t = iso(at)
-    order_event(conn, order_id, "cancelled", actor=actor, reason=reason or "replaced", at=t)
+    kind = type or str(old["type"])
+    cancel_order(conn, order_id, reason or "replaced", actor, t)
     return add_order(
         conn,
         int(old["position_id"]),
         int(old["side"]),
-        str(old["type"]),
+        kind,
         int(qty if qty is not None else old["qty"]),
-        float(price) if price is not None else (None if old["type"] == "market" else old["price"]),
+        None if kind == "market" else (float(price) if price is not None else float(old["price"])),
         str(old["purpose"]),
         old["valid_until"] if pd.notna(old["valid_until"]) else None,
         status or ("draft" if old_status == "draft" else "approved"),
@@ -921,9 +958,9 @@ def fill(
 
     A fill on a buying order (``entry`` / ``add``) opens the position on its first fill and
     (re)drafts the **protective stop**: an ``approved`` stop order at the planned stop for every
-    share held, replacing the previous stop order so it always covers the whole holding. Trading212
-    holds one order per stock (ADR 0026), so a part fill on a buying order cancels the rest of it:
-    the shares held get their stop instead of waiting for the remainder. A fill on
+    share held, replacing the previous stop order so it always covers the whole holding. A part
+    fill on a buying order cancels the rest of it: the shares held get their stop instead of
+    waiting for the remainder. A fill on
     a selling order that brings the shares to zero **closes** the position (:func:`close_position`,
     reason from :func:`exit_reason_for`). Returns ``{"fill_id", "order_status", "opened",
     "stop_order_id", "shares", "closed"}`` (``closed`` is the :class:`CloseSummary` or None).
@@ -944,9 +981,8 @@ def fill(
                 conn, pid, "opened", {"order_id": order_id, "price": price}, actor=actor, at=t
             )
             out["opened"] = True
-        if out["order_status"] == "part_filled":  # one order per stock: protect what is held
-            order_event(conn, order_id, "cancelled", actor=actor, reason=PART_FILL, at=t)
-            out["order_status"] = "cancelled"
+        if out["order_status"] == "part_filled":  # protect what is held, not the remainder
+            out["order_status"] = cancel_order(conn, order_id, PART_FILL, actor, t)
         out["stop_order_id"] = protect(conn, pid, actor=actor, at=t)
     out["shares"] = position_state(conn, pid).shares
     out["closed"] = None
@@ -960,30 +996,31 @@ def fill(
 
 
 def protect(conn: Conn, position_id: int, actor: str = OWNER, at: str | None = None) -> int | None:
-    """Make the live protective stop order cover every share held, at the planned stop price
-    (or the current stop's price once one exists). Replaces the old stop order (cancel + new,
-    status ``approved``); returns the new order id, None when nothing is held, no stop is known or
-    an exit / add order is being worked (Trading212 holds one order per stock, ADR 0026)."""
+    """Make the live protective stop order cover every share held that no exit order at the
+    broker is selling, at the planned stop price (or the current stop's price once one exists).
+    One order per unit of stock (ADR 0031): the sells working on a holding never add up to more
+    than it holds, and a buy (entry, add) works beside the stop. Replaces the old stop order
+    (cancel + new, status ``approved``); returns the live stop's order id, None when nothing
+    is held, no stop is known or an exit at the broker sells every share."""
     st = position_state(conn, position_id)
     price = st.stop if st.stop is not None else st.initial_stop
-    if st.shares <= 0 or price is None:
-        return None
     od = orders(conn, position_id)
-    if not working(od).empty:
-        return None  # one order per stock: the stop goes back on once the exit / add ends
+    qty = st.shares - _remaining(od[od["purpose"].isin(["exit", "target"])], AT_BROKER)
+    if qty <= 0 or price is None:
+        return None
     live = od[(od["purpose"] == "stop") & od["status"].isin(LIVE_ORDER)]
     if not live.empty:
-        if int(live["qty"].iloc[-1]) == st.shares and float(live["price"].iloc[-1]) == price:
+        if int(live["qty"].iloc[-1]) == qty and float(live["price"].iloc[-1]) == price:
             return int(live["order_id"].iloc[-1])
         return replace_order(
-            conn, int(live["order_id"].iloc[-1]), st.shares, price, "stop re-sized", actor, at
+            conn, int(live["order_id"].iloc[-1]), qty, price, "stop re-sized", actor, at
         )
     return add_order(
         conn,
         position_id,
         -st.side,
         "stop",
-        st.shares,
+        qty,
         price,
         "stop",
         None,
@@ -993,24 +1030,83 @@ def protect(conn: Conn, position_id: int, actor: str = OWNER, at: str | None = N
     )
 
 
+def _remaining(od: pd.DataFrame, statuses: frozenset[str]) -> int:
+    """Shares still to trade on the orders of ``od`` whose status is in ``statuses``."""
+    live = od[od["status"].isin(statuses)]
+    return int((live["qty"] - live["filled"]).clip(lower=0).sum())
+
+
 def working(od: pd.DataFrame) -> pd.DataFrame:
-    """The live exit / add orders among a position's ``orders``: while one is at the broker the
-    stock has no stop order (one order per stock, ADR 0026)."""
+    """The live exit / add orders among a position's ``orders``: one at a time per position."""
     return od[od["purpose"].isin(["exit", "add"]) & od["status"].isin(LIVE_ORDER)]
+
+
+def sell_room(conn: Conn, position_id: int) -> int:
+    """Shares a new sell order may cover: those held less what the sells that may be working at
+    the broker still sell (one order per unit of stock, ADR 0031; Trading212 refuses the rest
+    with ``selling-equity-not-owned``)."""
+    od = orders(conn, position_id)
+    sells = od[od["side"] == -position_state(conn, position_id).side]
+    return position_state(conn, position_id).shares - _remaining(sells, AT_BROKER)
+
+
+def check_sell(conn: Conn, order_id: int) -> None:
+    """Refuse (``ValueError``) sending a sell order that would sell more than the shares not
+    already under a working sell (the per-unit rule, ADR 0031)."""
+    o = _order(conn, order_id)
+    pid = int(o["position_id"])
+    if int(o["side"]) == position_state(conn, pid).side:
+        return
+    room = sell_room(conn, pid)
+    if int(o["qty"]) > room:
+        raise ValueError(
+            f"order {order_id} sells {int(o['qty'])} but only {max(room, 0)} shares are not"
+            " already under a working sell (one order per unit of stock)"
+        )
 
 
 def take_stop_off(
     conn: Conn, position_id: int, what: str, actor: str = OWNER, at: str | None = None
 ) -> int | None:
-    """Cancel the live stop order before an exit or add order (one order per stock, ADR 0026);
-    its level stays the position's stop. Returns the cancelled order id, None if there was none."""
+    """Cancel the live stop order (``what`` says why); its level stays the position's stop.
+    Returns the cancelled order id, None if there was none."""
     od = orders(conn, position_id)
     live = od[(od["purpose"] == "stop") & od["status"].isin(LIVE_ORDER)]
     if live.empty:
         return None
     oid = int(live["order_id"].iloc[-1])
-    order_event(conn, oid, "cancelled", actor=actor, reason=ONE_ORDER.format(what), at=at)
+    cancel_order(conn, oid, what, actor, at)
     return oid
+
+
+def swap_for_exit(
+    conn: Conn, exit_order_id: int, actor: str = OWNER, at: str | None = None
+) -> dict[str, Any]:
+    """The book side of the stop-for-exit swap (ADR 0031): Trading212 holds the shares under the
+    stop, so before an exit sells them the stop comes off (all of it for a full exit; for a
+    partial, it is cut to the shares left). Called only while the market is open, so a holding
+    never crosses a close without its stop. The old stop is ``cancelling`` until the broker
+    confirms it gone; only then do the smaller stop and the exit go out. Returns
+    ``{"cancelled": id | None, "stop_order_id": id | None}``."""
+    o = _order(conn, exit_order_id)
+    if o["purpose"] != "exit" or order_status(conn, exit_order_id) != "approved":
+        raise ValueError(f"order {exit_order_id} is not an approved exit")
+    pid = int(o["position_id"])
+    st = position_state(conn, pid)
+    od = orders(conn, pid)
+    live = od[(od["purpose"] == "stop") & od["status"].isin(LIVE_ORDER)]
+    if live.empty:
+        return {"cancelled": None, "stop_order_id": None}
+    t = iso(at)
+    rest = st.shares - int(o["qty"]) - _remaining(od[od["purpose"] == "exit"], AT_BROKER)
+    old = int(live["order_id"].iloc[-1])
+    if rest > 0 and int(live["qty"].iloc[-1]) <= rest:
+        return {"cancelled": None, "stop_order_id": None}  # already cut for this exit
+    if rest > 0:
+        new = replace_order(conn, old, rest, None, SWAP.format(exit_order_id), actor, t)
+        return {"cancelled": old, "stop_order_id": new}
+    cancel_order(conn, old, SWAP.format(exit_order_id), actor, t)
+    return {"cancelled": old, "stop_order_id": None}
 
 
 def end_order(
@@ -1034,7 +1130,7 @@ def end_order(
     order_event(conn, order_id, status, actor=actor, reason=reason, at=t)
     pid = int(order["position_id"])
     if order["purpose"] in ("exit", "add") and position_status(conn, pid) == "open":
-        protect(conn, pid, actor=actor, at=t)  # the stop goes back on (one order per stock)
+        protect(conn, pid, actor=actor, at=t)  # an exit that ended: its shares get the stop back
         return False
     if order["purpose"] != "entry" or position_status(conn, pid) not in ("draft", "approved"):
         return False
@@ -1050,7 +1146,8 @@ def end_order(
 
 def expire_orders(conn: Conn, as_of: str | None = None, actor: str = OWNER) -> list[int]:
     """Mark every approved or placed entry order whose ``valid_until`` is before ``as_of``
-    (default today, UTC) as ``expired``; returns their ids."""
+    (default today, UTC) as ``expired``; returns their ids. A placed one is cancelled at the
+    broker by the execution job, which ends it (ADR 0031)."""
     today = pd.Timestamp(iso(as_of)).strftime("%Y-%m-%d")
     od = orders(conn)
     stale = od[
@@ -1139,8 +1236,9 @@ def exit_position(
 ) -> int:
     """Draft an ``approved`` exit order for ``qty`` shares (default all) tagged with ``reason``
     (one of :data:`EXIT_REASONS`, kept in the order's ``approved`` event). Returns the order id.
-    Trading212 holds one order per stock (ADR 0026): the live stop order is cancelled first; a
-    partial exit's fill, or the exit ending unfilled, puts it back for the shares left.
+    The stop stays on until the exit is sent: the execution job swaps it for the exit only
+    while the market is open (:func:`swap_for_exit`, ADR 0031); the exit ending unfilled puts
+    it back on the shares left.
     """
     if reason not in EXIT_REASONS:
         raise ValueError(f"exit reason must be one of {EXIT_REASONS}, got {reason!r}")
@@ -1150,12 +1248,10 @@ def exit_position(
     n = int(qty) if qty is not None else st.shares
     if n > st.shares:
         raise ValueError(f"exit qty {n} exceeds the {st.shares} shares held")
-    if not working(orders(conn, position_id)).empty:
-        raise ValueError(f"position {position_id} already has an exit / add order working")
-    t = iso(at)
-    take_stop_off(conn, position_id, "exit", actor, t)
+    if (working(orders(conn, position_id))["purpose"] == "exit").any():
+        raise ValueError(f"position {position_id} already has an exit order working")
     return add_order(
-        conn, position_id, -st.side, type, n, price, "exit", None, "approved", actor, reason, at=t
+        conn, position_id, -st.side, type, n, price, "exit", None, "approved", actor, reason, at=at
     )
 
 
@@ -1748,10 +1844,15 @@ def _check_revision(conn: Conn, st: PositionState, action: str, new: dict[str, A
             f"position {st.position_id} is {st.status}; {action!r} is for a pending entry"
         )
     busy = action in ("tighten_stop", "take_partial", "exit", "add") and not pending
-    if busy and not working(orders(conn, st.position_id)).empty:
+    work = working(orders(conn, st.position_id)) if busy else pd.DataFrame()
+    if busy and (work["purpose"] == "exit").any():
         raise ValueError(
-            f"position {st.position_id} has an exit / add order working (one order per"
-            " stock): record its fill or end it first"
+            f"position {st.position_id} has an exit order working: record its fill or end it first"
+        )
+    if action == "add" and not pending and (work["purpose"] == "add").any():
+        raise ValueError(
+            f"position {st.position_id} already has an add order working: record its fill or"
+            " end it first"
         )
     if action == "tighten_stop":
         price = float(new["stop"])
@@ -1860,9 +1961,9 @@ def accept_revision(
 
     Open positions: tighten_stop: replace the stop, ratchet only, + ``stop_raised``;
     take_partial: an exit order for the qty; exit: an exit order with reason thesis_broken;
-    revise_target: a ``revised`` event; add: the stop order off (one order per stock, ADR 0026),
-    an ``add`` buy order for ``qty`` at ``entry``, and the stop level raised to ``stop`` (at least
-    breakeven, never lower): the add's fill puts the stop back for the whole position.
+    revise_target: a ``revised`` event; add: an ``add`` buy order for ``qty`` at ``entry`` beside
+    the stop (one order per unit, ADR 0031), the stop raised to ``stop`` when that is higher
+    (never lower): the add's fill re-sizes the stop to the whole position.
     Pending entries (ADR 0024): amend_entry: :func:`amend_position` with the new entry price /
     stop / qty (qty re-sized to the plan's risk budget when not given); cancel: the position
     ``cancelled`` and its open orders with it. Nothing is written when the book refuses it."""
@@ -1923,8 +2024,13 @@ def accept_revision(
     elif action == "add":
         qty = int(new["qty"])
         stop = float(new["stop"]) if new.get("stop") is not None else st.stop
-        done["stop_off"] = take_stop_off(conn, pid, "add", actor, t)
         if stop is not None and (st.stop is None or stop > st.stop + 1e-9):
+            od = orders(conn, pid)
+            live = od[(od["purpose"] == "stop") & od["status"].isin(LIVE_ORDER)]
+            if not live.empty:
+                done["stop_order_id"] = replace_order(
+                    conn, int(live["order_id"].iloc[-1]), None, stop, "raised for the add", actor, t
+                )
             position_event(
                 conn,
                 pid,
@@ -2061,9 +2167,7 @@ def undo_revision(
             or filled_qty(conn, int(oid))
         ):
             raise ValueError(f"the {action} order has filled (or is gone): nothing to undo")
-        order_event(
-            conn, int(oid), "cancelled", actor=actor, reason=f"undo revision {revision_id}", at=t
-        )
+        cancel_order(conn, int(oid), f"undo revision {revision_id}", actor, t)
         out["cancelled_order"] = int(oid)
         out["stop_order_id"] = protect(conn, pid, actor=actor, at=t)  # the stop back on
     position_event(

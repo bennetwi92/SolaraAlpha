@@ -2,7 +2,9 @@
 
 **Status:** accepted (owner, 2026-10-20). Amends 0015 (trade plans), 0021 (notifications), 0024
 (auto-applied revisions) and 0025 (agent adds: how they are worked at the broker). Amended by
-0030: the daily job reads Trading212 and tells the owner what the book is missing.
+0030: the daily job reads Trading212 and tells the owner what the book is missing. Amended by
+0031 (built 2026-10-23): **one order per unit of stock**, not per stock, and the execution job
+places the orders; the owner's steps below apply only while it doesn't (`orders_by` = owner).
 
 **Context.** The owner wants the system low- to no-touch: no approving positions or pipeline
 proposals, only being told which orders to submit, then reporting back when they are placed and
@@ -16,7 +18,10 @@ follow.
 - **No approvals.** The planner approves each plan as it drafts it (actor `pipeline`), and the
   pipeline's own revisions (the weekly review's pre-results trims and exits) are applied as
   recorded, like the agents' (ADR 0024). `book.py reject` / `undo` remain as overrides; nothing waits for them.
-- **One order per stock.** The book never holds two live orders for a stock: an exit, a partial
+- **One order per stock** *(superseded by 0031: one order per unit — the sells working on a
+  holding never add up to more than it holds; a buy works beside the stop; an exit is sent only
+  once the stop is swapped off its shares, in market hours)*. The book never holds two live
+  orders for a stock: an exit, a partial
   exit or an add cancels the live stop order first (its level stays the position's stop for
   heat and the daily triggers); a partial exit's fill, an add's fill, or either ending unfilled
   puts the stop back (approved, to place) for the shares held; a part fill on a buy cancels the
@@ -25,7 +30,8 @@ follow.
 - **Breakout entries stay stop market** (`stop_entry_orders = true`, confirmed). Stop-limit
   orders are not used: a capped buy-stop can miss the trade, and a protective stop-limit can fail
   to fill on a gap down.
-- **Adds (the monitor's, ADR 0025) are worked as a sequence**, not left at the broker: cancel
+- **Adds (the monitor's, ADR 0025) are worked as a sequence** *(superseded by 0031: the add
+  works beside the stop, whose fill re-sizes the stop)*, not left at the broker: cancel
   the stop, place the add, then the stop back on everything at the raised level; if the add
   hasn't filled by the close, cancel it and put the stop back.
 - **The inbox is instructions in plain words** (`portfolio/broker.py`, `notify.py`): per stock,

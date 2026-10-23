@@ -75,16 +75,18 @@ def test_agent_add_drafts_the_add_and_raises_the_stop(
     rv = book.revisions(conn, pid)
     assert len(rv) == 1 and rv["status"].iloc[0] == "accepted"
     done = rv["done"].iloc[0]
-    assert set(done) == {"revision_id", "action", "stop_off", "add_order_id"}
+    assert set(done) == {"revision_id", "action", "stop_order_id", "add_order_id"}
     od = book.orders(conn, pid).set_index("order_id")
     add = od.loc[done["add_order_id"]]
     assert add["purpose"] == "add" and add["side"] == 1 and add["qty"] == 50
     assert add["status"] == "approved" and add["price"] == pytest.approx(1676.6)
     assert add["valid_until"] == "2026-10-16"
-    stop = od.loc[done["stop_off"]]  # one order per stock (ADR 0026): off while the add works
-    assert stop["purpose"] == "stop" and stop["price"] == 1400.0 and stop["status"] == "cancelled"
+    # one order per unit (ADR 0031): the buy works beside the stop, raised to 1500 at once
+    stop = od.loc[done["stop_order_id"]]
+    assert stop["purpose"] == "stop" and stop["price"] == 1500.0 and stop["status"] == "approved"
+    assert stop["qty"] == 100
     st = book.position_state(conn, pid)
-    assert st.stop == 1500.0 and st.shares == 100  # the raised level the stop goes back on at
+    assert st.stop == 1500.0 and st.shares == 100
     # the fill of the add increases the shares and re-sizes the protective stop to 150 at 1500
     with conn:
         out = book.fill(conn, int(done["add_order_id"]), 50, 1676.0, at="2026-10-12T09:00:00+00:00")
@@ -100,8 +102,8 @@ def test_agent_add_drafts_the_add_and_raises_the_stop(
             conn, pid, "add", {"qty": 10, "entry": 1700.0, "stop": 1450.0}, "x", "agent:monitor"
         )
     done2 = dict(book.revisions(conn, pid).set_index("revision_id")["done"][rid2])
-    assert done2["stop_off"] is not None and book.position_state(conn, pid).stop == 1500.0
-    # while that add works, another is refused (one order per stock); a bad one too
+    assert "stop_order_id" not in done2 and book.position_state(conn, pid).stop == 1500.0
+    # while that add works, another is refused; a bad one too
     with conn:
         rid3 = book.propose_revision(
             conn, pid, "add", {"qty": 5, "entry": 1700.0}, "x", "agent:monitor"
@@ -114,7 +116,7 @@ def test_agent_add_drafts_the_add_and_raises_the_stop(
         rv.loc[rid3, "decision_reason"]
     )
     assert rv.loc[rid4, "status"] == "declined"
-    # the add ends unfilled: its stop goes back on for every share at the level
+    # the add ends unfilled: the stop stays on every share at the level
     with conn:
         book.end_order(conn, int(done2["add_order_id"]), "not_filled")
     stops = book.orders(conn, pid, status="approved")

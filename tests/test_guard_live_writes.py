@@ -26,6 +26,11 @@ from guard_live_writes import blocked  # noqa: E402
         "uv run python scripts/notify.py --mode daily --run 9 --channel github-issue",
         "SOLARA_ALLOW_WRITES=1 uv run python scripts/book.py approve 7",
         "uv run python scripts/book.py --db /tmp/x.db list && uv run python scripts/book.py fill 3",
+        "uv run python scripts/book.py swap 12",
+        "uv run python scripts/execute.py send 12 --reason x",
+        "uv run python scripts/execute.py --db /tmp/x.db turn",
+        "uv run python scripts/execute.py cancel 12 --reason x",
+        "uv run python scripts/execute.py hold 12 --until 2026-10-27T08:15Z --reason x",
     ],
 )
 def test_blocks_live_writes(command: str) -> None:
@@ -36,6 +41,8 @@ def test_blocks_live_writes(command: str) -> None:
     "command",
     [
         "uv run python scripts/book.py list",
+        "uv run python scripts/execute.py log --since 2026-10-27",
+        "uv run python scripts/execution_pack.py",
         "uv run python scripts/book.py show 7",
         "uv run python scripts/record.py prior JET2.L --stage research",
         "uv run python scripts/plan.py --run 9 --dry-run",

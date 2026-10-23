@@ -1,0 +1,126 @@
+# Execution job (docs/decisions/0031): the book's orders to Trading212, practice account only until
+# the owner says otherwise. Every 15 minutes through the London session on weekdays (07:00-16:45
+# UTC covers 08:00-16:30 London in both GMT and BST; GitHub may start a scheduled run late, an
+# accepted cost on practice), and once after each Agents run (the evening monitor's and the
+# Sunday PM's decisions go out before the next open). A turn is code only (scripts/execute.py
+# turn): book what Trading212 shows, put the stop on new shares at once, send what was approved,
+# swap a stop for an exit only in market hours, cancel an exit still unfilled at 15:45 London so
+# the stop is back before the close. The execution agent (/execute) is called only when the turn
+# leaves it something to decide; a second code turn then sends what it released, and anything it
+# leaves is sent as booked after 30 minutes, so an agent failure never stops the book.
+#
+# The only workflow with SOLARA_T212_TRADING: `demo` unless the owner sets the repository variable
+# SOLARA_T212_TRADING (to `live`, with SOLARA_T212_ENV `live`; or `off` to stop sending). Inert
+# without the Trading212 keys and the Turso secrets. Shares the `book` concurrency group, so a turn
+# never overlaps the scan, the daily check, the agents or a Book command. The inbox hears only
+# when something went out, filled or was refused; failures go to the desk-errors issue.
+name: Execution
+
+on:
+  schedule:
+    - cron: "*/15 7-16 * * 1-5"
+  workflow_run:
+    workflows: ["Agents"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: book
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  SOLARA_T212_KEY: ${{ secrets.SOLARA_T212_KEY }}
+  SOLARA_T212_SECRET: ${{ secrets.SOLARA_T212_SECRET }}
+  SOLARA_T212_ENV: ${{ vars.SOLARA_T212_ENV || 'demo' }}
+  SOLARA_T212_TRADING: ${{ vars.SOLARA_T212_TRADING || 'demo' }}
+  SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+  SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+  SOLARA_ORDERS_BY: system
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+  # the agent reaches the broker only through execute.py (and reads its pack)
+  ALLOWED_TOOLS: Bash(uv run --no-sync python scripts/execute.py *),Bash(uv run --no-sync python scripts/execution_pack.py*),Read,Glob,Grep
+
+jobs:
+  turn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - id: gate
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$SOLARA_T212_KEY" ] || [ -z "$SOLARA_T212_SECRET" ] || [ -z "$SOLARA_TURSO_URL" ] || [ -z "$SOLARA_TURSO_TOKEN" ]; then
+            echo "execution skipped: needs SOLARA_T212_KEY / SOLARA_T212_SECRET and SOLARA_TURSO_URL / SOLARA_TURSO_TOKEN" >> "$GITHUB_STEP_SUMMARY"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          elif [ "$SOLARA_T212_TRADING" = "off" ]; then
+            echo "execution skipped: the repository variable SOLARA_T212_TRADING is off" >> "$GITHUB_STEP_SUMMARY"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "agent=--agent" >> "$GITHUB_OUTPUT"
+          fi
+          echo "since=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.go == 'true'
+      - uses: astral-sh/setup-uv@v3
+        if: steps.gate.outputs.go == 'true'
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+        if: steps.gate.outputs.go == 'true'
+      - id: code
+        name: Turn (code only)
+        if: steps.gate.outputs.go == 'true'
+        run: |
+          uv run --no-sync python scripts/execute.py turn ${{ steps.gate.outputs.agent }} --report "$GITHUB_STEP_SUMMARY" --agent-file agent.txt
+          echo "agent=$(cat agent.txt)" >> "$GITHUB_OUTPUT"
+      - id: agent
+        name: Execution agent (only when the turn left it something to decide)
+        if: steps.gate.outputs.go == 'true' && steps.gate.outputs.agent != '' && steps.code.outputs.agent == 'true'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}  # the action otherwise wants an OIDC token (id-token: write)
+          prompt: "/execute"
+          claude_args: '--max-turns 30 --allowedTools "${{ env.ALLOWED_TOOLS }}"'
+      - name: Record the agent's failure
+        if: always() && steps.agent.outcome == 'failure'
+        run: >
+          uv run --no-sync python scripts/execute.py error
+          --reason "the execution agent failed or hit the turn limit (job ${{ github.run_id }}); the code sends what it left after 30 minutes"
+      - name: Turn again (what the agent released)
+        if: always() && steps.agent.outcome != 'skipped' && steps.gate.outputs.go == 'true'
+        run: uv run --no-sync python scripts/execute.py turn --agent --report "$GITHUB_STEP_SUMMARY"
+      - name: Inbox (only when something went out, filled or was refused)
+        if: always() && steps.gate.outputs.go == 'true'
+        run: |
+          set +e
+          uv run --no-sync python scripts/notify.py --mode execute --since "${{ steps.gate.outputs.since }}" --channel github-issue
+          rc=$?
+          set -e
+          if [ "$rc" = "3" ]; then echo "nothing to notify" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
+      - name: Desk errors (a stop not placed, a rejection, an error)
+        if: always() && steps.gate.outputs.go == 'true'
+        run: |
+          set +e
+          uv run --no-sync python scripts/notify.py --mode execute-errors --since "${{ steps.gate.outputs.since }}" --channel github-errors
+          rc=$?
+          set -e
+          if [ "$rc" = "3" ]; then echo "no desk errors" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
+      - uses: actions/upload-artifact@v4  # the agent's transcript, to see what it decided
+        if: always() && steps.agent.outputs.execution_file != ''
+        with:
+          name: transcript-execute-${{ github.run_id }}
+          path: ${{ steps.agent.outputs.execution_file }}
+          if-no-files-found: ignore
+          retention-days: 14
