@@ -204,3 +204,24 @@ def test_script_offline(
         and "## Suggested bands" in md
         and "| technical | trend |" in md
     )
+
+
+def test_cached_comparison_closes_give_the_same_replay(monkeypatch: pytest.MonkeyPatch) -> None:
+    from solaraalpha.analysis import backtest
+
+    full = _weekly(_trending(140))
+    bench = _weekly(
+        100 * np.exp(np.cumsum(0.001 + 0.02 * np.random.default_rng(5).standard_normal(140))),
+        currency="GBP",
+    )
+    bench_daily = _daily_from_weekly(bench)
+    # a 10-day hole (a blocking gap) mid-history: weeks before it must not see the cut
+    hole = bench_daily.index[300:310]
+    bench_daily = bench_daily.drop(hole)
+    comp = Comparisons("^M")
+    fast = replay("T.L", full, None, comp, step=2, fetch=lambda t: bench_daily)
+    plain = backtest.compare
+    monkeypatch.setattr(backtest, "compare", lambda w, c, f, closes=None: plain(w, c, f))
+    slow = replay("T.L", full, None, comp, step=2, fetch=lambda t: bench_daily)
+    assert "relative_strength.rs" in fast and fast["relative_strength.rs"].notna().any()
+    pd.testing.assert_frame_equal(fast, slow)

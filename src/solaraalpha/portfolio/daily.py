@@ -430,8 +430,8 @@ def run_daily(
 def free_cash(conn: Conn, rules: Any, but: int | None = None) -> float:
     """Cash (GBP) a new buy can use now: the book's cash, less what the other live buy orders
     will take (not the ones still waiting for a sale) and the cash buffer (on equity at cost)."""
-    states = [book.position_state(conn, int(p)) for p in book.positions(conn)["position_id"]]
-    e = risk.equity(book.cash(conn), states, pd.DataFrame())
+    states, closed = book.live_states(conn)
+    e = risk.equity(book.cash(conn), states, pd.DataFrame(), closed)
     ccy = book.positions(conn).set_index("position_id")["currency"]
     od = book.orders(conn)
     live = od[

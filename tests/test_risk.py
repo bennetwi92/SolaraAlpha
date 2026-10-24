@@ -152,3 +152,29 @@ def test_portfolio_script_offline(tmp_path: Path, capsys: pytest.CaptureFixture[
     assert set(cards.index) == {"JET2.L", "_PORTFOLIO"}
     assert cards.loc["_PORTFOLIO", "equity"] == pytest.approx(9_935.0)
     assert cards.loc["JET2.L", "r"] == pytest.approx(1.0)
+
+
+def test_the_cash_without_rebuilding_closed_trades(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    with conn:
+        book.cash_event(conn, "deposit", 5000.0)
+        # a closed trade with costs and a dividend, and one still open
+        a, ao = book.draft_position(conn, "A.L", 1000.0, 900.0, 100)
+        book.approve_position(conn, a)
+        book.fill(conn, ao, 100, 1000.0, commission=1.5)
+        book.record_dividend(conn, "A.L", 12.0)
+        x = book.exit_position(conn, a, "target")
+        book.fill(conn, x, 100, 1180.0, fees=0.8)
+        b, bo = book.draft_position(conn, "B.L", 500.0, 450.0, 40)
+        book.approve_position(conn, b)
+        book.fill(conn, bo, 40, 505.0)
+    every = [book.position_state(conn, int(p)) for p in book.positions(conn)["position_id"]]
+    live, closed = book.live_states(conn)
+    cash = book.cash(conn)
+    conn.close()
+    assert [s.ticker for s in live] == ["B.L"]
+    full = risk.equity(cash, every, pd.DataFrame())
+    fast = risk.equity(cash, live, pd.DataFrame(), closed)
+    assert fast.cash == pytest.approx(full.cash) and fast.realised_pnl == pytest.approx(
+        full.realised_pnl
+    )

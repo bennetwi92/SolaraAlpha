@@ -715,3 +715,55 @@ def test_a_hold_past_the_orders_validity_is_refused(db_backend: Path | None) -> 
         "2026-10-26T09:00"
     )
     conn.close()
+
+
+def test_a_turn_reads_recent_history_and_all_of_it_when_an_order_is_missing(
+    db_backend: Path | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn = book.connect(db_backend)
+    _, oid = _entry(conn)
+    with conn:
+        book.place_order(conn, oid, "777")  # at the broker since long before the window
+    calls: list[object] = []
+    empty = pd.DataFrame(columns=t212.ORDER_COLS)
+    monkeypatch.setattr(t212, "fetch_pending", lambda: empty)
+
+    def history(newer_than: object = None) -> pd.DataFrame:
+        calls.append(newer_than)
+        return pd.DataFrame(columns=t212.FILL_COLS)
+
+    monkeypatch.setattr(t212, "fetch_history", history)
+    monkeypatch.setattr(t212, "fetch_positions", lambda: pd.DataFrame(columns=["t212", "qty"]))
+    monkeypatch.setattr(t212, "fetch_dividends", lambda newer_than=None: pd.DataFrame())
+    now = pd.Timestamp("2026-10-27T10:00Z")
+    br = execution.recent_broker(conn, {}, now)
+    # 777 is neither working nor in the last 3 days: the whole history is read too
+    assert calls == [now - pd.Timedelta(days=3), None] and br.transactions.empty
+    calls.clear()
+    with conn:
+        book.cancel_order(conn, oid, "gone", book.OWNER)
+        book.order_event(conn, oid, "cancelled", actor=book.OWNER)
+    execution.recent_broker(conn, {}, now)
+    assert calls == [now - pd.Timedelta(days=3)]  # nothing missing: the window is enough
+    conn.close()
+
+
+def test_the_live_client_keeps_the_state_until_it_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+    fetched: list[int] = []
+    monkeypatch.setattr(t212, "fetch_instruments", lambda: t212.parse_instruments([]))
+    monkeypatch.setattr(t212, "lse_lines", lambda inst: {})
+
+    def fetch(to_yahoo: object) -> str:
+        fetched.append(1)
+        return "br"
+
+    monkeypatch.setattr(execution.reconcile, "fetch_broker", fetch)
+
+    monkeypatch.setattr(t212, "cancel", lambda ref: None)
+    client = execution.LiveClient(write=False)
+    client.broker()
+    client.broker()
+    assert len(fetched) == 1
+    client.cancel("9")
+    client.broker()
+    assert len(fetched) == 2

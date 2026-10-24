@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 import time
+from datetime import timedelta
 from functools import cache
 from typing import Any
 
@@ -32,6 +33,7 @@ import pandas as pd
 import requests
 
 from solaraalpha.config import settings
+from solaraalpha.data.cache import parquet_cache
 from solaraalpha.data.http import DEFAULT_TIMEOUT, USER_AGENT, session
 from solaraalpha.log import get_logger
 
@@ -154,16 +156,30 @@ def _write(method: str, path: str, body: dict[str, Any] | None = None) -> Any:
     return resp.json() if resp.content else None
 
 
-def _pages(path: str, **params: Any) -> list[dict[str, Any]]:
-    """Every item of a paged list endpoint, oldest page last as served."""
+def _pages(
+    path: str, newer_than: pd.Timestamp | None = None, when: str = "", **params: Any
+) -> list[dict[str, Any]]:
+    """Every item of a paged list endpoint, oldest page last as served. ``newer_than``: stop
+    after the first page whose items are all dated (``when``, a dotted key) before it."""
     items: list[dict[str, Any]] = []
     page: Any = _get(path, limit=PAGE, **params)
     while True:
         items += page["items"]
         nxt = page.get("nextPagePath")
-        if not nxt:
+        if not nxt or (newer_than is not None and _all_before(page["items"], when, newer_than)):
             return items
         page = _get(str(nxt))
+
+
+def _all_before(items: list[dict[str, Any]], when: str, cutoff: pd.Timestamp) -> bool:
+    def date(it: dict[str, Any]) -> pd.Timestamp | None:
+        v: Any = it
+        for k in when.split("."):
+            v = (v or {}).get(k)
+        return _utc(v)
+
+    dates = [date(it) for it in items]
+    return all(d is not None and d < cutoff for d in dates)
 
 
 def _utc(v: Any) -> pd.Timestamp | None:
@@ -356,12 +372,18 @@ def fetch_pending() -> pd.DataFrame:
     return parse_pending(_get("/equity/orders"))
 
 
-def fetch_history() -> pd.DataFrame:
-    return parse_history(_pages("/equity/history/orders"))
+def fetch_history(newer_than: pd.Timestamp | None = None) -> pd.DataFrame:
+    """Historical orders; ``newer_than``: only the pages back to it (by creation date; an older
+    order may still be on a later page: see ``execution.LiveClient.broker``)."""
+    return parse_history(
+        _pages("/equity/history/orders", newer_than=newer_than, when="order.createdAt")
+    )
 
 
-def fetch_dividends() -> pd.DataFrame:
-    return parse_dividends(_pages("/equity/history/dividends"))
+def fetch_dividends(newer_than: pd.Timestamp | None = None) -> pd.DataFrame:
+    return parse_dividends(
+        _pages("/equity/history/dividends", newer_than=newer_than, when="paidOn")
+    )
 
 
 def fetch_transactions() -> pd.DataFrame:
@@ -369,7 +391,13 @@ def fetch_transactions() -> pd.DataFrame:
 
 
 def fetch_instruments() -> pd.DataFrame:
-    """Every instrument Trading212 offers (one call; rate-limited to one per 50 s)."""
+    """Every instrument Trading212 offers (one call, rate-limited to one per 50 s): cached for a
+    day per account, so several ``execute.py`` calls in a turn do not hit the limit."""
+    return _instruments(settings.t212_env)
+
+
+@parquet_cache(ttl=timedelta(days=1))
+def _instruments(env: str) -> pd.DataFrame:  # ``env`` keys the cache: demo and live never mix
     return parse_instruments(_get("/equity/metadata/instruments"))
 
 

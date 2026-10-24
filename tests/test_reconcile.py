@@ -216,6 +216,13 @@ def test_absorb_books_a_stop_that_sold(db_backend: Path | None) -> None:
     assert absorb(conn, _stop_sold(_broker()))[0] == []  # nothing twice
 
 
+def test_a_fill_matched_by_its_terms_keeps_the_broker_id(db_backend: Path | None) -> None:
+    conn, ids = _book(db_backend)  # the stop was placed by hand: no Trading212 id in the book
+    absorb(conn, _stop_sold(_broker()))
+    od = book.orders(conn).set_index("order_id")
+    assert od.loc[ids["stop"], "broker_ref"] == "900000004"  # later passes match it by id
+
+
 def test_absorb_marks_placed_then_takes_its_fill(db_backend: Path | None) -> None:
     conn, ids = _book(db_backend, avg_placed=False)
     br = _broker()

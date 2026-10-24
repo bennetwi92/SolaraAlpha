@@ -155,17 +155,33 @@ class Client(Protocol):
     def order(self, ref: str) -> dict[str, Any] | None: ...
 
 
+HISTORY_DAYS = 3  # how far back a turn reads the broker's order and dividend history
+
+
 class LiveClient:
     """Trading212 through :mod:`solaraalpha.data.trading212`. ``write=True`` refuses at once
-    unless orders may be sent (``SOLARA_T212_TRADING`` names the account, ADR 0031)."""
+    unless orders may be sent (``SOLARA_T212_TRADING`` names the account, ADR 0031).
 
-    def __init__(self, write: bool = True) -> None:
+    With ``conn`` (the book), :meth:`broker` reads only the last :data:`HISTORY_DAYS` of history
+    and no transactions (a turn books fills, ends and dividends; the cash check is the daily
+    job's), falling back to the whole history when an order the book has at the broker is in
+    neither the working orders nor that window. The state is kept until the next write."""
+
+    def __init__(self, write: bool = True, conn: Conn | None = None) -> None:
         if write and (why := t212.trading_allowed()):
             raise RuntimeError(why)
         self.lines = t212.lse_lines(t212.fetch_instruments())  # Yahoo -> Trading212
+        self.conn = conn
+        self._br: reconcile.Broker | None = None
 
     def broker(self) -> reconcile.Broker:
-        return reconcile.fetch_broker({v: k for k, v in self.lines.items()})
+        if self._br is None:
+            to_yahoo = {v: k for k, v in self.lines.items()}
+            if self.conn is None:
+                self._br = reconcile.fetch_broker(to_yahoo)
+            else:
+                self._br = recent_broker(self.conn, to_yahoo)
+        return self._br
 
     def ticker(self, yahoo: str) -> str | None:
         return self.lines.get(yahoo)
@@ -173,9 +189,11 @@ class LiveClient:
     def place(
         self, type: str, t212_ticker: str, qty: int, side: int, price: float | None
     ) -> dict[str, Any]:
+        self._br = None  # what the broker shows changes with every write
         return t212.place(type, t212_ticker, qty, side, price)
 
     def cancel(self, ref: str) -> None:
+        self._br = None
         t212.cancel(ref)
 
     def order(self, ref: str) -> dict[str, Any] | None:
@@ -232,6 +250,29 @@ class Prices:
 
     def close(self, ticker: str) -> float | None:
         return self._get(ticker)[0]
+
+
+def recent_broker(
+    conn: Conn, to_yahoo: dict[str, str], now: pd.Timestamp | None = None
+) -> reconcile.Broker:
+    """The broker state for a turn: positions and working orders, the order and dividend
+    history of the last :data:`HISTORY_DAYS` (all of it when a book order at the broker is in
+    neither, so an old order that ended is never mistaken for gone), no transactions."""
+    cutoff = (now or pd.Timestamp.now(tz="UTC")) - pd.Timedelta(days=HISTORY_DAYS)
+    pending = t212.fetch_pending()
+    history = t212.fetch_history(newer_than=cutoff)
+    od = book.orders(conn)
+    refs = set(od.loc[od["status"].isin(book.AT_BROKER), "broker_ref"].dropna().astype(str))
+    if refs - set(pending["id"].astype(str)) - set(history["id"].astype(str)):
+        history = t212.fetch_history()
+    return reconcile.Broker(
+        positions=t212.fetch_positions(),
+        pending=pending,
+        history=history,
+        dividends=t212.fetch_dividends(newer_than=cutoff),
+        transactions=t212.parse_transactions([]),
+        to_yahoo=to_yahoo,
+    )
 
 
 def prices_for(br: reconcile.Broker, quotes: Quotes, now: Any) -> Prices:
@@ -388,8 +429,8 @@ def check(
         free = free_cash(conn, rules, but=pid)
         if cost > free + 0.01:
             raise Refused(f"the buy needs £{cost:,.2f} but £{max(free, 0):,.2f} is free")
-        states = [book.position_state(conn, int(p)) for p in book.positions(conn)["position_id"]]
-        acct = risk.equity(book.cash(conn), states, pd.DataFrame())
+        states, closed = book.live_states(conn)
+        acct = risk.equity(book.cash(conn), states, pd.DataFrame(), closed)
         eq = acct.cash + sum(
             book.to_account(s.avg_cost * s.shares, s.currency)
             for s in states

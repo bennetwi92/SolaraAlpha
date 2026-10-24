@@ -553,7 +553,7 @@ def _save_snapshot(conn: Conn, run_id: int, table: str, key: list[str], new: pd.
     stored version."""
     cols = [c for c in _columns(conn, table) if c not in ("ticker", "run_id", *key)]
     ticker = str(new["ticker"].iloc[0]) if len(new) else ""
-    stored = _read(conn, table, ticker)
+    stored = _read_latest(conn, table, ticker, key)
     # One version per key per run: an instrument saved twice in a run (a watchlist stock that is
     # also another's peer) can be fetched minutes apart with a moved live bar; the first wins.
     this_run = stored.loc[stored["run_id"] == run_id, key]
@@ -583,6 +583,18 @@ def _save_snapshot(conn: Conn, run_id: int, table: str, key: list[str], new: pd.
 
 def _columns(conn: Conn, table: str) -> list[str]:
     return [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+
+
+def _read_latest(conn: Conn, table: str, ticker: str, key: list[str]) -> pd.DataFrame:
+    """The latest stored version of each ``key`` for ``ticker`` (this run's, once it saved
+    one): what a new snapshot is compared with, without reading every older version."""
+    same = " AND ".join(f"x.{k} = t.{k}" for k in key)
+    return query(
+        f"SELECT t.* FROM {table} t JOIN runs r USING (run_id) WHERE t.ticker = ? AND t.run_id ="
+        f" (SELECT MAX(x.run_id) FROM {table} x WHERE x.ticker = t.ticker AND {same})",
+        conn,
+        params=[ticker],
+    )
 
 
 def _read(conn: Conn, table: str, ticker: str, as_seen: str | None = None) -> pd.DataFrame:
