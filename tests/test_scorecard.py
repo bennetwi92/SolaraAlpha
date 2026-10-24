@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from solaraalpha import store
+from solaraalpha import store, track_record
 from solaraalpha.analysis.scorecard import (
     HORIZONS,
     forward_returns,
@@ -190,7 +190,7 @@ def test_learn_scorecard_script_offline(
         store.save_label(run_id, "B.L", "screen", "PASS", "", conn=conn)
     conn.close()
     # the benchmark has no saved history: it is fetched
-    monkeypatch.setattr(learn, "fetch_daily", lambda t: _daily(t, 0.005, currency="GBP"))
+    monkeypatch.setattr(track_record, "fetch_daily", lambda t: _daily(t, 0.005, currency="GBP"))
     learn.main(["scorecard", "--db", str(db)])
     out = capsys.readouterr().out
     assert "2 labels scored" in out and "By stage x label:" in out and "By toolkit x band:" in out

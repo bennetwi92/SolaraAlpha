@@ -242,6 +242,7 @@ Current state:
 | Validator (agent) | `/validate JET2.L --run N` or `/validate --run N` in Claude Code |
 | Monitor pack for a daily run's open positions and pending entries (then vs now, thesis, filing text, research levels, systematic stops) | `uv run python scripts/monitor_pack.py --run N [--position ID]` |
 | Monitor (agent): daily re-evaluation; open: hold / tighten / partial / exit / revise target / add; pending: hold / amend_entry / cancel — applied as recorded (ADR 0024) | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions --status all` / `undo REV_ID --reason` (pipeline proposals: `accept REV_ID` / `decline REV_ID --reason`) |
+| An agent's own track record: decisions, what happened next (hindsight), where it was overruled, reliability and cost (ADR 0035) | `uv run python scripts/track_record.py --agent senior-quant\|fundamental-strategist\|portfolio-manager\|execution-trader\|STAGE\|all [--since D] [--out FILE]` |
 | Validator disagreement log (toolkits not warranted, concerns, rate per run) | `uv run python scripts/validator_stats.py [--since D]` |
 | Post-mortem pack for a closed position (record + weekly bars, hindsight labelled) | `uv run python scripts/postmortem_pack.py POSITION_ID` / `--since ISO` |
 | Post-mortem (agent): set-up, what worked / failed, signal right or wrong, rule proposals | `/postmortem POSITION_ID` in Claude Code → `record.py verdict ... --position ID` |
@@ -303,6 +304,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         money, regime, macro, correlations, limits; desk-wide failures, scan coverage,
                         broker differences, results calendar, code changes — 0027, 0032
   value_models.py       register of per-stock value models (config/value_models.toml) for research
+  track_record.py       each agent's own track record (per desk area / stage) from the DB, plain
+                        words, small groups flagged; labels_with_dates / prices_for — 0035
   dashboard.py          render_dashboard: one self-contained HTML page from the DB (inline CSS,
                         base64 PNG charts, md_to_html for the pack) — #136
   desk_chat.py          the desk thread: append-only `chat` table, post (+ Telegram), pull the
