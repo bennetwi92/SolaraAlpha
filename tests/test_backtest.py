@@ -150,12 +150,15 @@ def test_forward_and_sweep_find_a_known_edge() -> None:
     assert suggest(sw, min_n=10_000)["suggested"].isna().all()
     # forward returns from bars
     w = _weekly(np.array([100.0, 110.0, 121.0, 133.1, 146.41]))
+    w["open"] = [100.0, 105.0, 115.0, 125.0, 140.0]  # Monday gaps up from Friday's close
     f = forward(
         w,
         horizons=(1, 2),
         bench=_weekly(np.array([100.0, 100.0, 100.0, 100.0, 100.0]), currency="GBP"),
     )
-    assert f["ret_1w"].iloc[0] == pytest.approx(0.1) and f["exc_2w"].iloc[0] == pytest.approx(0.21)
+    # entry at the next Monday's open (105), never at the untradeable Friday close (100)
+    assert f["ret_1w"].iloc[0] == pytest.approx(110 / 105 - 1)
+    assert f["exc_2w"].iloc[0] == pytest.approx(121 / 105 - 1)
     assert f["ret_2w"].isna().iloc[-2:].all() and f["week"].iloc[0] == w.index[0]
     assert _with_threshold(("trend >= 0.25", "momentum > 0"), "trend", 0.4) == (
         "trend >= 0.4",

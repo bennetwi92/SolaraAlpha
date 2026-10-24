@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from solaraalpha.analysis.backtest import MIN_WEEKS
+from solaraalpha.analysis.backtest import MIN_WEEKS, entry_and_close
 from solaraalpha.analysis.fundamentals import (
     fundamentals_card,
     fx_ticker,
@@ -82,8 +82,8 @@ def one(t: str) -> str:
                 except Exception:
                     fx = None
         datr = atr(daily)
-        px = weekly["adj_close"]
-        ret8 = px.shift(-8) / px - 1
+        entry, close = entry_and_close(weekly)  # Monday's open after the signal (ADR 0029)
+        ret8 = close.shift(-8) / entry - 1
         rows = []
         for i, wk in enumerate(weekly.index):
             if i < MIN_WEEKS:
