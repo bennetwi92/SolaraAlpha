@@ -187,6 +187,13 @@ def changes(conn: Conn, since: str) -> tuple[list[str], list[str], list[str]]:
                 f"**{tk}**: move the target alert {broker.price(old.get('target'), ccy)}"
                 f" → {broker.price(new.get('target'), ccy)} ({who}: {r['reason']})"
             )
+        elif action == "renew":
+            info.append(
+                f"**{tk}**: {who} kept the planned entry working until"
+                f" {(r['done'] or {}).get('valid_until')}"
+                f" ({str(r['reason']).partition(': ')[2] or r['reason']}). Nothing to change in"
+                f" {BROKER} while the order there is good till cancelled."
+            )
         elif action == "cancel" and not (r["done"] or {}).get("was_placed"):
             info.append(
                 f"**{tk}**: {who} cancelled the planned entry ({r['reason']}). It was never"

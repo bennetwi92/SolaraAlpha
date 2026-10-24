@@ -186,3 +186,49 @@ def test_cash_conditions_and_short_rejected(db_backend: Path | None) -> None:
     assert book.position_state(conn, pid).shares == 0
     assert math.isnan(book.position_state(conn, pid).entry_avg)
     conn.close()
+
+
+def test_renew_extends_an_entry_and_undo_restores_it(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    with conn:
+        pid, oid = book.draft_position(
+            conn, "JET2.L", 1500.0, 1400.0, 10, at="2026-10-16T18:00:00+00:00", valid_days=10
+        )
+        book.approve_position(conn, pid)
+        with pytest.raises(ValueError, match="already valid until 2026-10-26"):
+            book.accept_revision(
+                conn,
+                book.propose_revision(
+                    conn, pid, "renew", {"valid_until": "2026-10-20"}, "x", book.OWNER
+                ),
+            )
+        rid = book.propose_revision(
+            conn, pid, "renew", {"valid_until": "2026-11-01"}, "still on", "agent:pm"
+        )
+    assert book.revisions(conn, pid).set_index("revision_id").loc[rid, "status"] == "accepted"
+    assert book._order(conn, oid)["valid_until"] == "2026-11-01"
+    with conn:  # a later amend keeps the renewed validity
+        new = book.amend_position(conn, pid, price=1490.0)["new"]["order_id"]
+    assert book._order(conn, new)["valid_until"] == "2026-11-01"
+    assert book.expire_orders(conn, "2026-10-28") == []
+    with conn:
+        book.undo_revision(conn, rid, "changed my mind")
+    assert book._order(conn, new)["valid_until"] == "2026-10-26"
+    conn.close()
+
+
+def test_expire_ends_an_add_past_its_validity_and_the_stop_stays(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    with conn:
+        book.cash_event(conn, "deposit", 50000.0)
+        pid, oid = book.draft_position(conn, "JET2.L", 1500.0, 1400.0, 10)
+        book.approve_position(conn, pid)
+        book.fill(conn, oid, 10, 1500.0)
+        add = book.add_order(
+            conn, pid, 1, "limit", 5, 1520.0, "add", "2026-01-02", "approved", "agent:monitor"
+        )
+        assert book.expire_orders(conn, "2026-01-03") == [add]
+    od = book.orders(conn, pid)
+    assert book.order_status(conn, add) == "expired"
+    assert ((od["purpose"] == "stop") & od["status"].isin(list(book.LIVE_ORDER))).any()
+    conn.close()

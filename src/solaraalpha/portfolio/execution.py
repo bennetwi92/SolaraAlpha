@@ -16,7 +16,9 @@ its orders is still cancelling.
   to the shares left). An exit unfilled at the deadline is cancelled and the stop goes back on
   before the close, so a holding never crosses a close without its stop.
 - **Entries and adds** go out as booked; a ``wait_for_break`` entry once a daily close is above
-  its price, a PM rotation's buy once its sale has filled.
+  its price, a PM rotation's buy once its sale has filled. Once the session of its
+  ``valid_until`` day has closed, a buy expires in the book and is cancelled at the broker in
+  the same turn, an order placed by hand included (ADR 0034).
 - With the agent on (``agent=True``), a new non-stop order waits up to :data:`AGENT_GRACE` for
   the execution agent to choose how and when (``send`` with a type / price, ``hold``); after
   that the code sends it as booked, so an agent failure never stops the book trading.
@@ -115,6 +117,17 @@ def past_deadline(at: Any) -> bool:
     """In today's session, at or after the exit deadline (working exits are cancelled)."""
     s = session(at)
     return s is not None and s[1] - EXIT_DEADLINE <= pd.Timestamp(at) < s[1]
+
+
+def expiry_as_of(at: Any) -> str:
+    """The date for :func:`book.expire_orders` at ``at``: an order valid until a day is good
+    through that day's session, so after today's close it is tomorrow's date (orders valid
+    until today expire), else today's (orders valid until yesterday or before)."""
+    local = pd.Timestamp(at).tz_convert(LONDON)
+    s = session(at)
+    if s is not None and pd.Timestamp(at) >= s[1]:
+        local += pd.Timedelta(days=1)
+    return local.strftime("%Y-%m-%d")
 
 
 def deadline_text(at: Any) -> str:
@@ -540,13 +553,17 @@ def settle(
     od = reconcile._book_orders(conn)
     match, _ = reconcile._matcher(od, br)
     by_id = od.set_index("order_id")
+    placed = _placed_ids(conn)
     todo = []
     for o in br.pending.to_dict("records"):
         oid = match(o)
         if oid is None:
             continue  # not the book's: never touched (an order by hand is the owner's to resolve)
         status, ref = by_id.loc[oid, "status"], by_id.loc[oid, "broker_ref"]
-        ended = status in ("cancelled", "expired", "not_filled") and str(ref) == str(o["id"])
+        # the book's own order: sent with this ref, or placed by hand (no ref) and matched on
+        # its terms; an order the book ended before it was ever placed is not this one
+        ours = str(ref) == str(o["id"]) or (pd.isna(ref) and oid in placed)
+        ended = status in ("cancelled", "expired", "not_filled") and ours
         if status == "cancelling" or ended:
             todo.append((oid, str(o["id"])))
     for oid, ref in todo:
@@ -571,6 +588,11 @@ def settle(
             why = f"cancel not confirmed ({type(e).__name__}: {e}): tried again next turn"
             record(conn, oid, "error", why, actor, {"ref": ref})
     return _absorb(conn, client.broker() if todo else br)
+
+
+def _placed_ids(conn: Conn) -> set[int]:
+    df = query("SELECT DISTINCT order_id FROM order_events WHERE status = 'placed'", conn)
+    return {int(x) for x in df["order_id"]}
 
 
 def _absorb(conn: Conn, br: reconcile.Broker) -> list[str]:
@@ -673,15 +695,29 @@ def turn(
     rules: Rules | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> TurnResult:
-    """One execution turn (code only): book what the broker shows; send again what the broker
-    never received; at the deadline cancel the exits still working; then settle the cancels and
-    send every approved order that may go out now, stops first, until nothing changes."""
+    """One execution turn (code only): book what the broker shows; expire the buys past their
+    validity; send again what the broker never received; at the deadline cancel the exits still
+    working; then settle the cancels and send every approved order that may go out now, stops
+    first, until nothing changes."""
     now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
     rules = rules or load_rules()
     res = TurnResult(started=book.now())
     br = client.broker()
     prices = prices_for(br, quotes or _quotes(), now)
     res.booked += _absorb(conn, br)
+
+    # after the fills are booked, so an order that filled before its expiry keeps its fill
+    stale = book.orders(conn).set_index("order_id")["valid_until"]
+    with conn:
+        expired = book.expire_orders(conn, expiry_as_of(now), actor=actor)
+    for oid in expired:
+        why = f"valid until {stale[oid]}"
+        record(conn, oid, "expire", why, actor)
+        o = book._order(conn, oid)
+        res.done.append(
+            f"{_ticker(conn, oid)}: {o['purpose']} #{oid} expired ({why}): cancelled at"
+            " Trading212 if it was working there"
+        )
 
     od = book.orders(conn)
     for r in od[od["status"] == "sending"].to_dict("records"):
@@ -779,6 +815,24 @@ def agent_queue(conn: Conn, now: Any, prices: Prices, agent: bool = True) -> lis
     return out
 
 
+def hold(conn: Conn, order_id: int, until: Any, reason: str, actor: str = AGENT) -> str:
+    """The agent keeps an approved order back until ``until`` (UTC unless it has an offset);
+    returns it as ISO. Refused past the order's validity: it would expire unsent, so let it
+    lapse (``cancel``) instead."""
+    at = pd.Timestamp(until)
+    at = at.tz_localize("UTC") if at.tz is None else at.tz_convert("UTC")
+    if book.order_status(conn, order_id) != "approved":
+        raise Refused(f"order {order_id} is not approved: nothing to hold")
+    valid = book._order(conn, order_id)["valid_until"]
+    if valid and not pd.isna(valid) and expiry_as_of(at) > str(valid):
+        raise Refused(
+            f"order {order_id} is valid until {valid}: held past that it expires unsent;"
+            " cancel it instead if it should not go out"
+        )
+    record(conn, order_id, "hold", reason, actor, {"until": at.isoformat()})
+    return at.isoformat()
+
+
 def cancel(
     conn: Conn,
     client: Client,
@@ -819,7 +873,17 @@ def _plain(v: Any) -> Any:
 def _order_row(conn: Conn, r: Any) -> dict[str, Any]:
     pid = int(r["position_id"])
     pos = book._position(conn, pid)
-    keys = ("order_id", "purpose", "side", "type", "qty", "price", "status", "broker_ref")
+    keys = (
+        "order_id",
+        "purpose",
+        "side",
+        "type",
+        "qty",
+        "price",
+        "status",
+        "broker_ref",
+        "valid_until",
+    )
     out = {k: _plain(r[k]) for k in keys}
     ev = book.order_events(conn, int(r["order_id"]))
     return {

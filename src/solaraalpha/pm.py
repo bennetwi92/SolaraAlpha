@@ -9,9 +9,10 @@ cash, heat, sector exposure, drawdown and circuit breaker), the market regime, t
 notes, weekly-return correlations across candidates and holdings, the limits, and the week's
 agent failures. ADR 0032's "Must" cards: per candidate the validator's view, the research note
 and the last close against the entry; per holding its kill criteria as the latest daily run found
-them; per pending entry its validity, whether it was placed, what it waits for and the last close;
+them; per pending entry its validity, whether it lapses before the next weekly run (not kept unless
+the PM renews it, ADR 0034), whether it was placed, what it waits for and the last close;
 for the desk the run's failures by item, the scan's coverage, the book against Trading212, the
-results calendar and what changed in the code since the previous scan. The PM decides the allocation and the rotations from it and records them
+results calendar and what changed in the code since the previous scan. The PM decides the allocation, the rotations and the renewals from it and records them
 through ``record.py verdict`` (:func:`agents.record_book`).
 """
 
@@ -26,7 +27,7 @@ from typing import Any
 import pandas as pd
 
 from solaraalpha import store
-from solaraalpha.agents import BOOK, SECTOR_PREFIX, trade_levels
+from solaraalpha.agents import BOOK, SECTOR_PREFIX, lapsing, next_run, trade_levels
 from solaraalpha.config import settings
 from solaraalpha.portfolio import book, risk
 from solaraalpha.portfolio.fit import RANK_NOTE
@@ -474,6 +475,7 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
             }
         )
     pend = pending_positions(conn)
+    due = lapsing(conn, run_id)  # not kept unless the PM renews them (ADR 0034)
     pending_rows = []
     for row in pend.to_dict("records"):
         pid = int(row["position_id"])
@@ -487,6 +489,7 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
                 "entry_order": pe,
                 "valid_until": _clean(valid),
                 "days_left": (_naive(valid) - _naive(started)).days if _clean(valid) else None,
+                "lapses": pid in due,
                 "placed": book.entry_ever_placed(conn, pid),
                 "waits_for": book.waiting_on(conn, pid),
                 "last_close": last_close(conn, str(row["ticker"]), (pe or {}).get("price")),
@@ -552,6 +555,16 @@ def build_pack(conn: Conn, run_id: int, rules: Rules | None = None) -> dict[str,
             "drawdown": _clean(drawdown),
             "breaker_tripped": bool(base.report.breaker),
             "slots_free": rules.max_positions - len(held) - len(pend),
+            "next_run": next_run(conn, run_id),
+            "lapsing": {
+                "position_ids": sorted(due),
+                "risk": float(pend.loc[pend["position_id"].isin(due), "risk"].sum()),
+                "value": float(pend.loc[pend["position_id"].isin(due), "value"].sum()),
+                "slots_free_if_none_renewed": rules.max_positions
+                - len(held)
+                - len(pend)
+                + len(due),
+            },
         },
         "regime": latest_regime(conn),
         "macro": macro,

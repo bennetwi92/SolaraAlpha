@@ -17,7 +17,10 @@ The **portfolio manager** (stage ``pm``, pseudo-ticker ``_BOOK``) records one ve
 run carrying the week's ``allocation`` (which research-ACT tickers get capital, at what risk per
 trade inside ``risk_per_trade_range``, in priority order) and ``rotations`` (open positions to
 exit, pending entries to cancel, to make room); :func:`record_book` checks it against the run
-and the book and applies the rotations (docs/decisions/0027).
+and the book and applies the rotations (docs/decisions/0027). A pending entry whose order would
+expire before the next weekly run is **not kept** unless the PM lists it in ``renewals``: the
+renewed ones stay working until the next run, the rest are cancelled as the verdict is recorded,
+so the week's allocation is planned without them (docs/decisions/0034).
 """
 
 from __future__ import annotations
@@ -38,6 +41,7 @@ Label = Literal["ACT", "WATCH", "PASS", "ERROR"]
 Stage = Literal["validate", "research", "events", "monitor", "postmortem", "macro", "pm"]
 SECTOR_PREFIX = "_SECTOR:"  # pseudo-ticker of a shared sector / macro note (#140)
 BOOK = "_BOOK"  # pseudo-ticker of the portfolio manager's verdict (ADR 0027)
+WEEK = pd.Timedelta(days=7)  # weekly runs are a week apart: a renewal lasts until the next one
 LABEL_STAGES = ("events", "validate", "research")  # stages that write a labels row
 RANK = {"ACT": 3, "WATCH": 2, "PASS": 1}  # ERROR is outside the order
 PREVIOUS = {"validate": ("screen",), "research": ("validate", "screen")}
@@ -128,6 +132,16 @@ class Rotation(BaseModel):
     funds: str | None = None  # the ticker the room is for, if any
 
 
+class Renewal(BaseModel):
+    """A pending entry the PM still wants to build: its order stays working until the next
+    weekly run instead of lapsing (ADR 0034)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    position_id: int
+    reason: str = Field(min_length=1)
+
+
 class Verdict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -145,6 +159,7 @@ class Verdict(BaseModel):
     trade: TradeLevels | None = None  # required on a research ACT (ADR 0023)
     allocation: list[Allocation] | None = None  # the PM's, in priority order (ADR 0027)
     rotations: list[Rotation] = Field(default_factory=list)  # the PM's
+    renewals: list[Renewal] = Field(default_factory=list)  # the PM's (ADR 0034)
 
     @model_validator(mode="after")
     def _act_has_trade(self) -> Verdict:
@@ -155,8 +170,8 @@ class Verdict(BaseModel):
     @model_validator(mode="after")
     def _pm_has_allocation(self) -> Verdict:
         if self.stage != "pm":
-            if self.allocation is not None or self.rotations:
-                raise ValueError("only the pm stage gives `allocation` / `rotations`")
+            if self.allocation is not None or self.rotations or self.renewals:
+                raise ValueError("only the pm stage gives `allocation` / `rotations` / `renewals`")
             return self
         if self.ticker != BOOK:
             raise ValueError(f"a pm verdict is about the book: ticker must be {BOOK!r}")
@@ -168,6 +183,11 @@ class Verdict(BaseModel):
         ids = [r.position_id for r in self.rotations]
         if len(set(ids)) != len(ids):
             raise ValueError("each position appears once in `rotations`")
+        kept = [r.position_id for r in self.renewals]
+        if len(set(kept)) != len(kept):
+            raise ValueError("each position appears once in `renewals`")
+        if set(kept) & set(ids):
+            raise ValueError("a position is either renewed or rotated out, not both")
         return self
 
     @field_validator("scores")
@@ -295,6 +315,7 @@ def record_verdict(
         if v.allocation is not None:
             fields["allocation"] = json.dumps([a.model_dump() for a in v.allocation])
             fields["rotations"] = json.dumps([r.model_dump() for r in v.rotations])
+            fields["renewals"] = json.dumps([r.model_dump() for r in v.renewals])
         if v.trade is not None:
             fields |= {
                 f"{TRADE_PREFIX}{k}": val
@@ -402,6 +423,8 @@ def record_revision(conn: Conn, verdict: Verdict, position_id: int, actor: str) 
     if verdict.stage != "monitor":
         raise ValueError(f"a revision needs stage 'monitor', got {verdict.stage!r}")
     action = verdict.checks.get("action", "hold")
+    if action == "renew":
+        raise ValueError("renewing a pending entry is the PM's decision (ADR 0034), not a revision")
     out = record_verdict(conn, verdict, actor)
     out["revision_id"] = None
     if action == "hold":
@@ -435,7 +458,8 @@ def record_revision(conn: Conn, verdict: Verdict, position_id: int, actor: str) 
 def check_book(conn: Conn, verdict: Verdict, rules: Any) -> None:
     """Refuse (``ValueError``) a pm verdict the run or the book cannot honour: an allocated
     ticker that is not final-ACT in the run with research trade levels, a ``risk_pct`` outside
-    ``rules.risk_per_trade_range``, a rotation of a position that is not open or pending."""
+    ``rules.risk_per_trade_range``, a rotation of a position that is not open or pending, a
+    renewal of a pending entry that does not lapse before the next weekly run."""
     from solaraalpha.portfolio import book
     from solaraalpha.portfolio.planner import final_labels
 
@@ -460,52 +484,100 @@ def check_book(conn: Conn, verdict: Verdict, rules: Any) -> None:
                 f"position {r.position_id} is {status or 'unknown'}: only an open position or a"
                 " pending entry can be rotated out"
             )
+    due = lapsing(conn, verdict.run_id)
+    for n in verdict.renewals:
+        if n.position_id not in due:
+            raise ValueError(
+                f"position {n.position_id} has no pending entry lapsing before the next weekly run"
+                f" ({next_run(conn, verdict.run_id)}): only those are renewed"
+            )
+
+
+def next_run(conn: Conn, run_id: int) -> str:
+    """The date of the weekly run after ``run_id`` (a week after it started)."""
+    started = pd.Timestamp(str(store.run_info(run_id, conn=conn)["started_at"]))
+    return (started + WEEK).strftime("%Y-%m-%d")
+
+
+def lapsing(conn: Conn, run_id: int) -> dict[int, str]:
+    """Pending entries (draft / approved positions) whose entry order is valid until before the
+    next weekly run: position id -> ``valid_until``. Unless the PM renews them they are not kept
+    (ADR 0034)."""
+    from solaraalpha.portfolio import book
+
+    until = next_run(conn, run_id)
+    pos = book.positions(conn)
+    out = {}
+    for pid in pos.loc[pos["status"].isin(["draft", "approved"]), "position_id"]:
+        pe = book.pending_entry(conn, int(pid))
+        if pe is not None and pe["valid_until"] and pe["valid_until"] < until:
+            out[int(pid)] = pe["valid_until"]
+    return out
 
 
 def record_book(
     conn: Conn, verdict: Verdict, actor: str = "agent:pm", rules: Any = None
 ) -> dict[str, Any]:
-    """Record the PM's verdict (card + evidence) after :func:`check_book`, then apply its
-    rotations as agent revisions (ADR 0024): ``exit`` at market for an open position,
-    ``cancel`` for a pending entry. Returns the record result plus ``rotations``: one
-    ``{position_id, action, revision_id, status, reason}`` per rotation (``declined`` when the
-    book refused it)."""
+    """Record the PM's verdict (card + evidence) after :func:`check_book`, then apply, as agent
+    revisions (ADR 0024): its rotations (``exit`` at market for an open position, ``cancel``
+    for a pending entry), its renewals (``renew``: the entry valid until the next weekly run)
+    and the lapses (``cancel`` for every other pending entry valid until before the next run,
+    ADR 0034). Returns the record result plus ``rotations``, ``renewals`` and ``lapsed``: one
+    ``{position_id, action, revision_id, status, reason}`` each (``declined`` when the book
+    refused it). An ERROR verdict applies none of them: entries then expire at their date."""
     from solaraalpha.portfolio import book
     from solaraalpha.portfolio.rules import load_rules
 
     if verdict.stage != "pm":
         raise ValueError(f"record_book needs stage 'pm', got {verdict.stage!r}")
-    if verdict.label != "ERROR":
+    acts = verdict.label != "ERROR"
+    if acts:
         check_book(conn, verdict, rules or load_rules())
+    due = lapsing(conn, verdict.run_id) if acts else {}
+    until = next_run(conn, verdict.run_id)
     out = record_verdict(conn, verdict, actor)
-    done = []
-    for r in verdict.rotations if verdict.label != "ERROR" else []:
+    trigger = f"pm run {verdict.run_id}"
+
+    def apply(pid: int, action: str, new: dict[str, Any], why: str) -> dict[str, Any]:
+        with conn:
+            rid = book.propose_revision(
+                conn, pid, action, new, why, actor, out["evidence_ids"], trigger
+            )
+        row = book.revisions(conn, pid)
+        row = row[row["revision_id"] == rid]
+        return {
+            "position_id": pid,
+            "action": action,
+            "revision_id": rid,
+            "status": str(row["status"].iloc[0]) if len(row) else "proposed",
+            "reason": row["decision_reason"].iloc[0] if len(row) else None,
+        }
+
+    rotated = []
+    for r in verdict.rotations if acts else []:
         status = book.position_status(conn, r.position_id)
         action = "exit" if status == "open" else "cancel"
         why = f"rotation: {r.reason}" + (f" (room for {r.funds})" if r.funds else "")
-        with conn:
-            rid = book.propose_revision(
-                conn,
-                r.position_id,
-                action,
-                {"type": "market"} if action == "exit" else {},
-                why,
-                actor,
-                out["evidence_ids"],
-                f"pm run {verdict.run_id}",
-            )
-        row = book.revisions(conn, r.position_id)
-        row = row[row["revision_id"] == rid]
-        done.append(
-            {
-                "position_id": r.position_id,
-                "action": action,
-                "revision_id": rid,
-                "status": str(row["status"].iloc[0]) if len(row) else "proposed",
-                "reason": row["decision_reason"].iloc[0] if len(row) else None,
-            }
+        rotated.append(
+            apply(r.position_id, action, {"type": "market"} if action == "exit" else {}, why)
         )
-    out["rotations"] = done
+    renewed = [
+        apply(n.position_id, "renew", {"valid_until": until}, f"renewed until {until}: {n.reason}")
+        for n in (verdict.renewals if acts else [])
+    ]
+    skip = {r.position_id for r in verdict.rotations} | {n.position_id for n in verdict.renewals}
+    lapsed = [
+        apply(
+            pid,
+            "cancel",
+            {},
+            f"lapsed: valid until {valid}, before the next weekly run ({until}), not renewed by"
+            " the PM",
+        )
+        for pid, valid in due.items()
+        if pid not in skip and book.position_status(conn, pid) in ("draft", "approved")
+    ]
+    out |= {"rotations": rotated, "renewals": renewed, "lapsed": lapsed}
     return out
 
 
@@ -519,6 +591,7 @@ def pm_decision(conn: Conn, run_id: int) -> dict[str, Any] | None:
         **card,
         "allocation": json.loads(str(card["allocation"])),
         "rotations": json.loads(str(card.get("rotations") or "[]")),
+        "renewals": json.loads(str(card.get("renewals") or "[]")),
     }
 
 

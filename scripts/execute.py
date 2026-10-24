@@ -106,13 +106,8 @@ def main(argv: list[str] | None = None) -> None:
             status = execution.cancel(conn, LiveClient(), a.order_id, a.reason, a.actor)
             print(f"order {a.order_id} {status}")
         elif a.cmd == "hold":
-            until = pd.Timestamp(a.until)
-            until = until.tz_localize("UTC") if until.tz is None else until.tz_convert("UTC")
-            if book.order_status(conn, a.order_id) != "approved":
-                raise Refused(f"order {a.order_id} is not approved: nothing to hold")
-            detail = {"until": until.isoformat()}
-            execution.record(conn, a.order_id, "hold", a.reason, a.actor, detail)
-            print(f"order {a.order_id} held until {until.isoformat()}")
+            until = execution.hold(conn, a.order_id, a.until, a.reason, a.actor)
+            print(f"order {a.order_id} held until {until}")
         elif a.cmd == "note":
             execution.record(conn, a.order_id, "note", a.reason, a.actor)
             print("noted")

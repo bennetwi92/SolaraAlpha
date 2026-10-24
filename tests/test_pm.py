@@ -363,3 +363,93 @@ def test_parse_log_tags_rule_changes() -> None:
         "def5678 Fix typo (#251)",
         "0a1b2c3 New ADR and skill (#252) [ADR, skill]",
     ]
+
+
+def _pending(conn: Any, ticker: str, valid_days: int) -> int:
+    pid, _ = book.draft_position(
+        conn, ticker, 100.0, 90.0, 10, at="2026-10-09T09:00:00+00:00", valid_days=valid_days
+    )
+    book.approve_position(conn, pid)
+    return pid
+
+
+def test_pending_entries_lapsing_before_the_next_run_are_kept_only_when_renewed(
+    scan_db: Path,
+) -> None:
+    conn = book.connect(scan_db)  # run 1 started 2026-10-11: the next weekly run is 2026-10-18
+    with conn:
+        keep = _pending(conn, "OLD.L", 5)  # valid until 2026-10-14: lapses
+        drop = _pending(conn, "STALE.L", 5)
+        later = _pending(conn, "LATER.L", 20)  # valid until 2026-10-29: past the next run
+    assert agents.next_run(conn, 1) == "2026-10-18"
+    assert agents.lapsing(conn, 1) == {keep: "2026-10-14", drop: "2026-10-14"}
+    with pytest.raises(ValueError, match="lapsing"):  # only a lapsing entry is renewed
+        agents.record_book(conn, _pm(renewals=[{"position_id": later, "reason": "x"}]))
+    with pytest.raises(ValidationError, match="not both"):
+        _pm(
+            renewals=[{"position_id": keep, "reason": "x"}],
+            rotations=[{"position_id": keep, "reason": "y"}],
+        )
+
+    out = agents.record_book(conn, _pm(renewals=[{"position_id": keep, "reason": "still on"}]))
+    assert [(r["position_id"], r["action"], r["status"]) for r in out["renewals"]] == [
+        (keep, "renew", "accepted")
+    ]
+    assert [(r["position_id"], r["action"]) for r in out["lapsed"]] == [(drop, "cancel")]
+    assert book.position_status(conn, keep) == "approved"
+    pe = book.pending_entry(conn, keep)
+    assert pe is not None and pe["valid_until"] == "2026-10-18"  # until the next run
+    assert book.position_status(conn, drop) == "cancelled"
+    assert book.position_status(conn, later) == "approved"
+    why = book.revisions(conn, drop)["reason"].iloc[-1]
+    assert "lapsed" in why and "not renewed" in why
+    card = agents.pm_decision(conn, 1)
+    assert card is not None and card["renewals"][0]["position_id"] == keep
+    _alerts, info, undo = notify.changes(conn, "2000-01-01")
+    assert any("OLD.L" in i and "until 2026-10-18 (still on)" in i for i in info)
+    assert any("OLD.L renew" in u for u in undo)
+    conn.close()
+
+
+def test_an_error_verdict_lets_nothing_lapse(scan_db: Path) -> None:
+    conn = book.connect(scan_db)
+    with conn:
+        pid = _pending(conn, "OLD.L", 5)
+    out = agents.record_book(conn, _pm(label="ERROR", allocation=None, reasons=["pack failed"]))
+    assert out["lapsed"] == [] and book.position_status(conn, pid) == "approved"
+    conn.close()
+
+
+def test_the_pack_marks_what_lapses(scan_db: Path) -> None:
+    conn = book.connect(scan_db)
+    with conn:
+        pid = _pending(conn, "OLD.L", 5)
+        _pending(conn, "LATER.L", 20)
+    pack = pm.build_pack(conn, 1)
+    rows = {r["position_id"]: r for r in pack["pending_entries"]}
+    assert rows[pid]["lapses"] is True and sum(r["lapses"] for r in rows.values()) == 1
+    lap = pack["money"]["lapsing"]
+    assert lap["position_ids"] == [pid] and lap["risk"] > 0
+    assert lap["slots_free_if_none_renewed"] == pack["money"]["slots_free"] + 1
+    assert pack["money"]["next_run"] == "2026-10-18"
+    conn.close()
+
+
+def test_the_monitor_cannot_renew(scan_db: Path) -> None:
+    conn = book.connect(scan_db)
+    with conn:
+        pid = _pending(conn, "OLD.L", 5)
+    v = agents.Verdict.model_validate(
+        {
+            "stage": "monitor",
+            "ticker": "OLD.L",
+            "run_id": 1,
+            "label": "WATCH",
+            "confidence": 0.5,
+            "reasons": ["keep it"],
+            "checks": {"action": "renew", "valid_until": "2026-10-30"},
+        }
+    )
+    with pytest.raises(ValueError, match="PM"):
+        agents.record_revision(conn, v, pid, "agent:monitor")
+    conn.close()

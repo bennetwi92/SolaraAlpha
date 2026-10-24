@@ -85,7 +85,7 @@ Current state:
   approved positions with an unfilled entry order): price triggers (stop closed through /
   touched, target hit, gap > 2 ATR), coil breaks and pullbacks, entry breaks, machine thesis
   conditions re-evaluated on fresh cards (`thesis_hit`), dividends and splits not yet booked, a
-  scheduled event two sessions out, orders past their validity, new filings and headlines since
+  scheduled event two sessions out, orders past their validity (a saved run expires the buys first, ADR 0034), new filings and headlines since
   the last daily run, saved to the `triggers` table. **Every open position and pending entry
   gets a `daily_review` every weekday** (docs/decisions/0024): the **monitor agent**
   (`/monitor`, docs/decisions/0018) re-evaluates each one (queue capped by `max_agent_tickers`,
@@ -151,7 +151,10 @@ Current state:
   `allocation` (research-ACT tickers, `risk_pct` inside `risk_per_trade_range` 1-3% by
   conviction, priority order) and `rotations` (exit an open position / cancel a pending entry,
   applied as recorded; the buy a sale pays for waits for that sale, then the daily job sizes it
-  to the cash freed, ADR 0027 amendment). The planner follows it and the PM approves its plans (`agent:pm`);
+  to the cash freed, ADR 0027 amendment) and `renewals` (pending entries valid until before the
+  next weekly run that are still worth building: kept until that run; **every other lapsing
+  entry is cancelled as the verdict is recorded**, so the allocation is built without it, ADR
+  0034). The planner follows it and the PM approves its plans (`agent:pm`);
   without a PM verdict (or an ERROR) plans fall back to `risk_per_trade` in screen-rank order,
   approved by the pipeline. The PM memo heads the weekly pack and follows the inbox steps.
 - **The research agent owns the entry and the stop** (docs/decisions/0023): a research ACT must
@@ -182,8 +185,10 @@ Current state:
   minutes in the London session and after each Agents run: it books fills, sends the stop on new
   shares at once, sends what the book approved (exits only in market hours, the stop swapped off
   first; an exit unfilled at 15:45 London is cancelled and the stop put back before the close),
-  writes `sending` before each call and lists the broker's orders before ever sending again, and
-  cancels at the broker (confirmed gone) whatever the book cancels (`cancelling` until then); the
+  writes `sending` before each call and lists the broker's orders before ever sending again,
+  **expires buys** once the session of their `valid_until` day has closed (the daily job does too;
+  ADR 0034), and cancels at the broker (confirmed gone) whatever the book cancels or expires, an
+  order placed by hand included (`cancelling` until then); the
   **execution agent** (`/execute`) decides how and when a new order goes out (else the code sends
   it as booked after 30 minutes), never what. Guards: approved, long only, per-unit sells, 10%
   price band, free cash, position cap, circuit breaker. Every action is a row in `executions`.

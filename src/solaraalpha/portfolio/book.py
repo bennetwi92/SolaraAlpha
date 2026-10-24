@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS executions (
     at           TEXT NOT NULL,
     order_id     INTEGER,                     -- NULL: a note on the turn, not one order
     action       TEXT NOT NULL,               -- sent / refused / rejected / unknown / cancel_sent /
-                                              -- hold / pass / note / error (ADR 0031)
+                                              -- hold / pass / note / expire / error (ADR 0031)
     detail       TEXT NOT NULL,               -- JSON
     actor        TEXT NOT NULL,
     reason       TEXT NOT NULL
@@ -149,6 +149,7 @@ POSITION_TRANSITIONS: dict[str, frozenset[str | None]] = {
     "revision_accepted": frozenset({"open", "draft", "approved"}),
     "revision_declined": frozenset({"open", "draft", "approved"}),
     "revision_undone": frozenset({"open", "draft", "approved"}),
+    "renewed": frozenset({"draft", "approved"}),  # an entry order's validity extended (PM)
     "split": frozenset({"open"}),
     "closed": frozenset({"open"}),
 }
@@ -476,7 +477,19 @@ def _order(conn: Conn, order_id: int) -> dict[str, Any]:
     df = query("SELECT * FROM orders WHERE order_id = ?", conn, [order_id])
     if df.empty:
         raise ValueError(f"no order {order_id}")
-    return {str(k): v for k, v in df.iloc[0].items()}
+    out = {str(k): v for k, v in df.iloc[0].items()}
+    out["valid_until"] = _renewed(conn).get(order_id, out["valid_until"])
+    return out
+
+
+def _renewed(conn: Conn) -> dict[int, str | None]:
+    """order id -> the validity its latest ``renewed`` event gives it (order rows are never
+    mutated; a renewal is an event on the position, ADR 0034)."""
+    ev = query("SELECT payload FROM position_events WHERE kind = 'renewed' ORDER BY event_id", conn)
+    out: dict[int, str | None] = {}
+    for p in ev["payload"].map(json.loads):
+        out[int(p["order_id"])] = p.get("valid_until")
+    return out
 
 
 def positions(conn: Conn, status: str | None = None) -> pd.DataFrame:
@@ -518,6 +531,11 @@ def orders(conn: Conn, position_id: int | None = None, status: str | None = None
     od["status"] = od["order_id"].map(last["status"])
     od["updated_at"] = od["order_id"].map(last["at"])
     od["broker_ref"] = od["order_id"].map(refs.set_index("order_id")["broker_ref"])
+    renewed = _renewed(conn)
+    if renewed:
+        od["valid_until"] = [
+            renewed.get(int(o), v) for o, v in zip(od["order_id"], od["valid_until"], strict=True)
+        ]
     od["filled"] = od["order_id"].map(fl.set_index("order_id")["filled"]).fillna(0).astype(int)
     if status is not None:
         od = od[od["status"] == status]
@@ -1145,13 +1163,13 @@ def end_order(
 
 
 def expire_orders(conn: Conn, as_of: str | None = None, actor: str = OWNER) -> list[int]:
-    """Mark every approved or placed entry order whose ``valid_until`` is before ``as_of``
-    (default today, UTC) as ``expired``; returns their ids. A placed one is cancelled at the
-    broker by the execution job, which ends it (ADR 0031)."""
+    """Mark every approved or placed buy order (entry, add) whose ``valid_until`` is before
+    ``as_of`` (default today, UTC) as ``expired``; returns their ids. A placed one is cancelled
+    at the broker by the execution job's next settle (ADR 0031, 0034)."""
     today = pd.Timestamp(iso(as_of)).strftime("%Y-%m-%d")
     od = orders(conn)
     stale = od[
-        (od["purpose"] == "entry")
+        od["purpose"].isin(list(BUY_PURPOSES))
         & od["status"].isin(["approved", "placed"])
         & od["valid_until"].notna()
         & (od["valid_until"] < today)
@@ -1626,9 +1644,10 @@ REVISION_ACTIONS = (
     "add",
     "amend_entry",
     "cancel",
+    "renew",
 )
 OPEN_ACTIONS = frozenset({"hold", "tighten_stop", "take_partial", "exit", "revise_target", "add"})
-PENDING_ACTIONS = frozenset({"hold", "amend_entry", "cancel"})  # a draft / approved entry
+PENDING_ACTIONS = frozenset({"hold", "amend_entry", "cancel", "renew"})  # a draft / approved entry
 AGENT_PREFIX = "agent:"  # an agent's revision is applied as it is recorded (ADR 0024)
 
 
@@ -1640,7 +1659,7 @@ def auto_applied(actor: str) -> bool:
 
 def pending_entry(conn: Conn, position_id: int) -> dict[str, Any] | None:
     """The latest open entry order of a position (``order_id``, ``qty``, ``price``, ``type``,
-    ``status``), None when there is none."""
+    ``status``, ``valid_until``), None when there is none."""
     od = orders(conn, position_id)
     entry = od[(od["purpose"] == "entry") & od["status"].isin(OPEN_ORDER)]
     if entry.empty:
@@ -1653,6 +1672,7 @@ def pending_entry(conn: Conn, position_id: int) -> dict[str, Any] | None:
         "price": price,
         "type": str(r["type"]),
         "status": str(r["status"]),
+        "valid_until": None if pd.isna(r["valid_until"]) else str(r["valid_until"]),
     }
 
 
@@ -1691,6 +1711,7 @@ def _old_values(conn: Conn, position_id: int, st: PositionState) -> dict[str, An
             "entry": pe.get("price"),
             "stop": _planned_stop(conn, position_id),
             "qty": pe.get("qty"),
+            "valid_until": pe.get("valid_until"),
         }
     ev = position_events(conn, position_id)
     payloads = [x for x in ev.loc[ev["kind"].isin(["drafted", "amended", "revised"]), "payload"]]
@@ -1717,7 +1738,7 @@ def propose_revision(
 
     Open positions take :data:`OPEN_ACTIONS`; pending entries (draft / approved positions)
     take :data:`PENDING_ACTIONS` (``amend_entry``: a new entry ``price`` and / or ``stop``,
-    optionally ``qty``; ``cancel``). ``auto_apply`` (default: the actor is an agent,
+    optionally ``qty``; ``cancel``; ``renew``: a later ``valid_until`` for the entry order). ``auto_apply`` (default: the actor is an agent,
     ``agent:...``, ADR 0024, or the pipeline, ADR 0026) accepts it at once under the same actor;
     one the book refuses
     (e.g. a stop not above the current one) is recorded as declined by the pipeline with the
@@ -1872,6 +1893,17 @@ def _check_revision(conn: Conn, st: PositionState, action: str, new: dict[str, A
         over = add_breaches(conn, st, int(new["qty"]), float(new["entry"]), new.get("stop"))
         if over:
             raise ValueError("add breaks the portfolio limits: " + "; ".join(over))
+    elif action == "renew":
+        pe = pending_entry(conn, st.position_id)
+        if pe is None:
+            raise ValueError(f"position {st.position_id} has no open entry order to renew")
+        until = new.get("valid_until")
+        if not until:
+            raise ValueError("renew needs a new valid_until")
+        if pe["valid_until"] and str(until) <= pe["valid_until"]:
+            raise ValueError(
+                f"the entry is already valid until {pe['valid_until']}: renew only extends it"
+            )
     elif action == "amend_entry":
         if not any(new.get(k) is not None for k in ("price", "stop", "qty")):
             raise ValueError("amend_entry needs a new entry price, stop or qty")
@@ -1966,7 +1998,9 @@ def accept_revision(
     (never lower): the add's fill re-sizes the stop to the whole position.
     Pending entries (ADR 0024): amend_entry: :func:`amend_position` with the new entry price /
     stop / qty (qty re-sized to the plan's risk budget when not given); cancel: the position
-    ``cancelled`` and its open orders with it. Nothing is written when the book refuses it."""
+    ``cancelled`` and its open orders with it; renew (ADR 0034): a ``renewed`` event giving the
+    entry order its new ``valid_until`` (nothing changes at the broker: orders there are good
+    till cancelled). Nothing is written when the book refuses it."""
     rev = _revision(conn, revision_id)
     pid, action, new = int(rev["position_id"]), str(rev["action"]), dict(rev["new"] or {})
     t = iso(at)
@@ -2077,6 +2111,21 @@ def accept_revision(
             actor,
         )
         done["was_placed"] = entry_ever_placed(conn, pid)
+    elif action == "renew":
+        pe = pending_entry(conn, pid)
+        assert pe is not None  # _check_revision
+        until = pd.Timestamp(str(new["valid_until"])).strftime("%Y-%m-%d")
+        done |= {"order_id": pe["order_id"], "old_valid_until": pe["valid_until"]}
+        done["valid_until"] = until
+        position_event(
+            conn,
+            pid,
+            "renewed",
+            {"order_id": pe["order_id"], "valid_until": until, "revision_id": revision_id},
+            actor,
+            str(rev["reason"]),
+            t,
+        )
     elif action == "cancel":
         pe = pending_entry(conn, pid)
         done["was_placed"] = entry_ever_placed(conn, pid)
@@ -2101,7 +2150,8 @@ def undo_revision(
 ) -> dict[str, Any]:
     """Reverse an accepted revision (the owner's undo of an auto-applied agent change, ADR
     0024): tighten_stop: the stop order back at the old stop; revise_target: the old target;
-    amend_entry: the entry order and stop back as they were; take_partial / exit / add: the
+    amend_entry: the entry order and stop back as they were; renew: the old validity on the
+    entry order standing now (it then expires at the next turn if that date has passed); take_partial / exit / add: the
     order it created cancelled if it has not filled. A cancelled pending entry cannot be
     reopened (re-plan it: ``plan.py --run N --replan``). Records ``revision_undone``."""
     if not reason:
@@ -2146,6 +2196,24 @@ def undo_revision(
             conn, pid, "revised", {**restored, "revision_id": revision_id}, actor, reason, t
         )
         out["restored_target"] = old.get("target")
+    elif action == "renew":
+        pe = pending_entry(conn, pid)  # the entry standing now (an amend replaces the order)
+        if pe is None:
+            raise ValueError(f"position {pid} has no open entry order: nothing to undo")
+        position_event(
+            conn,
+            pid,
+            "renewed",
+            {
+                "order_id": pe["order_id"],
+                "valid_until": done.get("old_valid_until"),
+                "revision_id": revision_id,
+            },
+            actor,
+            f"undo revision {revision_id}: {reason}",
+            t,
+        )
+        out["restored_valid_until"] = done.get("old_valid_until")
     elif action == "amend_entry":
         amended = done.get("amended") or {}
         before = amended.get("old") or {}
