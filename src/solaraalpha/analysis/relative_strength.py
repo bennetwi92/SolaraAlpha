@@ -98,13 +98,21 @@ def major(currency: str | None) -> str | None:
     return _MAJOR.get(currency, currency) if currency else None
 
 
-def in_currency(ticker: str, fetch: Fetch, to: str | None) -> pd.Series:
-    """Weekly prices of ``ticker`` converted to currency ``to`` (Yahoo FX ``<FROM><TO>=X``)."""
+Closes = Callable[[str], pd.Series]  # ticker -> its weekly_close (the backtest's cached one)
+
+
+def in_currency(
+    ticker: str, fetch: Fetch, to: str | None, closes: Closes | None = None
+) -> pd.Series:
+    """Weekly prices of ``ticker`` converted to currency ``to`` (Yahoo FX ``<FROM><TO>=X``).
+    ``closes``: the weekly close of a ticker when already worked out (default
+    :func:`weekly_close` of ``fetch``)."""
     daily = fetch(ticker)
-    prices = weekly_close(daily)
+    prices = closes(ticker) if closes else weekly_close(daily)
     src = major(daily.attrs.get("currency"))
     if src and to and src != to:
-        fx = weekly_close(fetch(f"{src}{to}=X"))
+        pair = f"{src}{to}=X"
+        fx = closes(pair) if closes else weekly_close(fetch(pair))
         prices = (prices * fx).dropna()
     elif not src or not to:
         log.warning("%s: currency unknown; compared unconverted", ticker)
@@ -155,7 +163,9 @@ class Compared:
     peers: dict[str, pd.Series]  # peer -> weekly prices in the stock's currency
 
 
-def compare(weekly: pd.DataFrame, comp: Comparisons, fetch: Fetch) -> Compared:
+def compare(
+    weekly: pd.DataFrame, comp: Comparisons, fetch: Fetch, closes: Closes | None = None
+) -> Compared:
     """Relative strength of the stock (``weekly`` from ``to_weekly``) against ``comp``.
 
     A comparison that fails to load is logged and left out, so one bad source doesn't stop
@@ -166,7 +176,7 @@ def compare(weekly: pd.DataFrame, comp: Comparisons, fetch: Fetch) -> Compared:
 
     def load(ticker: str) -> pd.Series | None:
         try:
-            return in_currency(ticker, fetch, cur)
+            return in_currency(ticker, fetch, cur, closes)
         except Exception as e:
             log.warning("%s: comparison not loaded (%s: %s)", ticker, type(e).__name__, e)
             return None
