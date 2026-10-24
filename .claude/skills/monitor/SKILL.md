@@ -62,7 +62,8 @@ uv run python scripts/monitor_pack.py --run <N> --position <ID>
 
 Read `pack.json` in the printed directory:
 - `status`: `open` or `pending`; `pending_entry`: the unfilled entry order (id, qty, price,
-  type, status `draft` / `approved` / `placed`).
+  type, status `draft` / `approved` / `placed`, `valid_until`). The order expires by itself
+  after the close of its `valid_until` day; only the PM can extend it (ADR 0034).
 - `state`: shares, average cost, stop, risk at the stop, R unit; `orders`; `plan` (the trade
   plan the position was drafted from: entry, stop, targets, horizon, flags).
 - `entry_conditions`: the cards frozen when the position was drafted ("then").
@@ -103,7 +104,9 @@ Read `pack.json` in the printed directory:
        `limits` and liquidity; the book refuses an add that breaks position, sector, heat or
        cash limits.
    - **Pending entry:**
-     - `hold`: the plan still stands (the default).
+     - `hold`: the plan still stands (the default). Holding does not extend `valid_until`. If
+       the entry is close to its date and you think it is still worth building, say so in
+       `reasons` ("worth renewing: ..."): the PM reads your view when deciding whether to renew.
      - `amend_entry`: a new entry `price` (the level to enter at or below, or the new breakout
        trigger) and / or a new `stop`; optionally `qty`.
      - `cancel`: the trade no longer makes sense (thesis broken, catalyst priced in, capital

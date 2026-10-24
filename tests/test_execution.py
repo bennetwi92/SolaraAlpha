@@ -635,6 +635,88 @@ def test_cli_offline_commands(tmp_path: Path, capsys: pytest.CaptureFixture[str]
     assert "SOLARA_T212_TRADING is off" in capsys.readouterr().out
 
 
+def test_expiry_date_follows_the_session() -> None:
+    assert execution.expiry_as_of(pd.Timestamp("2026-10-26T15:00:00Z")) == "2026-10-26"
+    assert execution.expiry_as_of(pd.Timestamp("2026-10-26T16:30:00Z")) == "2026-10-27"  # closed
+    assert execution.expiry_as_of(pd.Timestamp("2026-10-27T07:00:00Z")) == "2026-10-27"
+    assert execution.expiry_as_of(pd.Timestamp("2026-10-25T19:00:00Z")) == "2026-10-25"  # Sunday
+
+
+def _valid_until_monday(conn: Conn) -> tuple[int, int]:
+    with conn:
+        book.cash_event(conn, "deposit", 5000.0)
+        pid, oid = book.draft_position(
+            conn, "JET2.L", 1500.0, 1400.0, 50, at="2026-10-16T18:00:00+00:00", valid_days=10
+        )
+        book.approve_position(conn, pid)
+    assert book._order(conn, oid)["valid_until"] == "2026-10-26"
+    return pid, oid
+
+
+def test_an_entry_expires_once_its_last_session_closes_and_is_cancelled_there(
+    db_backend: Path | None,
+) -> None:
+    conn = book.connect(db_backend)
+    fake = FakeBroker()
+    pid, oid = _valid_until_monday(conn)
+    monday = pd.Timestamp("2026-10-26T10:00:00Z")
+    _turn(conn, fake, monday)
+    assert book.order_status(conn, oid) == "placed" and len(fake.working) == 1
+    _turn(conn, fake, pd.Timestamp("2026-10-26T15:00:00Z"))  # still Monday's session
+    assert book.order_status(conn, oid) == "placed"
+    res = _turn(conn, fake, pd.Timestamp("2026-10-26T16:45:00Z"))  # after the close
+    assert book.order_status(conn, oid) == "expired" and book.position_status(conn, pid) == (
+        "cancelled"
+    )
+    assert fake.working == {} and fake.calls[-1][0] == "cancel"
+    assert any("expired" in d for d in res.done)
+    acts = execution.executions(conn)["action"].tolist()
+    assert "expire" in acts and "cancel_sent" in acts
+    conn.close()
+
+
+def test_an_expired_entry_placed_by_hand_is_cancelled_there_too(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    fake = FakeBroker()
+    _pid, oid = _valid_until_monday(conn)
+    fake.place("limit", "JET2l_EQ", 50, 1, 1500.0)  # the owner placed it in the app
+    with conn:
+        book.place_order(conn, oid)  # `book.py placed 9`, no broker ref
+    _turn(conn, fake, pd.Timestamp("2026-10-26T10:00:00Z"))
+    assert len(fake.working) == 1  # matched on its terms, left working
+    _turn(conn, fake, pd.Timestamp("2026-10-27T07:00:00Z"))
+    assert book.order_status(conn, oid) == "expired" and fake.working == {}
+    conn.close()
+
+
+def test_a_renewed_entry_keeps_working(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    fake = FakeBroker()
+    pid, oid = _valid_until_monday(conn)
+    _turn(conn, fake, pd.Timestamp("2026-10-26T10:00:00Z"))
+    with conn:
+        book.propose_revision(
+            conn, pid, "renew", {"valid_until": "2026-11-01"}, "still on", "agent:pm"
+        )
+    assert book.orders(conn, pid).set_index("order_id").loc[oid, "valid_until"] == "2026-11-01"
+    _turn(conn, fake, pd.Timestamp("2026-10-27T07:00:00Z"))
+    assert book.order_status(conn, oid) == "placed" and len(fake.working) == 1
+    p = execution.pack(conn, pd.Timestamp("2026-10-27T07:00:00Z"), quotes=bars())
+    assert p["at_broker"][0]["valid_until"] == "2026-11-01"
+    conn.close()
+
+
+def test_a_hold_past_the_orders_validity_is_refused(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    _pid, oid = _valid_until_monday(conn)
+    with pytest.raises(Refused, match="valid until 2026-10-26"):
+        execution.hold(conn, oid, "2026-10-27T09:00:00Z", "wait for the open")
+    assert execution.hold(conn, oid, "2026-10-26T09:00:00Z", "after the auction").startswith(
+        "2026-10-26T09:00"
+    )
+    conn.close()
+
+
 def test_a_turn_reads_recent_history_and_all_of_it_when_an_order_is_missing(
     db_backend: Path | None, monkeypatch: pytest.MonkeyPatch
 ) -> None:

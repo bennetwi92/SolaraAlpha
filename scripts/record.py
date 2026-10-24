@@ -28,7 +28,10 @@ earlier work instead of re-interpreting it. See docs/decisions/0016.
 
 A pm verdict (ticker _BOOK, ADR 0027) is checked against the run and the book (allocated tickers
 final-ACT with research trade levels, risk_pct inside risk_per_trade_range, rotated positions
-open or pending) and its rotations are applied at once (open: exit at market; pending: cancel).
+open or pending, renewed entries lapsing before the next weekly run) and applied at once: its
+rotations (open: exit at market; pending: cancel), its renewals (the entry stays working until the
+next weekly run) and the lapses (every other pending entry valid until before the next weekly run
+is cancelled, ADR 0034).
 """
 
 from __future__ import annotations
@@ -82,9 +85,10 @@ def _verdict(args: argparse.Namespace) -> None:
     print(f"evidence ids: {', '.join(map(str, out['evidence_ids'])) or 'none'}")
     for a in verdict.allocation or []:
         print(f"allocated {a.ticker} at {a.risk_pct:.1%} risk: {a.reason}")
-    for r in out.get("rotations", []):
-        line = f"rotation: position {r['position_id']} {r['action']} (revision {r['revision_id']}) {r['status']}"
-        print(line + (f": {r['reason']}" if r["status"] == "declined" else ""))
+    for kind in ("rotations", "renewals", "lapsed"):
+        for r in out.get(kind, []):
+            line = f"{kind.removesuffix('s')}: position {r['position_id']} {r['action']} (revision {r['revision_id']}) {r['status']}"
+            print(line + (f": {r['reason']}" if r["status"] == "declined" else ""))
 
 
 def _revision(args: argparse.Namespace) -> None:

@@ -86,6 +86,7 @@ class DailyResult:
     breaker_on: bool = False
     booked: list[str] = field(default_factory=list)  # taken in from Trading212 (ADR 0030)
     resized: list[str] = field(default_factory=list)  # rotation buys sized to the cash freed
+    expired: list[str] = field(default_factory=list)  # buys past their validity (ADR 0034)
 
     def of(self, kinds: tuple[str, ...]) -> list[Trigger]:
         return [t for t in self.triggers if t.kind in kinds]
@@ -234,6 +235,21 @@ def run_daily(
 
     resized = release_rotations(conn, load_rules())
 
+    # buys whose last valid session has closed end before anything reads the pending entries,
+    # so the monitor never reviews a dead order; the execution job cancels them at the broker
+    # (the inbox tells the owner while the owner places the orders). ADR 0034.
+    expired = []
+    if save:
+        from solaraalpha.portfolio.execution import expiry_as_of
+
+        stale = book.orders(conn).set_index("order_id")["valid_until"]
+        with conn:
+            ids = book.expire_orders(conn, expiry_as_of(now), actor=book.PIPELINE)
+        for oid in ids:
+            o = book._order(conn, oid)
+            tk = book._position(conn, int(o["position_id"]))["ticker"]
+            expired.append(f"{tk}: {o['purpose']} order #{oid} expired (valid until {stale[oid]})")
+
     open_pos = book.positions(conn, status="open")
     states = {int(p): book.position_state(conn, int(p)) for p in open_pos["position_id"]}
     targets = {}
@@ -258,7 +274,9 @@ def run_daily(
         why.setdefault(t, []).append("watch")
     for pb in pending:
         why.setdefault(pb["ticker"], []).append("pending")
-    result = DailyResult(since=since, tickers=why, run_id=run_id, booked=booked, resized=resized)
+    result = DailyResult(
+        since=since, tickers=why, run_id=run_id, booked=booked, resized=resized, expired=expired
+    )
     result.triggers += [broker_trigger(d, now.strftime("%Y-%m-%d")) for d in broker_diffs]
     result.errors += broker_errors
 
@@ -580,6 +598,9 @@ def render_daily(r: DailyResult) -> str:
     if r.resized:
         lines += ["### Rotation buys sized to the cash freed", ""]
         lines += [f"- {b}" for b in r.resized] + [""]
+    if r.expired:
+        lines += ["### Expired (past their validity, not renewed)", ""]
+        lines += [f"- {b}" for b in r.expired] + [""]
 
     lines += ["### Owner actions", ""]
     owner = r.of(OWNER_KINDS)

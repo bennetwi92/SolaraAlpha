@@ -525,3 +525,24 @@ def test_a_daily_run_that_crashed_does_not_move_the_window(db_backend: Path | No
     started = str(store.run_info(done, conn=conn)["started_at"])
     conn.close()
     assert since == started
+
+
+def test_a_saved_run_expires_entries_past_their_validity_before_the_checks(
+    world: tuple[Path | None, dict[str, pd.DataFrame]],
+) -> None:
+    db, frames = world
+    conn = book.connect(db)
+    with conn:  # a pending entry whose last valid day was weeks ago
+        pid, oid = book.draft_position(
+            conn, "OLD.L", 100.0, 90.0, 10, at="2026-01-05T09:00:00+00:00", valid_days=5
+        )
+        book.approve_position(conn, pid)
+    dry = run_daily(conn, _fetchers(frames))  # no save: the book is left alone
+    assert book.order_status(conn, oid) == "approved" and dry.expired == []
+    r = run_daily(conn, _fetchers(frames), save=True)
+    assert book.order_status(conn, oid) == "expired"
+    assert book.position_status(conn, pid) == "cancelled"
+    assert r.expired == [f"OLD.L: entry order #{oid} expired (valid until 2026-01-10)"]
+    assert "OLD.L" not in r.tickers  # never reviewed as a pending entry
+    assert "### Expired" in render_daily(r)
+    conn.close()
