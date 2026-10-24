@@ -236,6 +236,9 @@ def reconcile(conn: Conn, br: Broker) -> tuple[list[Difference], int]:
                             "price": float(o["fill_price"]),
                             "at": when,
                             "fees": float(o["taxes"] or 0.0),
+                            # matched by its terms: keep its Trading212 id, so later passes
+                            # match it by id and an identical order is never ambiguous
+                            "ref": None if pd.notna(b["broker_ref"]) else str(o["id"]),
                         },
                     )
                 )
@@ -523,7 +526,16 @@ def _book(conn: Conn, d: Difference) -> None:
     """Book one absorbable difference as the broker (see :func:`absorb`)."""
     x, oid = d.data, d.order_id or 0
     if d.kind == "fill":
-        book.fill(conn, oid, x["qty"], x["price"], x["at"], fees=x["fees"], actor=ACTOR)
+        book.fill(
+            conn,
+            oid,
+            x["qty"],
+            x["price"],
+            x["at"],
+            fees=x["fees"],
+            actor=ACTOR,
+            broker_ref=x.get("ref"),
+        )
     elif d.kind == "part_fill":
         book.cancel_order(conn, oid, book.PART_FILL, ACTOR)
     elif d.kind == "placed":

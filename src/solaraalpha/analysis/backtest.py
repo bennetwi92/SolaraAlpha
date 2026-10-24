@@ -22,8 +22,9 @@ import pandas as pd
 
 from solaraalpha.analysis.fundamentals import fundamentals_card, fx_ticker, reporting_currency
 from solaraalpha.analysis.levels import levels_card
-from solaraalpha.analysis.relative_strength import Comparisons, compare, rs_card
+from solaraalpha.analysis.relative_strength import Comparisons, compare, rs_card, weekly_close
 from solaraalpha.analysis.technical import scorecard
+from solaraalpha.data.clean import CLOSE_ONLY_BLOCKING, check_prices, clean_prices, to_weekly
 from solaraalpha.log import get_logger
 from solaraalpha.pipeline import Clause, combine
 from solaraalpha.toolkits import get
@@ -105,14 +106,40 @@ def replay(
         except Exception as e:
             log.warning("%s: no FX %s (%s); valuation NaN", ticker, pair, e)
 
+    def full(t: str) -> pd.DataFrame:
+        if t not in others:
+            if fetch is None:
+                raise ValueError("no fetch for comparisons")
+            others[t] = fetch(t)
+        return others[t]
+
     def sliced_fetch(week: pd.Timestamp) -> Fetch:
         def f(t: str) -> pd.DataFrame:
-            if t not in others:
-                if fetch is None:
-                    raise ValueError("no fetch for comparisons")
-                others[t] = fetch(t)
-            df = others[t]
+            df = full(t)
             return df[df.index <= week + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)]
+
+        return f
+
+    prepared: dict[str, tuple[pd.DataFrame, pd.Series, pd.Series]] = {}
+
+    def closes_at(week: pd.Timestamp) -> Callable[[str], pd.Series]:
+        """The comparison's weekly close as of ``week``, as weekly_close of the daily bars up to
+        it would give: checked and cleaned once, sliced per week; only a week a blocking issue
+        reaches is worked out again from its own bars (the cut must not see the future)."""
+        end = week + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
+
+        def f(t: str) -> pd.Series:
+            if t not in prepared:
+                daily = full(t)
+                issues = check_prices(daily)
+                clean = clean_prices(daily)
+                block = issues.loc[issues["check"].isin(CLOSE_ONLY_BLOCKING), "date"].dropna()
+                block = block[block.isin(clean.index)]
+                prepared[t] = (daily, block, to_weekly(clean)["adj_close"])
+            daily, block, weekly_full = prepared[t]
+            if (block <= end).any():
+                return weekly_close(daily[daily.index <= end])
+            return weekly_full[weekly_full.index <= week]
 
         return f
 
@@ -129,7 +156,8 @@ def replay(
             continue
         if comp is not None and fetch is not None:
             try:
-                rs = rs_card(compare(w, comp, sliced_fetch(week)), row["technical.trend"])
+                cmp = compare(w, comp, sliced_fetch(week), closes_at(week))
+                rs = rs_card(cmp, row["technical.trend"])
                 row |= _flat("relative_strength", rs)
             except (ValueError, IndexError, KeyError) as e:
                 log.debug("%s %s: no relative strength (%s)", ticker, week.date(), e)

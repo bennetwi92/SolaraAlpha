@@ -328,3 +328,19 @@ def test_labels_migration_from_the_old_layout(tmp_path: Path) -> None:
     assert got["ticker"].tolist() == ["OLD.L"] and got["watch_on"].tolist() == [None]
     store.save_label(1, "NEW.L", "screen", "ACT", "", path=db, rank=1)
     assert store.shortlist(1, path=db) == ["NEW.L", "OLD.L"]
+
+
+def test_a_snapshot_compares_with_the_latest_version_only(
+    db: Path | None, daily: pd.DataFrame
+) -> None:
+    store.save_run("stock_prices", {}, "JET2.L", daily=daily, path=db)
+    revised = daily.copy()
+    revised["adj_close"] = daily["adj_close"] + 1.0
+    revised.attrs = daily.attrs
+    store.save_run("stock_prices", {}, "JET2.L", daily=revised, path=db)
+    store.save_run("stock_prices", {}, "JET2.L", daily=daily, path=db)  # back again: new rows
+    assert _count(db, "prices") == 3 * len(daily)
+    conn = store.connect(db)
+    latest = store._read_latest(conn, "prices", "JET2.L", ["date"])
+    conn.close()
+    assert len(latest) == len(daily) and set(latest["run_id"]) == {3}

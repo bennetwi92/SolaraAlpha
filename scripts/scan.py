@@ -31,7 +31,7 @@ from typing import Any
 
 import pandas as pd
 
-from solaraalpha import desk_chat
+from solaraalpha import desk_chat, store
 from solaraalpha.catalysts import fresh_catalysts
 from solaraalpha.data import trading212
 from solaraalpha.pipeline import (
@@ -69,10 +69,14 @@ def _value(raw: str) -> Any:
     return raw
 
 
-def _save(run_id: int, x: Inputs, steps: list[Step], got: Screened | None) -> None:
+def _save(
+    run_id: int, x: Inputs, steps: list[Step], got: Screened | None, conn: store.Conn
+) -> None:
     rows = [(s.stage, s.toolkit, s.status, s.reason) for s in steps]
     daily, fund = x.fetched("daily"), x.fetched("fund")
-    save_ticker(run_id, x.ticker, cards_of(steps), daily, fund, steps=rows, others=x.others)
+    save_ticker(
+        run_id, x.ticker, cards_of(steps), daily, fund, steps=rows, others=x.others, conn=conn
+    )
     if got is not None:
         save_label(
             run_id,
@@ -83,6 +87,7 @@ def _save(run_id: int, x: Inputs, steps: list[Step], got: Screened | None) -> No
             watch_on=watch_on(steps) if got.label == "WATCH" else None,
             rank=got.rank,
             shortlist=got.shortlist,
+            conn=conn,
         )
 
 
@@ -207,13 +212,18 @@ def main(argv: list[str] | None = None) -> None:
         results = run_pipeline(inputs, catalysts=catalysts, untradable=untradable)
         labels = screen(results, catalysts=catalysts, untradable=untradable)
 
-    for x in inputs:
-        steps, got = results[x.ticker], labels[x.ticker]
-        marks = "  ".join(f"{s.toolkit}:{MARK[s.status]}" for s in steps)
-        rk = f" #{got.rank}" if got.rank is not None else ""
-        print(f"{x.ticker:<10} {got.label + rk:<6} {marks}")
-        if run_id is not None:
-            _save(run_id, x, steps, None if args.toolkit else got)
+    db = store.connect() if run_id is not None else None  # one connection for the whole save
+    try:
+        for x in inputs:
+            steps, got = results[x.ticker], labels[x.ticker]
+            marks = "  ".join(f"{s.toolkit}:{MARK[s.status]}" for s in steps)
+            rk = f" #{got.rank}" if got.rank is not None else ""
+            print(f"{x.ticker:<10} {got.label + rk:<6} {marks}")
+            if run_id is not None and db is not None:
+                _save(run_id, x, steps, None if args.toolkit else got, db)
+    finally:
+        if db is not None:
+            db.close()
     reviewed: list[Reviewed] | None = None
     if not args.toolkit:
         conn = book.connect()

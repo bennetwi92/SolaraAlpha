@@ -102,14 +102,21 @@ def holdings(
     return pd.DataFrame(rows, columns=HOLDING_COLS)
 
 
-def equity(cash: pd.DataFrame, states: list[PositionState], held: pd.DataFrame) -> Equity:
-    """Account view from the cash events, every position's realised P&L and the open holdings."""
+def equity(
+    cash: pd.DataFrame,
+    states: list[PositionState],
+    held: pd.DataFrame,
+    realised_closed: float = 0.0,
+) -> Equity:
+    """Account view from the cash events, every position's realised P&L and the open holdings.
+    ``realised_closed``: the closed positions' realised P&L when ``states`` leaves them out
+    (:func:`solaraalpha.portfolio.book.live_states`)."""
     cash = cash.copy()
     cash["gbp"] = [to_account(a, c) for a, c in zip(cash["amount"], cash["currency"], strict=True)]
     by = cash.groupby("kind")["gbp"].sum()
     deposits, withdrawals = float(by.get("deposit", 0.0)), float(by.get("withdrawal", 0.0))
     dividends, interest, fees = (float(by.get(k, 0.0)) for k in ("dividend", "interest", "fee"))
-    realised = float(sum(st.realised_pnl for st in states))
+    realised = float(sum(st.realised_pnl for st in states)) + realised_closed
     open_cost = float(
         sum(
             to_account(st.avg_cost * st.shares, st.currency)

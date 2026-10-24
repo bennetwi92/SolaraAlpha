@@ -374,8 +374,10 @@ def add_fill(
     commission: float = 0.0,
     fees: float = 0.0,
     actor: str = OWNER,
+    broker_ref: str | None = None,
 ) -> int:
-    """Insert a fill and the order event it implies (``part_filled`` or ``filled``).
+    """Insert a fill and the order event it implies (``part_filled`` or ``filled``), carrying
+    ``broker_ref`` when the order only now learns its broker id.
 
     The order must be fillable (approved, placed or part-filled) and the cumulative quantity
     may not exceed the order's. Position-level effects (opening, stops, closing) are the
@@ -397,9 +399,9 @@ def add_fill(
     )
     assert cur.lastrowid is not None
     if done == total:
-        order_event(conn, order_id, "filled", actor=actor, at=t)
+        order_event(conn, order_id, "filled", broker_ref=broker_ref, actor=actor, at=t)
     elif status != "cancelling":  # a part fill racing a cancel: still cancelling at the broker
-        order_event(conn, order_id, "part_filled", actor=actor, at=t)
+        order_event(conn, order_id, "part_filled", broker_ref=broker_ref, actor=actor, at=t)
     return cur.lastrowid
 
 
@@ -953,6 +955,7 @@ def fill(
     commission: float = 0.0,
     fees: float = 0.0,
     actor: str = OWNER,
+    broker_ref: str | None = None,
 ) -> dict[str, Any]:
     """Record a fill and its consequences for the position.
 
@@ -966,7 +969,7 @@ def fill(
     "stop_order_id", "shares", "closed"}`` (``closed`` is the :class:`CloseSummary` or None).
     """
     t = iso(at)
-    fid = add_fill(conn, order_id, qty, price, t, commission, fees, actor)
+    fid = add_fill(conn, order_id, qty, price, t, commission, fees, actor, broker_ref)
     order = _order(conn, order_id)
     pid = int(order["position_id"])
     out: dict[str, Any] = {
@@ -1288,6 +1291,28 @@ def close_position(
     summary = close_summary(conn, position_id, reason=reason, closed_at=t)
     position_event(conn, position_id, "closed", asdict(summary), actor=actor, reason=reason, at=t)
     return summary
+
+
+def live_states(conn: Conn) -> tuple[list[PositionState], float]:
+    """The states of the positions not closed, and the realised P&L of the closed ones read from
+    their ``closed`` summaries (net P&L less dividends): the account's cash without rebuilding
+    every trade ever closed (one query instead of several per position)."""
+    pos = positions(conn)
+    states = [
+        position_state(conn, int(p)) for p in pos.loc[pos["status"] != "closed", "position_id"]
+    ]
+    ev = query(
+        "SELECT position_id, payload FROM position_events WHERE kind = 'closed' ORDER BY event_id",
+        conn,
+    )
+    last = {
+        int(p): json.loads(str(x)) for p, x in zip(ev["position_id"], ev["payload"], strict=True)
+    }
+    closed = set(pos.loc[pos["status"] == "closed", "position_id"].astype(int))
+    realised = sum(
+        float(s["net_pnl"]) - float(s["dividends"]) for p, s in last.items() if p in closed
+    )
+    return states, float(realised)
 
 
 def close_summary(
