@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from solaraalpha import track_record
 from solaraalpha.analysis.scorecard import MIN_GROUP, agent_value, calibration
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -145,7 +146,7 @@ def test_learn_agents_value_script(
         index=idx,
     )
     frame.attrs = {"ticker": "A.L", "currency": "GBp"}
-    monkeypatch.setattr(learn, "fetch_daily", lambda t: frame)
+    monkeypatch.setattr(track_record, "fetch_daily", lambda t: frame)
     learn.main(["agents-value", "--db", str(db)])
     out = capsys.readouterr().out
     assert (

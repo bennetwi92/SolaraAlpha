@@ -29,41 +29,10 @@ from solaraalpha.analysis.scorecard import (
     label_scorecard,
     toolkit_scorecard,
 )
-from solaraalpha.data.clean import clean_prices
-from solaraalpha.data.prices import fetch_daily
 from solaraalpha.portfolio import book
 from solaraalpha.portfolio.journal import closed_trades, journal
-from solaraalpha.store import Conn, query
-
-
-def labels_with_dates(conn: Conn, since: str | None) -> pd.DataFrame:
-    """Labels joined with the screen card's week (``date``) for the run and ticker."""
-    sql = (
-        "SELECT l.run_id, l.ticker, l.stage, l.label, l.confidence, (SELECT MIN(x.date) FROM results x"
-        " WHERE x.run_id = l.run_id AND x.ticker = l.ticker"
-        " AND x.model IN ('technical', 'levels', 'relative_strength', 'fundamentals')) AS date"
-        " FROM labels l ORDER BY l.run_id, l.rowid"
-    )
-    df = query(sql, conn)
-    df = df.dropna(subset=["date"])
-    if since:
-        df = df[df["date"] >= since]
-    return df.reset_index(drop=True)
-
-
-def prices_for(conn: Conn, tickers: list[str], fetch: object = None) -> dict[str, pd.DataFrame]:
-    fetch = fetch or fetch_daily
-    out: dict[str, pd.DataFrame] = {}
-    for t in tickers:
-        px = store.load_prices(t, conn=conn)
-        if px.empty:
-            try:
-                px = clean_prices(fetch(t))  # type: ignore[operator]
-            except Exception as e:
-                print(f"NOTE: {t}: no saved history and the fetch failed ({e})")
-                continue
-        out[t] = px
-    return out
+from solaraalpha.store import query
+from solaraalpha.track_record import labels_with_dates, prices_for
 
 
 def scorecard(db: Path | None, since: str | None) -> str:

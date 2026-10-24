@@ -1,6 +1,6 @@
-# 0035 — Continuous improvement: every agent reviews its own record, the PM ranks, the owner decides
+# 0035 — Continuous improvement: every agent reviews its own record, the PM decides what goes forward, the owner signs off
 
-**Status:** accepted (owner, 2026-10-24; answers in "Owner's decisions" below). Not built yet.
+**Status:** accepted (owner, 2026-10-24; answers in "Owner's decisions" below). Step 1 built.
 Widens ADR 0027's phase C (a monthly feedback loop from the post-mortems)
 from the PM alone to every agent.
 
@@ -27,7 +27,7 @@ happens after a yes.
 
 **Decision.** Four steps.
 
-1. **Each agent gets its own record** — `scripts/review_pack.py --agent NAME [--since D]`, built
+1. **Each agent gets its own record** — `scripts/track_record.py --agent NAME [--since D]`, built
    from the tables above, no new data. Per agent: what it decided, what happened next, where it
    was overruled (owner undo / reject, PM override, validator downgrade), its errors, its cost.
    For example: research sees its ACTs' 2/4/8-week returns against the shadow book's picks;
@@ -38,7 +38,7 @@ happens after a yes.
    the desk thread the moment it notices something ("third week running the screen shortlisted a
    stock Trading212 doesn't offer"). At each retro (cadence below), after `/pm`, each
    desk area (senior-quant, fundamental-strategist, portfolio-manager, execution-trader) reads
-   its review pack and the observations since its last retro and writes a short retro: what went
+   its track record and the observations since its last retro and writes a short retro: what went
    well, what went wrong, and **every proposal it thinks is worth making** (no cap). "Nothing to change" is a good answer, not a
    failure. A single costly mistake (a loss beyond 1.5R, a stop not at the broker, a missed
    review) gets an incident note at once, not at the next retro.
@@ -69,7 +69,7 @@ raised again without new evidence.
 **Guardrails.** The locked holdout (ADR 0029) is never used to justify a proposal. Agents never
 edit their own skills, bands, `portfolio.toml` or ADR 0022; they propose. Hard limits stay in
 code. Lessons that are rules go into the skill they belong to (decision rules live only there);
-lessons that are context go in the agent's review pack, so it reads them before deciding.
+lessons that are context go in the agent's track record, so it reads them before deciding.
 
 **Consequences.** Four retros plus one PM memo per cadence step; weekly at first. Every item
 that clears the PM reaches the owner, in plain English; cost is not a constraint (owner). Early on there will be few closed trades, so most
@@ -86,4 +86,22 @@ refusals, missed reviews), which need no statistics.
 4. **The PM has the say on what goes forward**: it can reject a specialist's proposal as not in
    the strategy's interest; the owner signs off what the PM forwards.
 
-Build order (proposed, not yet answered): review packs first, then the retro, then the memo.
+Build order (owner, 2026-10-24): the track records first, then the retro, then the memo.
+
+**As built (step 1).** `solaraalpha.track_record` + `scripts/track_record.py --agent NAME`, read
+only. NAME is a desk area, one stage or `all`; each stage's section, then its reliability (agent
+invocations, failures, minutes, cost, ERROR verdicts):
+
+| Stage | What it shows |
+|---|---|
+| screen | each label's 4- and 8-week return, hit rate, share ending 15%+ up; per toolkit band |
+| validate / research | kept vs downgraded screen ACTs (`agent_value`), confidence calibration; validator disagreements by toolkit; research: closed trades built on its levels, by exit reason |
+| macro | notes written |
+| pm | research ACTs funded vs not funded, rotations, the whole book's trades, plans the owner rejected |
+| monitor | revisions by action and outcome, the owner's undos with reasons, R given back from the best point |
+| execute | actions taken, refusals / rejections / errors by reason, fill price against order price |
+| postmortem | repeat / mixed / avoid, average set-up and execution quality, each lesson |
+
+Groups under `MIN_GROUP` (20) are marked "too few to conclude". The shadow book's comparison
+waits for its simulator (#210). `learn.py` now takes `labels_with_dates` / `prices_for` from
+the module.
