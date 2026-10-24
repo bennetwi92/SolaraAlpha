@@ -1,7 +1,7 @@
 # 0035 — Continuous improvement: every agent reviews its own record, the PM ranks, the owner decides
 
-**Status:** proposed (owner's request, 2026-10-24). Nothing is built until the owner answers the
-decisions at the end. Widens ADR 0027's phase C (a monthly feedback loop from the post-mortems)
+**Status:** accepted (owner, 2026-10-24; answers in "Owner's decisions" below). Not built yet.
+Widens ADR 0027's phase C (a monthly feedback loop from the post-mortems)
 from the PM alone to every agent.
 
 **Context.** The owner wants the process to get better week by week: fewer repeated mistakes,
@@ -25,8 +25,7 @@ What is missing: (1) one view per agent of *its own* track record, (2) a regular
 think about it, (3) one place proposals go, (4) a rule for how they reach the owner and what
 happens after a yes.
 
-**Decision (proposed).** Four steps, light enough to run every month without anyone noticing
-the overhead.
+**Decision.** Four steps.
 
 1. **Each agent gets its own record** — `scripts/review_pack.py --agent NAME [--since D]`, built
    from the tables above, no new data. Per agent: what it decided, what happened next, where it
@@ -35,28 +34,31 @@ the overhead.
    monitor sees each stop it set against where price went next; execution sees fill price
    against plan; the PM sees its allocation against "top 5 by rank". Hindsight is labelled
    hindsight, as in the post-mortem pack.
-2. **Observations any time, a retro once a month.** Any agent may post an `observation:` line in
+2. **Observations any time, a retro on a cadence.** Any agent may post an `observation:` line in
    the desk thread the moment it notices something ("third week running the screen shortlisted a
-   stock Trading212 doesn't offer"). On the first weekly run of each month, after `/pm`, each
+   stock Trading212 doesn't offer"). At each retro (cadence below), after `/pm`, each
    desk area (senior-quant, fundamental-strategist, portfolio-manager, execution-trader) reads
-   its review pack and its month's observations and writes a short retro: what went well, what
-   went wrong, and **at most two proposals**. "Nothing to change" is a good answer, not a
+   its review pack and the observations since its last retro and writes a short retro: what went
+   well, what went wrong, and **every proposal it thinks is worth making** (no cap). "Nothing to change" is a good answer, not a
    failure. A single costly mistake (a loss beyond 1.5R, a stop not at the broker, a missed
-   review) gets an incident note at once, not a month later.
+   review) gets an incident note at once, not at the next retro.
 3. **One proposal format, through the one door.** A proposal is a `proposal` verdict recorded
    with `record.py` (so it is in the DB with its evidence) and mirrored as a GitHub issue
-   labelled `proposal` + `needs-owner`. It fits on a phone screen:
+   labelled `proposal`. It fits on a phone screen:
    - **Problem** — one sentence, plain words.
    - **Evidence** — the numbers and how many cases (n). Under 10 cases it is labelled a hunch.
    - **Change** — what exactly would change, and in which file.
    - **Cost / risk** — what it could break, what it costs to run.
    - **How we'll know** — the check, and the date we look again.
-4. **The PM ranks, the owner decides.** `/pm` reads every open proposal once a month and writes
-   one **improvement memo**: at most five items, best first, each three lines (what, why, PM's
-   recommendation: approve / reject / wait for more data). It merges duplicates and flags
-   proposals that clash. The memo goes to the inbox and the desk thread. The owner answers in
-   Telegram or on the issue: `approve 2`, `reject 3: reason`, `more data 1`. Only the owner's
-   yes changes anything; the PM never approves a process change.
+4. **The PM decides what goes forward, the owner signs off.** At each retro `/pm` reads every
+   open proposal and judges it against the strategy as a whole (ADR 0022): a change one
+   specialist wants may not serve the book. For each it decides **forward**, **reject** (with a
+   one-line reason) or **wait for more data**. It merges duplicates and settles clashes. It writes
+   one **improvement memo**: the forwarded items, best first, each three lines (what, why, what
+   it changes), then one line per rejected or parked item so the owner sees everything. The memo
+   goes to the owner on Telegram (the desk thread). The owner replies there: `approve 2`, `no 3`.
+   The PM's reject is final unless the owner asks to revive it; nothing changes without the
+   owner's yes on a forwarded item.
 
 **After a yes.** The area's owner builds it as a normal PR referencing the issue. One change per
 area at a time, so its effect can be measured. On the "how we'll know" date the next retro
@@ -69,14 +71,19 @@ edit their own skills, bands, `portfolio.toml` or ADR 0022; they propose. Hard l
 code. Lessons that are rules go into the skill they belong to (decision rules live only there);
 lessons that are context go in the agent's review pack, so it reads them before deciding.
 
-**Consequences.** Four extra agent invocations a month plus one PM memo; at most five items a
-month reach the owner, in plain English. Early on there will be few closed trades, so most
+**Consequences.** Four retros plus one PM memo per cadence step; weekly at first. Every item
+that clears the PM reaches the owner, in plain English; cost is not a constraint (owner). Early on there will be few closed trades, so most
 proposals will be "wait for more data"; the loop still catches process mistakes (errors,
 refusals, missed reviews), which need no statistics.
 
-**Decisions for the owner** (recommendation first):
+**Owner's decisions** (2026-10-24):
 
-1. Cadence: **monthly retro + immediate incident notes** / weekly / quarterly.
-2. Cap on what reaches you: **five a month** / three / no cap.
-3. Where you answer: **Telegram and the issue** / issue only.
-4. Build order: **review packs first** (useful on their own), then the retro, then the memo.
+1. **Cadence tapers.** Weekly retros for the first month after the loop goes live, monthly for
+   months 2-3, quarterly after that. Incident notes are immediate throughout.
+2. **No cap** on proposals per agent or items reaching the owner; improve everything that needs
+   it. Cost is immaterial.
+3. **Answers on Telegram** (the desk thread).
+4. **The PM has the say on what goes forward**: it can reject a specialist's proposal as not in
+   the strategy's interest; the owner signs off what the PM forwards.
+
+Build order (proposed, not yet answered): review packs first, then the retro, then the memo.
