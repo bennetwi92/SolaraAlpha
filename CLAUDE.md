@@ -105,7 +105,7 @@ Current state:
   `burst_10w`, a pass bar fixed in advance, and a **locked holdout** (signal Fridays 2025-10-24
   to 2026-10-16): never look at it until the owner signs off a candidate.
 - **Agents run unattended when the owner adds a Claude secret** (docs/decisions/0019):
-  `agents.yml` runs after the scan (`/validate` → `/macro` → `/research` → `/pm` → `plan.py` → `weekly_pack.py`)
+  `agents.yml` runs after the scan (`/validate` → `/macro` → `/research` → `/pm` → `/retro` (desk areas due one, ADR 0035) → `plan.py` → `weekly_pack.py`)
   and after the daily job (`/monitor`) via `claude-code-action`, capped by
   `max_agent_tickers` and `--max-turns`; without `CLAUDE_CODE_OAUTH_TOKEN` or
   `ANTHROPIC_API_KEY` it skips and nothing is spent. A failed invocation is recorded as an
@@ -243,6 +243,7 @@ Current state:
 | Monitor pack for a daily run's open positions and pending entries (then vs now, thesis, filing text, research levels, systematic stops) | `uv run python scripts/monitor_pack.py --run N [--position ID]` |
 | Monitor (agent): daily re-evaluation; open: hold / tighten / partial / exit / revise target / add; pending: hold / amend_entry / cancel — applied as recorded (ADR 0024) | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions --status all` / `undo REV_ID --reason` (pipeline proposals: `accept REV_ID` / `decline REV_ID --reason`) |
 | An agent's own track record: decisions, what happened next (hindsight), where it was overruled, reliability and cost (ADR 0035) | `uv run python scripts/track_record.py --agent senior-quant\|fundamental-strategist\|portfolio-manager\|execution-trader\|STAGE\|all [--since D] [--out FILE]` |
+| Retro (agent): a desk area reviews its own track record and the thread's `observation:` posts, proposes changes (no cap, changes nothing); due weekly for the loop's first month, monthly to month 3, quarterly after | `/retro AREA --run N` in Claude Code (`track_record.py --agent AREA --retro` is its pack; `record.py queue --run N --stage retro` lists the areas due) |
 | Validator disagreement log (toolkits not warranted, concerns, rate per run) | `uv run python scripts/validator_stats.py [--since D]` |
 | Post-mortem pack for a closed position (record + weekly bars, hindsight labelled) | `uv run python scripts/postmortem_pack.py POSITION_ID` / `--since ISO` |
 | Post-mortem (agent): set-up, what worked / failed, signal right or wrong, rule proposals | `/postmortem POSITION_ID` in Claude Code → `record.py verdict ... --position ID` |
@@ -305,7 +306,7 @@ src/solaraalpha/        importable package — all reusable code lives here
                         broker differences, results calendar, code changes — 0027, 0032
   value_models.py       register of per-stock value models (config/value_models.toml) for research
   track_record.py       each agent's own track record (per desk area / stage) from the DB, plain
-                        words, small groups flagged; labels_with_dates / prices_for — 0035
+                        words, small groups flagged; the retro cadence (retro_due) and pack — 0035
   dashboard.py          render_dashboard: one self-contained HTML page from the DB (inline CSS,
                         base64 PNG charts, md_to_html for the pack) — #136
   desk_chat.py          the desk thread: append-only `chat` table, post (+ Telegram), pull the
@@ -416,6 +417,8 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
                         the PM memo; the buck stops here — 0027
 .claude/skills/monitor/   agent skill: structural change or noise on a triggered position; proposes one action
 .claude/skills/postmortem/  agent skill: post-mortem of a closed trade from its pack; setup / execution scores
+.claude/skills/retro/     agent skill: a desk area's retro: its track record, the thread's observations, its
+                        earlier proposals → plain-English proposals (`_DESK:<area>`); proposes only — 0035
 .claude/skills/desk/      agent skill: the PM answering the owner's desk-thread messages; read-only + one post — 0033
 .claude/skills/execute/   agent skill: the execution trader: how and when each approved order goes to Trading212
                         through execute.py (send, hold, lapse, one retry), never what — 0031

@@ -94,4 +94,6 @@ reports to the inbox. If the pack can't be read or a command fails for a reason 
 Read it first: `uv run --no-sync python scripts/chat.py read --last 20`. When the turn sent,
 held, retried or let lapse an order, post one line per stock after your commands: what went
 out, at what, and why (`uv run --no-sync python scripts/chat.py post --as agent:execute --ticker
-<TICKER> "..."`). A turn with nothing decided is silent.
+<TICKER> "..."`). A turn with nothing decided is silent. Noticed something about how execution works (a repeated
+rejection, a guard that misfires)? Post a line starting `observation:`; the next retro reads it
+(ADR 0035).

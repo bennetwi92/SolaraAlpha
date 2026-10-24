@@ -38,9 +38,10 @@ from solaraalpha.pipeline import SCREEN_TOOLKITS
 from solaraalpha.store import Conn, query
 
 Label = Literal["ACT", "WATCH", "PASS", "ERROR"]
-Stage = Literal["validate", "research", "events", "monitor", "postmortem", "macro", "pm"]
+Stage = Literal["validate", "research", "events", "monitor", "postmortem", "macro", "pm", "retro"]
 SECTOR_PREFIX = "_SECTOR:"  # pseudo-ticker of a shared sector / macro note (#140)
 BOOK = "_BOOK"  # pseudo-ticker of the portfolio manager's verdict (ADR 0027)
+DESK_PREFIX = "_DESK:"  # pseudo-ticker of a desk area's retro (ADR 0035)
 WEEK = pd.Timedelta(days=7)  # weekly runs are a week apart: a renewal lasts until the next one
 LABEL_STAGES = ("events", "validate", "research")  # stages that write a labels row
 RANK = {"ACT": 3, "WATCH": 2, "PASS": 1}  # ERROR is outside the order
@@ -142,6 +143,22 @@ class Renewal(BaseModel):
     reason: str = Field(min_length=1)
 
 
+class Proposal(BaseModel):
+    """One change a desk area's retro puts to the PM and the owner (ADR 0035), in plain words."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1)  # a short imperative: "Widen the stop on breakouts"
+    problem: str = Field(min_length=1)  # one sentence
+    evidence: str = Field(min_length=1)  # the numbers, from the track record or the thread
+    n: int | None = Field(default=None, ge=0)  # cases behind it; under 10 it is a hunch
+    change: str = Field(min_length=1)  # exactly what would change
+    where: str = Field(min_length=1)  # the file / skill / setting, and its owner
+    risk: str = Field(min_length=1)  # what it could break, what it costs
+    check: str = Field(min_length=1)  # how we will know it worked
+    check_on: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")  # when we look again
+
+
 class Verdict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -160,6 +177,7 @@ class Verdict(BaseModel):
     allocation: list[Allocation] | None = None  # the PM's, in priority order (ADR 0027)
     rotations: list[Rotation] = Field(default_factory=list)  # the PM's
     renewals: list[Renewal] = Field(default_factory=list)  # the PM's (ADR 0034)
+    proposals: list[Proposal] = Field(default_factory=list)  # a retro's (ADR 0035)
 
     @model_validator(mode="after")
     def _act_has_trade(self) -> Verdict:
@@ -188,6 +206,18 @@ class Verdict(BaseModel):
             raise ValueError("each position appears once in `renewals`")
         if set(kept) & set(ids):
             raise ValueError("a position is either renewed or rotated out, not both")
+        return self
+
+    @model_validator(mode="after")
+    def _retro_has_proposals(self) -> Verdict:
+        if self.stage != "retro":
+            if self.proposals:
+                raise ValueError("only the retro stage gives `proposals`")
+            return self
+        if not self.ticker.startswith(DESK_PREFIX):
+            raise ValueError(f"a retro is about a desk area: ticker must be {DESK_PREFIX}<area>")
+        if self.label not in ("ERROR", "ACT" if self.proposals else "PASS"):
+            raise ValueError("a retro is ACT with proposals, PASS with nothing to change")
         return self
 
     @field_validator("scores")
@@ -316,6 +346,8 @@ def record_verdict(
             fields["allocation"] = json.dumps([a.model_dump() for a in v.allocation])
             fields["rotations"] = json.dumps([r.model_dump() for r in v.rotations])
             fields["renewals"] = json.dumps([r.model_dump() for r in v.renewals])
+        if v.stage == "retro":
+            fields["proposals"] = json.dumps([p.model_dump() for p in v.proposals])
         if v.trade is not None:
             fields |= {
                 f"{TRADE_PREFIX}{k}": val
@@ -614,7 +646,8 @@ def queue(conn: Conn, run_id: int, stage: str, cap: int) -> list[str]:
     ``research`` → tickers whose final label is ACT (once the validator has worked the run,
     only those it kept: one it never reached is not researched); ``monitor`` → position ids with an agent trigger in that daily run;
     ``postmortem`` → position ids closed since the daily run before ``run_id`` (ever, when
-    there is none) with no post-mortem card yet. Tickers are ordered by ``rank_score`` over
+    there is none) with no post-mortem card yet. ``retro`` → the desk areas (``_DESK:<area>``) due a retro at
+    this run (``track_record.retro_due``, uncapped). Tickers are ordered by ``rank_score`` over
     the run's cards (ties by ticker); those already recorded for the stage are left out."""
     from solaraalpha.monitoring import positions_to_review
     from solaraalpha.portfolio.fit import rank_score
@@ -625,6 +658,10 @@ def queue(conn: Conn, run_id: int, stage: str, cap: int) -> list[str]:
         return [str(p) for p in positions_to_review(conn, run_id)[:cap]]
     if stage == "macro":
         return sector_groups(conn, run_id)[:cap]
+    if stage == "retro":
+        from solaraalpha.track_record import retro_due
+
+        return retro_due(conn, run_id)
     if stage == "postmortem":
         prev = conn.execute(
             "SELECT started_at FROM runs WHERE script = 'daily' AND run_id < ?"

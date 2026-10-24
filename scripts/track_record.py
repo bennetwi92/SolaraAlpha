@@ -1,6 +1,7 @@
 """An agent's own track record: what it decided, what happened next, where it was overruled.
 
 uv run python scripts/track_record.py --agent NAME [--since DATE] [--out FILE] [--db PATH]
+uv run python scripts/track_record.py --agent AREA --retro   # + observations, earlier proposals
 
 NAME is a desk area (senior-quant, fundamental-strategist, portfolio-manager, execution-trader),
 one stage (screen, validate, research, macro, pm, monitor, execute, postmortem) or ``all``.
@@ -39,13 +40,23 @@ def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument("--agent", required=True, help="desk area, stage or 'all'")
     p.add_argument("--since", default=None, help="YYYY-MM-DD")
+    p.add_argument(
+        "--retro",
+        action="store_true",
+        help="a desk area's retro pack: plus the thread's observations and its earlier proposals",
+    )
     p.add_argument("--out", type=Path, default=None, help="write the markdown here too")
     p.add_argument("--db", type=Path, default=None, help="local DB file (default: configured DB)")
     args = p.parse_args(argv)
     track_record.stages_for(args.agent)  # fail fast on a bad name
     conn = store.connect(args.db)
     try:
-        text = track_record.report(conn, args.agent, inputs(conn, args.since))
+        data = inputs(conn, args.since)
+        text = (
+            track_record.retro_pack(conn, args.agent, data)
+            if args.retro
+            else track_record.report(conn, args.agent, data)
+        )
     finally:
         conn.close()
     if args.out:

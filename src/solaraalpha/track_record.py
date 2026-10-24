@@ -36,6 +36,11 @@ from solaraalpha.validation import disagreement_stats, disagreements
 
 log = get_logger(__name__)
 
+# retro cadence (owner, ADR 0035): weekly for the loop's first 4 weeks, monthly to 13 weeks,
+# then quarterly; (loop age below, days between retros). A day's slack for run timing.
+CADENCE = ((28, 7), (91, 28), (None, 91))
+OBSERVATION = "observation:"
+
 HORIZONS = (4, 8)  # inside the 1-10 week holding window (CLAUDE.md strategy)
 BURST = 0.15  # the strategy's minimum burst
 
@@ -434,3 +439,95 @@ SECTIONS: dict[str, Callable[[Conn, Inputs], list[str]]] = {
     "execute": _execute,
     "postmortem": _postmortem,
 }
+
+
+# --- the retro (ADR 0035, step 2) --------------------------------------------------------------
+
+
+def _retros(conn: Conn) -> pd.DataFrame:
+    """Every non-ERROR retro: run, area pseudo-ticker, the run's start, its proposals JSON."""
+    df = query(
+        "SELECT x.run_id, x.ticker, r.started_at, x.field, x.text FROM results x JOIN runs r"
+        " USING (run_id) WHERE x.model = 'retro' AND x.field IN ('label', 'proposals')",
+        conn,
+    )
+    if df.empty:
+        return pd.DataFrame(columns=["run_id", "ticker", "started_at", "label", "proposals"])
+    wide = df.pivot_table(
+        index=["run_id", "ticker", "started_at"], columns="field", values="text", aggfunc="last"
+    ).reset_index()
+    return wide[wide["label"] != "ERROR"].sort_values("started_at").reset_index(drop=True)
+
+
+def interval_days(age_days: float) -> int:
+    """Days between retros once the loop is ``age_days`` old (``CADENCE``)."""
+    for below, days in CADENCE:
+        if below is None or age_days < below:
+            return days
+    return CADENCE[-1][1]
+
+
+def retro_due(conn: Conn, run_id: int) -> list[str]:
+    """The desk areas (``_DESK:<area>``) due a retro at ``run_id``: never had one, or the last
+    is at least the cadence's interval old (less a day). The loop's age runs from the first
+    retro of any area. Areas already recorded in ``run_id`` (ERROR included) are left out."""
+    from solaraalpha.agents import DESK_PREFIX
+
+    at = pd.Timestamp(store.run_info(run_id, conn=conn)["started_at"])
+    done = set(
+        query(
+            "SELECT DISTINCT ticker FROM results WHERE model = 'retro' AND run_id = ?",
+            conn,
+            [run_id],
+        )["ticker"]
+    )
+    past = _retros(conn)
+    past = past[pd.to_datetime(past["started_at"]) < at] if not past.empty else past
+    age = (at - pd.Timestamp(past["started_at"].iloc[0])).days if not past.empty else 0
+    gap = interval_days(age) - 1
+    due = []
+    for area in AREAS:
+        key = f"{DESK_PREFIX}{area}"
+        mine = past[past["ticker"] == key]
+        if key in done:
+            continue
+        if mine.empty or (at - pd.Timestamp(mine["started_at"].iloc[-1])).days >= gap:
+            due.append(key)
+    return due
+
+
+def retro_pack(conn: Conn, area: str, inputs: Inputs) -> str:
+    """What a desk area reads for its retro: its track record, the observations posted in the
+    desk thread since its last retro, and every proposal it made before."""
+    from solaraalpha import desk_chat
+    from solaraalpha.agents import DESK_PREFIX
+
+    if area not in AREAS:
+        raise ValueError(f"a retro is per desk area: one of {', '.join(AREAS)}")
+    conn.executescript(desk_chat.SCHEMA)
+    past = _retros(conn)
+    mine = past[past["ticker"] == f"{DESK_PREFIX}{area}"] if not past.empty else past
+    since = str(mine["started_at"].iloc[-1]) if not mine.empty else None
+    lines = [report(conn, area, inputs).rstrip(), "", "## Observations in the desk thread"]
+    lines.append(f"(since your last retro, {since[:10]})" if since else "(all of them)")
+    chat = query(
+        "SELECT at, author, text FROM chat WHERE lower(text) LIKE ?"
+        + (" AND at >= ?" if since else "")
+        + " ORDER BY at",
+        conn,
+        [f"%{OBSERVATION}%", since] if since else [f"%{OBSERVATION}%"],
+    )
+    lines += [f"- {r['at'][:10]} {r['author']}: {r['text']}" for r in chat.to_dict("records")]
+    if chat.empty:
+        lines.append("- None.")
+    lines += ["", "## Your earlier proposals", ""]
+    earlier = [
+        (str(r["started_at"])[:10], p)
+        for r in mine.to_dict("records")
+        for p in json.loads(str(r.get("proposals") or "[]"))
+    ]
+    lines += [
+        f"- {d}: {p['title']} (n={p.get('n')}; check {p['check_on']}: {p['check']})"
+        for d, p in earlier
+    ] or ["- None yet."]
+    return "\n".join(lines) + "\n"

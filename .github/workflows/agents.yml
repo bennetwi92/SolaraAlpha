@@ -1,6 +1,7 @@
 # Unattended agent stages (docs/decisions/0019). Runs after the weekly pipeline (validate ->
 # macro (one shared note per sector group, #140) -> research -> pm (the portfolio manager: the
-# week's allocation and rotations, ADR 0027) -> plan.py -> weekly_pack.py) and after the daily check (monitor, postmortem of
+# week's allocation and rotations, ADR 0027) -> retro (each desk area due one reviews its own
+# track record and proposes changes, ADR 0035) -> plan.py -> weekly_pack.py) and after the daily check (monitor, postmortem of
 # positions closed since the previous daily run), or by hand. The daily monitor reviews every
 # open position and pending entry each weekday (docs/decisions/0024; event-triggered first,
 # capped by max_agent_tickers) and its changes are applied by the book as they are recorded;
@@ -50,7 +51,7 @@ env:
   # would reach outside the repo (the environment, with its secrets); reads and greps inside the
   # repo need no permission. A value model in config/value_models.toml adds its script here.
   ALLOWED_TOOLS: >-
-    Bash(uv run python scripts/announcement.py *),Bash(uv run --no-sync python scripts/announcement.py *),Bash(uv run python scripts/chat.py *),Bash(uv run --no-sync python scripts/chat.py *),Bash(uv run python scripts/events.py *),Bash(uv run --no-sync python scripts/events.py *),Bash(uv run python scripts/jet2_value.py *),Bash(uv run --no-sync python scripts/jet2_value.py *),Bash(uv run python scripts/monitor_pack.py *),Bash(uv run --no-sync python scripts/monitor_pack.py *),Bash(uv run python scripts/pm_pack.py *),Bash(uv run --no-sync python scripts/pm_pack.py *),Bash(uv run python scripts/postmortem_pack.py *),Bash(uv run --no-sync python scripts/postmortem_pack.py *),Bash(uv run python scripts/record.py *),Bash(uv run --no-sync python scripts/record.py *),Bash(uv run python scripts/validate_pack.py *),Bash(uv run --no-sync python scripts/validate_pack.py *),Bash(uv run python scripts/plan.py --dry-run *),Bash(uv run --no-sync python scripts/plan.py --dry-run *),Edit(data/processed/**),Glob,WebSearch,WebFetch
+    Bash(uv run python scripts/announcement.py *),Bash(uv run --no-sync python scripts/announcement.py *),Bash(uv run python scripts/chat.py *),Bash(uv run --no-sync python scripts/chat.py *),Bash(uv run python scripts/events.py *),Bash(uv run --no-sync python scripts/events.py *),Bash(uv run python scripts/jet2_value.py *),Bash(uv run --no-sync python scripts/jet2_value.py *),Bash(uv run python scripts/monitor_pack.py *),Bash(uv run --no-sync python scripts/monitor_pack.py *),Bash(uv run python scripts/pm_pack.py *),Bash(uv run --no-sync python scripts/pm_pack.py *),Bash(uv run python scripts/postmortem_pack.py *),Bash(uv run --no-sync python scripts/postmortem_pack.py *),Bash(uv run python scripts/record.py *),Bash(uv run python scripts/track_record.py *),Bash(uv run --no-sync python scripts/track_record.py *),Bash(uv run --no-sync python scripts/record.py *),Bash(uv run python scripts/validate_pack.py *),Bash(uv run --no-sync python scripts/validate_pack.py *),Bash(uv run python scripts/plan.py --dry-run *),Bash(uv run --no-sync python scripts/plan.py --dry-run *),Edit(data/processed/**),Glob,WebSearch,WebFetch
   # The desk thread's Telegram mirror (ADR 0033); unset, the agents still post to the DB thread.
   SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
   SOLARA_TELEGRAM_CHAT: ${{ secrets.SOLARA_TELEGRAM_CHAT }}
@@ -375,8 +376,75 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  retro-areas:
+    needs: [gate, pm]
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'weekly' && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      areas: ${{ steps.queue.outputs.areas }}
+    env:
+      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - id: queue
+        run: echo "areas=$(uv run --no-sync python scripts/record.py queue --run "${{ needs.gate.outputs.run }}" --stage retro | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+
+  retro:
+    needs: [gate, retro-areas]
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'weekly' && needs.retro-areas.result == 'success' && needs.retro-areas.outputs.areas != '[]' && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        area: ${{ fromJson(needs.retro-areas.outputs.areas) }}
+    env:
+      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - id: agent
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}  # the action otherwise wants an OIDC token (id-token: write)
+          prompt: "/retro ${{ matrix.area }} --run ${{ needs.gate.outputs.run }}"
+          claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
+      - name: Record agent usage
+        if: always() && steps.agent.outcome != 'skipped'
+        run: >
+          uv run --no-sync python scripts/record.py usage --run "${{ needs.gate.outputs.run }}"
+          --ticker "${{ matrix.area }}" --stage retro
+          --file "${{ steps.agent.outputs.execution_file }}"
+          --status "${{ steps.agent.outcome == 'success' && 'success' || 'failure' }}" || true
+      - name: ERROR if the agent failed or ended without recording a verdict
+        if: always() && steps.agent.outcome != 'skipped'
+        run: >
+          uv run --no-sync python scripts/record.py error "${{ matrix.area }}"
+          --run "${{ needs.gate.outputs.run }}" --stage retro --if-missing
+          --reason "${{ steps.agent.outcome == 'failure' && 'claude-code-action failed or hit the turn limit' || 'the agent ended without recording a verdict' }} (job ${{ github.run_id }})" || true
+      - uses: actions/upload-artifact@v4  # the agent's transcript, to see why it failed
+        if: always() && steps.agent.outputs.execution_file != ''
+        with:
+          name: transcript-retro-${{ strategy.job-index }}
+          path: ${{ steps.agent.outputs.execution_file }}
+          if-no-files-found: ignore
+          retention-days: 14
+
   plan:
-    needs: [gate, research, research-agents, pm]
+    needs: [gate, research, research-agents, pm, retro]
     if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'weekly' && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 30
