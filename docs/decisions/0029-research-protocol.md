@@ -48,3 +48,12 @@ before several hundred live trades. No per-stock tuning; volatility is never a g
 weights stay as they are until a model passes (owner, 2026-10-20); the packs say the rank is
 unvalidated (`fit.RANK_NOTE`). History stays at 5 years (owner declined a research-only 10-year
 fetch; revisit after the survivorship rebuild).
+
+**Amendment (2026-10-24, owner).** Every forward return enters at **Monday's open** after the
+signal Friday (the next week's first open, adjusted like `adj_close`), as `burst_10w` already
+did: the backtest's `ret_{N}w` / `exc_{N}w` (`backtest.forward`), the label scorecard and
+agent-value (`scorecard.forward_returns`) and the panel's `ret_8w` (`build_panel.py`). The
+exit stays the close N weeks after the signal. Before this, they ran from the signal Friday's
+close, which cannot be traded (the card is known only after it), flattering momentum and
+breakout labels. Notes 0002 / 0003 report `ret_8w` from the Friday close; re-run before reusing
+those numbers.
