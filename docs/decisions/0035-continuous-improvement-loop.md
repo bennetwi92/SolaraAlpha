@@ -1,6 +1,6 @@
 # 0035 — Continuous improvement: every agent reviews its own record, the PM decides what goes forward, the owner signs off
 
-**Status:** accepted (owner, 2026-10-24; answers in "Owner's decisions" below). Step 1 built.
+**Status:** accepted (owner, 2026-10-24; answers in "Owner's decisions" below). Steps 1 and 2 built (incident notes not yet).
 Widens ADR 0027's phase C (a monthly feedback loop from the post-mortems)
 from the PM alone to every agent.
 
@@ -42,9 +42,9 @@ happens after a yes.
    well, what went wrong, and **every proposal it thinks is worth making** (no cap). "Nothing to change" is a good answer, not a
    failure. A single costly mistake (a loss beyond 1.5R, a stop not at the broker, a missed
    review) gets an incident note at once, not at the next retro.
-3. **One proposal format, through the one door.** A proposal is a `proposal` verdict recorded
-   with `record.py` (so it is in the DB with its evidence) and mirrored as a GitHub issue
-   labelled `proposal`. It fits on a phone screen:
+3. **One proposal format, through the one door.** Proposals are recorded with `record.py` as
+   part of the area's `retro` verdict (so they are in the DB with their evidence); a GitHub issue
+   is opened only for an approved one, as its build ticket. Each fits on a phone screen:
    - **Problem** — one sentence, plain words.
    - **Evidence** — the numbers and how many cases (n). Under 10 cases it is labelled a hunch.
    - **Change** — what exactly would change, and in which file.
@@ -105,3 +105,15 @@ invocations, failures, minutes, cost, ERROR verdicts):
 Groups under `MIN_GROUP` (20) are marked "too few to conclude". The shadow book's comparison
 waits for its simulator (#210). `learn.py` now takes `labels_with_dates` / `prices_for` from
 the module.
+
+**As built (step 2).** The `retro` stage: one verdict per desk area per run under the
+pseudo-ticker `_DESK:<area>`, `ACT` with `proposals` (each: title, problem, evidence, `n`,
+change, where, risk, check, `check_on`) or `PASS` with nothing to change; `note_md` is the retro.
+`track_record.retro_due` gives the areas due at a run (never had one, or the last is at least the
+cadence's interval less a day old; the loop's age runs from its first retro; ERROR retros don't
+count, so a failed one is due again next week). `track_record.py --agent AREA --retro` is the
+pack: the track record, the thread's `observation:` posts since the area's last retro and its
+earlier proposals. `agents.yml` runs `/retro` for each area due after `/pm` and before
+`plan.py` (whose desk-errors step then reports a failed retro). Every skill that posts to the
+thread now says it may add an `observation:` line. The incident notes (a costly mistake reviewed
+at once) are not built yet; until then they wait for the next retro.

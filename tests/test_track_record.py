@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from solaraalpha import store, track_record
+from solaraalpha import agents, desk_chat, store, track_record
 from solaraalpha.portfolio import book, execution
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -166,3 +166,126 @@ def test_empty_db_says_nothing_yet(
     out = capsys.readouterr().out
     assert "# Track record: all" in out
     assert out.count("- Nothing recorded yet.") >= 5
+
+
+def _run(conn: store.Conn, day: int) -> int:
+    at = (pd.Timestamp("2026-11-01", tz="UTC") + pd.Timedelta(days=day)).isoformat()
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO runs (started_at, script, args, git_sha) VALUES (?, 'scan', '{}', 'x')",
+            (at,),
+        )
+    assert cur.lastrowid is not None
+    return cur.lastrowid
+
+
+def _proposal(**kw: object) -> agents.Proposal:
+    base: dict[str, object] = {
+        "title": "Widen breakout stops to 2.5 ATR",
+        "problem": "Breakout stops are hit and the stock then runs.",
+        "evidence": "Hunch: 3 of 4 breakout stops reversed within a week.",
+        "n": 4,
+        "change": "stop = entry - 2.5 ATR on breakouts",
+        "where": "/research skill (fundamental-strategist)",
+        "risk": "larger loss per stop; smaller size at the same risk",
+        "check": "share of breakout stops that reverse within a week",
+        "check_on": "2027-01-31",
+    }
+    return agents.Proposal.model_validate(base | kw)
+
+
+def _retro(conn: store.Conn, run: int, area: str, proposals: int = 0) -> None:
+    v = agents.Verdict(
+        stage="retro",
+        ticker=f"{agents.DESK_PREFIX}{area}",
+        run_id=run,
+        label="ACT" if proposals else "PASS",
+        confidence=0.6,
+        reasons=["went well: x", "went wrong: y"],
+        proposals=[_proposal() for _ in range(proposals)],
+    )
+    agents.record_verdict(conn, v, "agent:retro")
+
+
+def test_retro_cadence_tapers(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    desk = [f"_DESK:{a}" for a in track_record.AREAS]
+    assert [track_record.interval_days(d) for d in (0, 27, 28, 90, 91, 400)] == [
+        7,
+        7,
+        28,
+        28,
+        91,
+        91,
+    ]
+    r0 = _run(conn, 0)
+    assert agents.queue(conn, r0, "retro", 1) == desk  # uncapped: every area, first time
+    _retro(conn, r0, "senior-quant")
+    assert "_DESK:senior-quant" not in track_record.retro_due(conn, r0)  # done in this run
+    assert track_record.retro_due(conn, _run(conn, 3))[0] == "_DESK:fundamental-strategist"
+    r7 = _run(conn, 7)
+    assert "_DESK:senior-quant" in track_record.retro_due(conn, r7)  # weekly in month one
+    _retro(conn, r7, "senior-quant")
+    assert "_DESK:senior-quant" not in track_record.retro_due(conn, _run(conn, 30))  # monthly now
+    r35 = _run(conn, 35)
+    assert "_DESK:senior-quant" in track_record.retro_due(conn, r35)  # 28 days on
+    _retro(conn, r35, "senior-quant")
+    assert "_DESK:senior-quant" not in track_record.retro_due(conn, _run(conn, 55))
+    assert "_DESK:senior-quant" in track_record.retro_due(conn, _run(conn, 62))
+    _retro(conn, _run(conn, 100), "senior-quant")  # quarterly after 13 weeks
+    assert "_DESK:senior-quant" not in track_record.retro_due(conn, _run(conn, 170))
+    assert "_DESK:senior-quant" in track_record.retro_due(conn, _run(conn, 190))
+    conn.close()
+
+
+def test_retro_verdict_rules() -> None:
+    with pytest.raises(ValueError, match="only the retro stage"):
+        agents.Verdict(
+            stage="pm",
+            ticker="_BOOK",
+            run_id=1,
+            label="ACT",
+            confidence=0.5,
+            reasons=["x"],
+            allocation=[],
+            proposals=[_proposal()],
+        )
+    with pytest.raises(ValueError, match="ACT with proposals"):
+        agents.Verdict(
+            stage="retro", ticker="_DESK:pm", run_id=1, label="ACT", confidence=0.5, reasons=["x"]
+        )
+    with pytest.raises(ValueError, match="_DESK:"):
+        agents.Verdict(
+            stage="retro", ticker="JET2.L", run_id=1, label="PASS", confidence=0.5, reasons=["x"]
+        )
+    with pytest.raises(ValueError):
+        _proposal(check_on="next month")
+
+
+def test_retro_pack_has_observations_and_earlier_proposals(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    conn.executescript(desk_chat.SCHEMA)
+    r0 = _run(conn, 0)
+    with conn:
+        conn.execute(
+            "INSERT INTO chat (at, author, text) VALUES (?, 'agent:research', ?)",
+            ("2026-10-30T09:00:00+00:00", "observation: shortlist had a stock T212 doesn't offer"),
+        )
+        conn.execute(
+            "INSERT INTO chat (at, author, text) VALUES (?, 'agent:pm', 'funded A.L')",
+            ("2026-10-30T10:00:00+00:00",),
+        )
+    empty = track_record.Inputs(pd.DataFrame(), pd.DataFrame())
+    pack = track_record.retro_pack(conn, "execution-trader", empty)
+    assert "# Track record: execution-trader" in pack
+    assert "observation: shortlist had a stock T212 doesn't offer" in pack
+    assert "funded A.L" not in pack
+    assert "- None yet." in pack
+    _retro(conn, r0, "execution-trader", proposals=1)
+    pack = track_record.retro_pack(conn, "execution-trader", empty)
+    assert "- 2026-11-01: Widen breakout stops to 2.5 ATR (n=4; check 2027-01-31" in pack
+    assert "since your last retro, 2026-11-01" in pack
+    assert "doesn't offer" not in pack  # posted before that retro
+    with pytest.raises(ValueError, match="per desk area"):
+        track_record.retro_pack(conn, "monitor", empty)
+    conn.close()

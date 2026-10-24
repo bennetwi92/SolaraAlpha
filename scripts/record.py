@@ -6,7 +6,7 @@ uv run python scripts/record.py revision FILE --position ID [--actor agent:monit
 uv run python scripts/record.py prior TICKER [--stage research] [--limit 3] [--db PATH]
 uv run python scripts/record.py schema
 uv run python scripts/record.py error TICKER --run N --stage S --reason TEXT     # runner: skill failed
-uv run python scripts/record.py queue --run N --stage validate|research|monitor|postmortem|macro  # runner
+uv run python scripts/record.py queue --run N --stage validate|research|monitor|postmortem|macro|retro  # runner
 uv run python scripts/record.py members --run N --sector "_SECTOR:Travel & Leisure"   # tickers in a macro group
 uv run python scripts/record.py latest-run [--script scan|daily] [--since ISO]   # runner: which run
 uv run python scripts/record.py outcome --run N --stage S                        # runner: exit 1 if all ERROR
@@ -336,7 +336,7 @@ def main(argv: list[str] | None = None) -> None:
     qu.add_argument(
         "--stage",
         required=True,
-        choices=("validate", "research", "monitor", "postmortem", "macro"),
+        choices=("validate", "research", "monitor", "postmortem", "macro", "retro"),
     )
     qu.add_argument("--cap", type=int, default=None, help="default Rules.max_agent_tickers")
     qu.add_argument("--db", type=Path, default=None)

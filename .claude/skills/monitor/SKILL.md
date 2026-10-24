@@ -167,6 +167,8 @@ uv run python scripts/chat.py post --as agent:monitor --run <N> --ticker <TICKER
 Plain text, at most five short lines, written to colleagues: what you decided and why, what
 changed since the thread last spoke about it, and a reply to anyone who asked. Don't repeat what
 the thread already says.
+Noticed something about how the desk works (a repeated mistake, a gap, a rule that
+misfires)? Add a separate post starting `observation:`; the next retro reads it (ADR 0035).
 
 ## Standards
 
