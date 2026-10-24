@@ -86,7 +86,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         if a.cmd == "turn":
             desk_chat.pull(a.db)  # every 15 minutes in the session (ADR 0033)
-            res = execution.turn(conn, LiveClient(), agent=a.agent)
+            res = execution.turn(conn, LiveClient(conn=conn), agent=a.agent)
             text = _report(res)
             print(text)
             if a.report:
@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> None:
             if a.agent_file:
                 a.agent_file.write_text("true\n" if res.agent else "false\n")
         elif a.cmd == "send":
-            client = LiveClient()
+            client = LiveClient(conn=conn)
             now = pd.Timestamp.now(tz="UTC")
             prices = execution.prices_for(client.broker(), execution._quotes(), now)
             out = execution.agent_send(
@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> None:
             )
             print(f"{execution.describe(conn, a.order_id, out)}")
         elif a.cmd == "cancel":
-            status = execution.cancel(conn, LiveClient(), a.order_id, a.reason, a.actor)
+            status = execution.cancel(conn, LiveClient(conn=conn), a.order_id, a.reason, a.actor)
             print(f"order {a.order_id} {status}")
         elif a.cmd == "hold":
             until = pd.Timestamp(a.until)

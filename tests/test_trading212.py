@@ -260,3 +260,48 @@ def test_write_errors(trading: None, monkeypatch: pytest.MonkeyPatch) -> None:
     )
     assert t212.fetch_order("900000010") is None  # 404: no longer working
     assert len(w.calls) == 6  # each call sent once, none retried
+
+
+def _hist_item(oid: int, created: str) -> dict[str, Any]:
+    item = _load("history_1")["items"][0]
+    return {**item, "order": {**item["order"], "id": oid, "createdAt": created}}
+
+
+def test_history_pages_stop_at_the_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    pages = {
+        "/equity/history/orders": {
+            "items": [_hist_item(3, "2026-10-23T09:00:00Z")],
+            "nextPagePath": "p2",
+        },
+        "p2": {"items": [_hist_item(2, "2026-10-10T09:00:00Z")], "nextPagePath": "p3"},
+        "p3": {"items": [_hist_item(1, "2026-09-01T09:00:00Z")], "nextPagePath": None},
+    }
+    asked: list[str] = []
+
+    def get(path: str, **params: Any) -> Any:
+        asked.append(path)
+        return pages[path]
+
+    monkeypatch.setattr(t212, "_get", get)
+    recent = t212.fetch_history(newer_than=pd.Timestamp("2026-10-20", tz="UTC"))
+    assert list(recent["id"]) == ["3", "2"] and asked == ["/equity/history/orders", "p2"]
+    asked.clear()
+    assert len(t212.fetch_history()) == 3 and len(asked) == 3
+
+
+def test_instruments_cached_per_account(monkeypatch: pytest.MonkeyPatch, tmp_cache: Path) -> None:
+    calls: list[str] = []
+
+    def get(path: str, **params: Any) -> Any:
+        calls.append(path)
+        return _load("instruments")
+
+    monkeypatch.setattr(settings, "cache_dir", tmp_cache)
+    monkeypatch.setattr(t212, "_get", get)
+    monkeypatch.setattr(settings, "t212_env", "demo")
+    t212.fetch_instruments()
+    t212.fetch_instruments()
+    assert len(calls) == 1  # the second call within a day is the cache
+    monkeypatch.setattr(settings, "t212_env", "live")
+    t212.fetch_instruments()
+    assert len(calls) == 2  # never the practice account's list for live
