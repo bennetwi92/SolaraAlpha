@@ -2,7 +2,9 @@
 
 Every week's labels are stored point-in-time (ADR 0007, 0014), so each (run, ticker) label can
 be scored against what the stock did next. :func:`forward_returns` takes the return from the
-close of the card's week to 2 / 4 / 8 / 16 weeks later, plus the excess over the stock's market
+open of the week after the card (Monday's open: the card is known only after Friday's close,
+which cannot be traded; ADR 0029) to the close 2 / 4 / 8 / 16 weeks after the card, plus the
+excess over the stock's market
 benchmark, using **only weekly bars after the card date**; rows without enough future data stay
 NaN. Only ``labels`` rows (from #111 on) count: older pass / fail ``steps`` are excluded.
 """
@@ -26,13 +28,21 @@ def weekly_adj(daily: pd.DataFrame, as_of: pd.Timestamp | None = None) -> pd.Ser
     return w["adj_close"]
 
 
-def _ret(weekly: pd.Series | None, date: pd.Timestamp, weeks: int) -> float:
+def _weekly(daily: pd.DataFrame, as_of: pd.Timestamp | None) -> pd.DataFrame:
+    """Weekly ``open`` (adjusted like the close) and ``adj_close``, complete weeks only."""
+    w = to_weekly(daily, as_of=as_of)
+    return pd.DataFrame({"open": w["open"] * w["adj_close"] / w["close"], "close": w["adj_close"]})
+
+
+def _ret(weekly: pd.DataFrame | None, date: pd.Timestamp, weeks: int) -> float:
+    """From the first open after the card's week to the close ``weeks`` after it."""
     if weekly is None or weekly.empty or date not in weekly.index:
         return np.nan
     later = date + pd.Timedelta(weeks=weeks)
-    if later not in weekly.index:
+    after = weekly.index[weekly.index > date]
+    if later not in weekly.index or after.empty or after[0] > later:
         return np.nan
-    start, end = float(weekly[date]), float(weekly[later])
+    start, end = float(weekly["open"][after[0]]), float(weekly["close"][later])
     return end / start - 1 if start > 0 else np.nan
 
 
@@ -48,8 +58,8 @@ def forward_returns(
     ``ret_{N}w`` and ``exc_{N}w`` columns. ``prices`` are daily frames per ticker; ``bench`` daily
     frames per benchmark ticker and ``market_of`` ticker -> benchmark ticker for the excess.
     No look-ahead: a horizon whose week is not yet a complete bar stays NaN."""
-    weekly = {t: weekly_adj(p, as_of) for t, p in prices.items() if not p.empty}
-    bweekly = {t: weekly_adj(p, as_of) for t, p in (bench or {}).items() if not p.empty}
+    weekly = {t: _weekly(p, as_of) for t, p in prices.items() if not p.empty}
+    bweekly = {t: _weekly(p, as_of) for t, p in (bench or {}).items() if not p.empty}
     rows = []
     for r in labels.to_dict("records"):
         date = pd.Timestamp(r["date"])

@@ -33,7 +33,7 @@ def _daily(
     close = close + (np.arange(len(idx)) % 5) * 0.01  # not flat inside the week
     df = pd.DataFrame(
         {
-            "open": close,
+            "open": np.r_[close[0], close[:-1]],  # each session opens at the last close: no gaps
             "high": close + 0.5,
             "low": close - 0.5,
             "close": close,
@@ -48,6 +48,23 @@ def _daily(
 
 def _friday(week: int) -> pd.Timestamp:
     return pd.Timestamp(START, tz="UTC") + pd.Timedelta(days=4 + 7 * week)
+
+
+def test_forward_returns_enter_at_mondays_open() -> None:
+    d = _daily("A.L", 0.0)
+    monday = d.index[d.index > _friday(2)][0]
+    d.loc[monday, "open"] = 110.0  # Monday gaps up 10% on the news: a Friday entry was not there
+    labels = pd.DataFrame(
+        {
+            "run_id": [1],
+            "ticker": ["A.L"],
+            "stage": ["screen"],
+            "label": ["ACT"],
+            "date": [str(_friday(2).date())],
+        }
+    )
+    fwd = forward_returns(labels, {"A.L": d}, horizons=(1,), as_of=_friday(40))
+    assert fwd.iloc[0]["ret_1w"] == pytest.approx(float(d["close"][_friday(3)]) / 110.0 - 1)
 
 
 def test_forward_returns_from_the_card_week() -> None:

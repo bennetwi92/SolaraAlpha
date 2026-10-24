@@ -177,18 +177,28 @@ def replay(
     return pd.DataFrame(rows)
 
 
+def entry_and_close(weekly: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """Per signal Friday: the entry (the next week's first open, adjusted like ``adj_close``)
+    and the week's ``adj_close``."""
+    adj_open = weekly["open"] * weekly["adj_close"] / weekly["close"]
+    return adj_open.shift(-1), weekly["adj_close"]
+
+
 def forward(
     weekly: pd.DataFrame, horizons: tuple[int, ...] = HORIZONS, bench: pd.DataFrame | None = None
 ) -> pd.DataFrame:
-    """Per week: ``ret_{N}w`` from the week's ``adj_close`` to N weeks later, and
-    ``exc_{N}w`` over ``bench`` (same shape) when given; NaN where the future is not there."""
+    """Per week: ``ret_{N}w`` from **Monday's open** after the signal Friday (the next week's
+    first open: the card is only known after Friday's close, which cannot be traded; ADR 0029)
+    to the close N weeks after the signal, adjusted like ``adj_close``; ``exc_{N}w`` over
+    ``bench`` (same shape) when given; NaN where the future is not there."""
     out = pd.DataFrame(index=weekly.index)
-    px = weekly["adj_close"]
-    b = bench["adj_close"].reindex(weekly.index).ffill() if bench is not None else None
+    entry, close = entry_and_close(weekly)
+    if bench is not None:
+        b_entry, b_close = (s.reindex(weekly.index).ffill() for s in entry_and_close(bench))
     for n in horizons:
-        out[f"ret_{n}w"] = px.shift(-n) / px - 1
-        if b is not None:
-            out[f"exc_{n}w"] = out[f"ret_{n}w"] - (b.shift(-n) / b - 1)
+        out[f"ret_{n}w"] = close.shift(-n) / entry - 1
+        if bench is not None:
+            out[f"exc_{n}w"] = out[f"ret_{n}w"] - (b_close.shift(-n) / b_entry - 1)
         else:
             out[f"exc_{n}w"] = np.nan
     out.index.name = "week"
