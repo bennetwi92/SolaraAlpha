@@ -416,8 +416,8 @@ def check(
         free = free_cash(conn, rules, but=pid)
         if cost > free + 0.01:
             raise Refused(f"the buy needs £{cost:,.2f} but £{max(free, 0):,.2f} is free")
-        states = [book.position_state(conn, int(p)) for p in book.positions(conn)["position_id"]]
-        acct = risk.equity(book.cash(conn), states, pd.DataFrame())
+        states, closed = book.live_states(conn)
+        acct = risk.equity(book.cash(conn), states, pd.DataFrame(), closed)
         eq = acct.cash + sum(
             book.to_account(s.avg_cost * s.shares, s.currency)
             for s in states
