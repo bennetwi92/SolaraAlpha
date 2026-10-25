@@ -15,8 +15,8 @@ absent):
   ``CREATE TABLE IF NOT EXISTS`` / ``ALTER TABLE ... ADD COLUMN`` statements but no literal ``;``
   inside a statement;
 * ``with conn:`` (``BEGIN`` ... ``COMMIT`` / ``ROLLBACK``; nested blocks join the outer
-  transaction, as code that composes store and book writes needs), ``commit`` / ``rollback``,
-  ``close``;
+  transaction, as code that composes store and book writes needs), ``commit`` / ``rollback``
+  (no-ops outside a transaction, as in sqlite3), ``close``;
 * ``PRAGMA table_info(t)`` and ``sqlite_master`` queries behave as in SQLite.
 
 Values: ints (incl. numpy and bool), floats (NaN -> NULL; ±inf <-> ±``MAX``), str, bytes, None.
@@ -72,6 +72,7 @@ class Connection:
         self.token = token
         self.baton: str | None = None
         self._depth = 0  # nested ``with conn:`` blocks share the outer transaction
+        self._open = False  # a BEGIN not yet committed or rolled back
 
     def execute(self, sql: str, params: tuple[Any, ...] | list[Any] = ()) -> Cursor:
         return Cursor(self._pipeline([_stmt(sql, params)])[0])
@@ -87,10 +88,14 @@ class Connection:
         self._pipeline([_stmt(s) for s in stmts if s and not _comment_only(s)])
 
     def commit(self) -> None:
-        self.execute("COMMIT")
+        if self._open:  # Turso, unlike sqlite3, refuses a COMMIT with no transaction open
+            self._open = False
+            self.execute("COMMIT")
 
     def rollback(self) -> None:
-        self.execute("ROLLBACK")
+        if self._open:
+            self._open = False
+            self.execute("ROLLBACK")
 
     def close(self) -> None:
         if self.baton is not None:
@@ -100,6 +105,7 @@ class Connection:
     def __enter__(self) -> Connection:
         if self._depth == 0:
             self.execute("BEGIN")
+            self._open = True
         self._depth += 1
         return self
 

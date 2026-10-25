@@ -105,3 +105,14 @@ def test_nested_with_blocks_share_one_transaction(fake: FakeTurso) -> None:
         with conn:
             conn.execute("INSERT INTO nope VALUES (1)")
     assert fake.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 2  # outer rolled back
+
+
+def test_commit_and_rollback_outside_a_transaction_are_no_ops(fake: FakeTurso) -> None:
+    # as in sqlite3: scripts/execute.py ends every command with conn.commit() after its writes
+    # were committed by their own `with conn:` blocks (Execution runs 1-3 exited 2 on Turso)
+    conn = store.connect()
+    with conn:
+        conn.execute("INSERT INTO runs VALUES (1, 't', 's', '{}', 'sha')")
+    conn.commit()
+    conn.rollback()
+    assert fake.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 1

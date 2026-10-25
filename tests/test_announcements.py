@@ -6,15 +6,19 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from solaraalpha.data import announcements
 from solaraalpha.data.announcements import (
     COLUMNS,
     NSM_DOC_BASE,
     fetch_announcements,
+    filers,
     html_to_text,
+    known_issuers,
     parse_issuer,
     parse_nsm,
     resolve_issuer,
 )
+from solaraalpha.pipeline import watchlist
 
 FIXTURES = Path(__file__).parent / "fixtures"
 JET2_LEI = "I72RQ3PNLDPW8R7JIJ56"
@@ -55,6 +59,30 @@ def test_parse_issuer_no_lei() -> None:
 def test_resolve_issuer_rejects_non_lse() -> None:
     with pytest.raises(ValueError, match="LSE"):
         resolve_issuer("AAPL")
+
+
+def test_resolve_issuer_reads_config_without_the_lse(monkeypatch: pytest.MonkeyPatch) -> None:
+    def blocked(*args: object, **kwargs: object) -> None:
+        raise AssertionError("no network call for a ticker in config/issuers.toml")
+
+    monkeypatch.setattr(announcements, "get_json", blocked)
+    iss = resolve_issuer("JET2.L")
+    assert (iss.lei, iss.name) == (JET2_LEI, "JET2 PLC")
+
+
+def test_issuers_cover_the_watchlist() -> None:
+    issuers = known_issuers()
+    missing = [t for t in watchlist() if t not in issuers]
+    assert not missing, f"add to config/issuers.toml (scripts/issuers.py --write): {missing}"
+    leis = [v["lei"] for v in issuers.values()]
+    assert len(set(leis)) == len(leis)
+    assert all(len(lei) == 20 and v["name"] for lei, v in zip(leis, issuers.values(), strict=True))
+
+
+def test_filers() -> None:
+    rows = filers(_load("nsm_jet2.json"))
+    assert rows[0][:2] == ("JET2 PLC", JET2_LEI)
+    assert rows[0][2] == len(_load("nsm_jet2.json")["hits"]["hits"])
 
 
 def test_html_to_text() -> None:

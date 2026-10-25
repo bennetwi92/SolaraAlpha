@@ -2,7 +2,8 @@
 
 Prints config/watchlist.toml (or writes it with --write), then to stderr: tickers added /
 removed vs the current watchlist, and new tickers without a config/benchmarks.toml entry with
-their LSE ICB sector (add `sector` / `industry` by hand; see that file's header). Run by hand
+their LSE ICB sector (add `sector` / `industry` by hand; see that file's header). Then
+scripts/issuers.py --write adds the new stocks' LEIs to config/issuers.toml. Run by hand
 after each quarterly FTSE review (Mar / Jun / Sep / Dec), never in CI (docs/data-sources.md).
 
 uv run python scripts/universe.py            # print, review the diff

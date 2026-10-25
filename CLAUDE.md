@@ -27,7 +27,8 @@ Current state:
 - Working on **single-stock analysis**; first example is Jet2 (`JET2.L`, AIM-listed). The
   pipeline universe is the **FTSE AIM 100 plus the FTSE AIM UK 50** (104 stocks; snapshot in
   `config/watchlist.toml`, refreshed after each quarterly FTSE review with
-  `scripts/universe.py --write`, run by hand, never in CI; not point-in-time).
+  `scripts/universe.py --write`, run by hand, never in CI; not point-in-time; then `scripts/issuers.py
+  --write` for the new stocks' LEIs in `config/issuers.toml`).
 - Price data is **fetched fresh each run** (no `@parquet_cache`). With `--save` the raw fetch is
   also snapshotted into the results DB (`solaraalpha.store`) — for the record, never as a cache.
 - **Results DB**: scripts' `--save` records the run, model cards and input snapshots in an
@@ -259,6 +260,7 @@ Current state:
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
 | Fresh catalysts (filings, headlines, scheduled events) per stock | `uv run python scripts/catalysts.py [TICKERS...] [--days 7] [--horizon 10] [--no-news]` |
 | Refresh the watchlist (FTSE AIM 100 + AIM UK 50; by hand, never CI) | `uv run python scripts/universe.py [--write]` |
+| LEIs for new watchlist stocks (`config/issuers.toml`; NSM name search; check the names) | `uv run python scripts/issuers.py [--write]` |
 | Book trades by hand (draft, approve, amend, reject, tickets, placed, fills, exits) | `uv run python scripts/book.py new JET2.L --entry 1520 --stop 1400 --qty 100` / `list` / `show ID` / `approve ID` / `amend ID --qty N --price P --stop P` / `reject ID --reason TEXT` / `tickets` / `placed ORDER_ID [ORDER_ID ...] [--ref REF]` / `fill ORDER_ID --qty N --price P [--commission X]` / `unfilled ORDER_ID` / `cancel ORDER_ID` / `expire` / `exit ID --reason stop|target|thesis_broken|...` / `cash dividend TICKER GBP --at EXDATE` / `split ID --ratio 2:1` / `corporate-close ID --price P --reason takeover|delisting` / `stats [--since D]` (`--db PATH` for a local file; from GitHub: the **Book** workflow, `gh workflow run book.yml -f command='cash deposit 5000'`; `-f script=plan.py -f command='--run 8'` re-plans a run) |
 | Plan the week's trades from a saved scan run (final ACT labels → plan → fit → approved positions) | `uv run python scripts/plan.py --run N [--dry-run] [--replan]` (`--replan`: again for tickers whose draft was rejected; also records the shadow book's agent-paired baselines, ADR 0028) |
 | Weekly pack for a run (new plans with approve/reject commands, fit rejections, watch list, open positions, money, errors) | `uv run python scripts/weekly_pack.py --run N [--out FILE] [--report FILE]` |
@@ -398,6 +400,7 @@ src/solaraalpha/        importable package — all reusable code lives here
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM 100 + AIM UK 50 snapshot)
 config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)
+config/issuers.toml     per-stock LEI + legal name: how filings are found (the LSE lookup 403s in CI)
 config/value_models.toml  per-stock value models (skill + script) the research agent calls — #127
 config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeholders until confirmed)
 .github/workflows/      ci.yml (checks), scan.yml (weekly pipeline + weekly pack, Sunday), daily.yml
