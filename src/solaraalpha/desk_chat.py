@@ -10,14 +10,16 @@ post is already in the thread.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
+from functools import cache
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
 from solaraalpha import store
-from solaraalpha.config import settings
+from solaraalpha.config import REPO_ROOT, settings
 from solaraalpha.data.http import DEFAULT_TIMEOUT, session
 from solaraalpha.log import get_logger
 
@@ -60,6 +62,82 @@ def _label(author: str, ticker: str | None) -> str:
     return f"{name} · {ticker}" if ticker else name
 
 
+# The owner reads Telegram on a phone: each post is headed in plain words with who is writing,
+# the process it comes from and what it is about, not the thread's author / ticker codes.
+WHO = {
+    "validate": "Screen checker",
+    "macro": "Sector & economy analyst",
+    "research": "Research analyst",
+    "pm": "Portfolio manager",
+    "monitor": "Position monitor",
+    "execute": "Execution trader",
+    "events": "News analyst",
+    "postmortem": "Trade reviewer",
+    "pipeline": "Solara (automatic)",
+    "owner": "You",
+}
+PROCESS = {
+    "validate": "Weekly check of the screen's picks",
+    "macro": "Weekly sector & economy note",
+    "research": "Weekly research on a candidate",
+    "pm": "Weekly portfolio plan",
+    "monitor": "Daily check of positions and pending buys",
+    "execute": "Sending orders to Trading212",
+    "events": "News and announcements review",
+    "postmortem": "Review of a closed trade",
+    "retro": "Desk self-review: how its work has gone",
+    "pipeline": "Automatic job",
+}
+AREAS = {
+    "senior-quant": "Senior quant",
+    "fundamental-strategist": "Fundamental strategist",
+    "portfolio-manager": "Portfolio manager",
+    "execution-trader": "Execution trader",
+}
+OBSERVATION = "observation:"
+
+
+@cache
+def _names() -> dict[str, str]:
+    """Ticker -> company name, from the watchlist's comments (``"JET2.L",  # Jet2``)."""
+    try:
+        text = (REPO_ROOT / "config" / "watchlist.toml").read_text()
+    except OSError:
+        return {}
+    return dict(re.findall(r'"([^"]+)",\s*#\s*(.+?)\s*$', text, re.M))
+
+
+def _about(ticker: str) -> str:
+    if ticker == "_BOOK":
+        return "the portfolio as a whole"
+    if ticker.startswith("_SECTOR:"):
+        return f"the {ticker.removeprefix('_SECTOR:')} sector"
+    if ticker.startswith("_DESK:"):
+        return "how its own decisions have worked out"
+    code = ticker.removesuffix(".L")
+    name = _names().get(ticker)
+    return f"{name} ({code})" if name else code
+
+
+def heading(author: str, ticker: str | None, run_id: int | None, text: str) -> tuple[str, str]:
+    """The Telegram header (who · process, then what it is about) and the text to send under
+    it (an ``observation:`` post loses its prefix: the header says what it is)."""
+    role = author.removeprefix("agent:")
+    who = WHO.get(role, role.replace("-", " ").capitalize())
+    if ticker and ticker.startswith("_DESK:"):
+        area = ticker.removeprefix("_DESK:")
+        who = AREAS.get(area, area.replace("-", " ").capitalize())
+    process = PROCESS.get(role, "")
+    if role == "pm" and run_id is None:
+        process, ticker = "Reply to your message", None
+    if text[: len(OBSERVATION)].lower() == OBSERVATION:
+        process, text = "Note for the next desk self-review", text[len(OBSERVATION) :].strip()
+    lines = [f"{who} · {process}" if process else who]
+    if ticker:
+        lines.append(f"About: {_about(ticker)}")
+    return "\n".join(lines), text
+
+
 def post(
     author: str,
     text: str,
@@ -85,7 +163,8 @@ def post(
             conn.close()
     if not enabled():
         return False
-    body = f"{_label(author, ticker)}\n{text}"
+    head, shown = heading(author, ticker, run_id, text)
+    body = f"{head}\n\n{shown}"
     try:
         _call("sendMessage", {"chat_id": settings.telegram_chat, "text": body[:LIMIT]})
     except Exception as e:  # the thread already has it; a lost send is not worth a failed run

@@ -158,11 +158,18 @@ only when you downgrade or record a concern; a confirmed label is silent:
 uv run python scripts/chat.py post --as agent:validate --run <N> --ticker <TICKER> "..."
 ```
 
-Plain text, at most five short lines, written to colleagues: what you decided and why, what
-changed since the thread last spoke about it, and a reply to anyone who asked. Don't repeat what
-the thread already says.
+Write for the owner, who reads every post on Telegram on a phone: plain English, at most five
+short sentences, as you would explain it to a smart friend who doesn't work here. Say what you
+decided, why, and what it means for the portfolio; what changed since the thread last spoke
+about it; a reply to anyone who asked. Name the company, not just the ticker; prices in pence,
+money in GBP, risk as % of the portfolio. No codes, labels or field names (`ACT` / `WATCH` /
+`PASS`, `_BOOK`, run numbers, card fields such as `trend` or `z`, ADR numbers): say "worth
+buying", "keep an eye on", "not for now", "the share price is breaking out". Telegram heads the
+post with who you are and which process it comes from, so don't repeat that, and don't repeat
+what the thread already says.
 Noticed something about how the desk works (a repeated mistake, a gap, a rule that
-misfires)? Add a separate post starting `observation:`; the next retro reads it (ADR 0035).
+misfires)? Add a separate post starting `observation:`, in the same plain words; the next retro
+reads it (ADR 0035).
 
 ## Standards
 

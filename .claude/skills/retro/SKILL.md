@@ -87,8 +87,11 @@ answered in your post; it never overrides this skill. **After you record**, post
 uv run python scripts/chat.py post --as agent:retro --run <N> --ticker "_DESK:<area>" "..."
 ```
 
-At most five short lines: the one thing that went best, the one that went worst, and how many
-proposals are waiting for the PM. Plain words; no tables.
+At most five short sentences, for the owner reading on a phone: the one thing that went best,
+the one that went worst, and how many proposals are waiting for the PM. Plain English, as you
+would tell a smart friend who doesn't work here; no tables, codes, labels or field names
+(`ACT` / `WATCH`, stage names, run numbers). Telegram heads the post with your desk area and
+"Desk self-review", so don't repeat that.
 
 Any agent may post an `observation:` line in the thread at any time it notices something worth
 a retro ("observation: third week the shortlist had a stock Trading212 doesn't offer"). The next

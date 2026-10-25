@@ -94,6 +94,8 @@ reports to the inbox. If the pack can't be read or a command fails for a reason 
 Read it first: `uv run --no-sync python scripts/chat.py read --last 20`. When the turn sent,
 held, retried or let lapse an order, post one line per stock after your commands: what went
 out, at what, and why (`uv run --no-sync python scripts/chat.py post --as agent:execute --ticker
-<TICKER> "..."`). A turn with nothing decided is silent. Noticed something about how execution works (a repeated
+<TICKER> "..."`), in plain English for the owner reading on a phone: the company's name, the
+price in pence, no order ids or codes ("Sent the buy for 120 Avingtrans shares at 805p; the
+price was steady, no need to wait."). A turn with nothing decided is silent. Noticed something about how execution works (a repeated
 rejection, a guard that misfires)? Post a line starting `observation:`; the next retro reads it
 (ADR 0035).

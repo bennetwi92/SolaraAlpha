@@ -72,7 +72,54 @@ def test_thread_kept_without_telegram(db_backend: Path | None) -> None:
 
 def test_post_sends_to_telegram(db_backend: Path | None, telegram: _Telegram) -> None:
     assert desk_chat.post("agent:research", "ACT, entry 805.", ticker="AVG.L", path=db_backend)
-    assert telegram.sent == [{"chat_id": "42", "text": "research · AVG.L\nACT, entry 805."}]
+    head = "Research analyst · Weekly research on a candidate\nAbout: Avingtrans (AVG)"
+    assert telegram.sent == [{"chat_id": "42", "text": f"{head}\n\nACT, entry 805."}]
+
+
+@pytest.mark.parametrize(
+    ("author", "ticker", "run", "text", "head", "shown"),
+    [
+        (
+            "agent:pm",
+            "_BOOK",
+            8,
+            "Funded.",
+            "Portfolio manager · Weekly portfolio plan\nAbout: the portfolio as a whole",
+            "Funded.",
+        ),
+        ("agent:pm", "_BOOK", None, "Yes.", "Portfolio manager · Reply to your message", "Yes."),
+        (
+            "agent:macro",
+            "_SECTOR:Travel",
+            8,
+            "x",
+            "Sector & economy analyst · Weekly sector & economy note\nAbout: the Travel sector",
+            "x",
+        ),
+        (
+            "agent:retro",
+            "_DESK:senior-quant",
+            8,
+            "x",
+            "Senior quant · Desk self-review: how its"
+            " work has gone\nAbout: how its own decisions have worked out",
+            "x",
+        ),
+        (
+            "agent:monitor",
+            "ZZZ.L",
+            9,
+            "Observation: stops too tight",
+            "Position monitor · Note for the next desk self-review\nAbout: ZZZ",
+            "stops too tight",
+        ),
+        ("pipeline", None, None, "x", "Solara (automatic) · Automatic job", "x"),
+    ],
+)
+def test_heading_in_plain_words(
+    author: str, ticker: str | None, run: int | None, text: str, head: str, shown: str
+) -> None:
+    assert desk_chat.heading(author, ticker, run, text) == (head, shown)
 
 
 def test_owner_replies_pulled_once(db_backend: Path | None, telegram: _Telegram) -> None:

@@ -41,5 +41,7 @@ uv run --no-sync python scripts/chat.py post --as agent:pm --ticker _BOOK "..."
 
 Plain text, written to the owner: answer every question in the pending messages, in their
 order, at most ten short lines. Lead with the answer, then the reason; numbers with their units
-(GBP, pence, % of equity). No markdown, no keys, account numbers or anything the inbox wouldn't
+(GBP, pence, % of the portfolio); company names, not just tickers. No markdown, no codes, labels
+or field names (`ACT` / `WATCH` / `PASS`, `_BOOK`, run numbers): plain English, as you would tell
+a smart friend who doesn't work here. No keys, account numbers or anything the inbox wouldn't
 say. One post per run: it marks the owner's messages answered.
