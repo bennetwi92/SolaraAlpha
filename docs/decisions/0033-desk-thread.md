@@ -52,3 +52,14 @@ the owner's messages and, only when the owner has written since `agent:pm` last 
 tools plus one post as `agent:pm`; no verdicts, no book writes, a request to change something gets
 the command or goes into the next `/pm` run). No message, no Claude run. A failed reply fails the
 workflow (`desk-errors.yml`) and is retried on the next tick while the message stays unanswered.
+
+**Amendment (2026-10-25): plain words on Telegram.** The owner found the posts hard to follow:
+headers such as `retro · _DESK:senior-quant` or `pm · _BOOK` named codes, not people, and the
+posts were written in desk shorthand. Each Telegram message is now headed by
+`desk_chat.heading`: who is writing (a role, "Research analyst"; a retro is headed by its desk
+area), the process it comes from ("Weekly research on a candidate", "Reply to your message"),
+and what it is about (the company's name from the watchlist, "the portfolio as a whole", "the
+Travel sector"). An `observation:` post is headed "Note for the next desk self-review" and loses
+the prefix on Telegram only; the thread in the DB is unchanged, so agents still read the codes.
+The skills' posting rule now writes for the owner on a phone: plain English, company names, no
+labels, codes or field names.

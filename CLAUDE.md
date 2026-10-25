@@ -122,7 +122,8 @@ Current state:
 - **Desk thread** (docs/decisions/0033): one running chat the agents post to, like a team chat.
   The thread is the `chat` table in the results DB (`desk_chat.py`), so every agent reads what was
   said before it posts; with `SOLARA_TELEGRAM_TOKEN` / `SOLARA_TELEGRAM_CHAT` each post is also sent
-  to the owner's Telegram, and the owner's replies there come back into the thread as `owner`
+  to the owner's Telegram (headed in plain words: who is writing, which process, about what —
+  `desk_chat.heading`; posts are written for the owner in plain English), and the owner's replies there come back into the thread as `owner`
   (questions and context, never a bypass of a skill or the book; pulled by every agent read and
   by `daily.py --save`, `scan.py --save` and each `execute.py turn`, inside Telegram's 24-hour hold).
   **The PM answers the owner**: `desk-reply.yml` every 10 minutes 06:30-23:30 UK runs `/desk`
