@@ -29,7 +29,7 @@ The reason starts with its tier (``tier 1: ...``, ``negative: ...``; :func:`tier
 back) and is saved with the shortlist reason. Wording against expectations ("ahead of") is not
 read here: that is the expectations signal, tested first (#223).
 
-Calls per stock: LSE instrument + GLEIF (ticker → LEI, :func:`resolve_issuer`), one NSM search
+Calls per stock: ticker → LEI from config/issuers.toml (:func:`resolve_issuer`), one NSM search
 for ``LOOKBACK_YEARS`` of filings (one page for most issuers; it feeds both the recent filings
 and the expected events), and one Google News query. Metadata and headlines only: no filing
 text is fetched. A failed source logs a warning and the stock goes on with what it has.

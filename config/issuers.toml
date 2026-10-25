@@ -1,0 +1,113 @@
+# Issuer identity per stock: Yahoo ticker -> LEI (and GLEIF legal name), so the pipeline finds a
+# stock's FCA NSM filings without asking the London Stock Exchange. The LSE instrument endpoint
+# (TIDM -> ISIN) answers 403 from cloud runners (CloudFront block, scan run 14, 2026-10-25), and an
+# LEI never changes, so it is looked up once and kept here (solaraalpha.data.announcements.
+# resolve_issuer reads this first). Resolved 2026-10-25 by name via GLEIF, each LEI checked to
+# have NSM filings. New watchlist stocks: `uv run python scripts/issuers.py [--write]`.
+#
+# ARBB.L: Arbuthnot's NSM filings carry no LEI, so a search by LEI finds none of them.
+[issuers]
+"AAZ.L" = { lei = "213800F9JM669WH34359", name = "ANGLO ASIAN MINING PLC" }  # Anglo Asian Mining
+"ABDP.L" = { lei = "213800OFXZP4A7I47K43", name = "AB DYNAMICS PLC" }  # AB Dynamics
+"ADVT.L" = { lei = "254900WYO35S1T334A28", name = "AdvancedAdvT Limited" }  # AdvancedAdvT
+"AET.L" = { lei = "21380028BFDFJK8BRX92", name = "AFENTRA PLC" }  # Afentra
+"AMS.L" = { lei = "213800HJP6OWOSZI1L74", name = "ADVANCED MEDICAL SOLUTIONS GROUP PLC" }  # Advanced Medical Solutions Group
+"AOM.L" = { lei = "213800RHBFOK6YNI3B30", name = "ACTIVEOPS PLC" }  # ActiveOps
+"ARBB.L" = { lei = "213800LAWPXT3H3SNN21", name = "ARBUTHNOT BANKING GROUP PLC" }  # Arbuthnot Banking Group
+"AVCT.L" = { lei = "2138009U3EG31OPMGH36", name = "AVACTA GROUP PLC" }  # Avacta Group
+"AVG.L" = { lei = "213800ZZ96CKPI423E86", name = "AVINGTRANS PLC" }  # Avingtrans
+"AXS.L" = { lei = "213800HKRFK8PNUNV581", name = "ACCSYS TECHNOLOGIES PLC" }  # Accsys Technologies
+"BIG.L" = { lei = "2138001GM2MZ6I2D1W29", name = "BIG TECHNOLOGIES PLC" }  # Big Technologies
+"BOKU.L" = { lei = "549300Y4P2ZPFKCZ0C60", name = "BOKU, INC." }  # Boku
+"BPM.L" = { lei = "2138008G8EPE3HAHEM13", name = "B.P.MARSH & PARTNERS PLC" }  # B.P. Marsh & Partners
+"BRCK.L" = { lei = "213800SK28MWXB3K3P26", name = "BRCK GROUP PLC" }  # BRCK Group
+"BTG.L" = { lei = "21380075TB4ROF7KWK30", name = "BTG CONSULTING PLC" }  # BTG Consulting
+"BUR.L" = { lei = "549300FUKUWFYJMT2277", name = "BURFORD CAPITAL LIMITED" }  # Burford Capital
+"CAM.L" = { lei = "213800QKY5L2AC1NFX23", name = "CAMELLIA PUBLIC LIMITED COMPANY" }  # Camellia
+"CAML.L" = { lei = "213800EYQBJZIT64NH43", name = "CENTRAL ASIA METALS PLC" }  # Central Asia Metals
+"CER.L" = { lei = "213800ISIZMUC3P46850", name = "CERILLION PLC" }  # Cerillion
+"CHRT.L" = { lei = "213800WE61C73LZZNW11", name = "COHORT PLC" }  # Cohort
+"CMCL.L" = { lei = "21380093ZBI4BFM75Y51", name = "CALEDONIA MINING CORPORATION PLC" }  # Caledonia Mining
+"CNC.L" = { lei = "213800422HXP2X6UPD94", name = "CONCURRENT TECHNOLOGIES PLC" }  # Concurrent Technologies
+"CRW.L" = { lei = "213800O2CTJ1YFXNXG05", name = "CRANEWARE PLC" }  # Craneware
+"DEBS.L" = { lei = "213800SZF3KFCECWY243", name = "BOOHOO GROUP PLC" }  # Boohoo Group
+"DOTD.L" = { lei = "2138006LZ7HHQ6DWFD42", name = "DOTDIGITAL GROUP PLC" }  # Dotdigital Group
+"ECO.L" = { lei = "213800WPR7ASTDWQUW50", name = "ECO (ATLANTIC) OIL & GAS LTD." }  # Eco (Atlantic) Oil & Gas
+"EEE.L" = { lei = "2138002IOR7OCZZPB279", name = "EMPIRE METALS LIMITED" }  # Empire Metals
+"EKF.L" = { lei = "213800DXTF3EAUK1AR05", name = "EKF DIAGNOSTICS HOLDINGS PLC" }  # EKF Diagnostics Holdings
+"EVPL.L" = { lei = "2138006EUUCCL4ZI5E51", name = "EVERPLAY GROUP PLC" }  # Everplay Group
+"FDEV.L" = { lei = "213800B9LGPWUAZ9GX18", name = "FRONTIER DEVELOPMENTS PLC" }  # Frontier Developments
+"FEVR.L" = { lei = "2138007AJRLHRVQZLD07", name = "FEVERTREE DRINKS PLC" }  # Fever-Tree Drinks
+"FNTL.L" = { lei = "213800DXP1VY21GCTH04", name = "FINTEL PLC" }  # Fintel
+"FNX.L" = { lei = "213800GBZCWQ7HR2ZE92", name = "FONIX PLC" }  # Fonix
+"FRAN.L" = { lei = "213800CFRX6CJ8LCKN37", name = "FRANCHISE BRANDS PLC" }  # Franchise Brands
+"FRP.L" = { lei = "213800IPCG6DE1CVLY36", name = "FRP ADVISORY GROUP PLC" }  # FRP Advisory Group
+"FTC.L" = { lei = "213800PDQ9V2ZNCDO264", name = "FILTRONIC PLC" }  # Filtronic
+"GFM.L" = { lei = "213800VXEARSK4D5UG12", name = "GRIFFIN MINING LIMITED" }  # Griffin Mining
+"GGP.L" = { lei = "213800KQI75ZGE53GX44", name = "GREATLAND RESOURCES LIMITED" }  # Greatland Resources
+"GHH.L" = { lei = "213800DO3DOOKYOPA952", name = "GOOCH & HOUSEGO PLC" }  # Gooch & Housego
+"GMET.L" = { lei = "213800J4SKZAMUEPGW34", name = "GUARDIAN METAL RESOURCES PLC" }  # Guardian Metal Resources
+"GRP.L" = { lei = "635400TVSIFFQOB8RB67", name = "Greencoat Renewables Public Limited Company" }  # Greencoat Renewables
+"HPOW.L" = { lei = "213800SRJST19GNS9U35", name = "AFC ENERGY PLC" }  # H-Power
+"HSP.L" = { lei = "213800O17BER1SHMH466", name = "HARGREAVES SERVICES PLC" }  # Hargreaves Services
+"HUW.L" = { lei = "213800FX86DJW5TCM864", name = "HELIOS UNDERWRITING PLC" }  # Helios Underwriting
+"IPX.L" = { lei = "213800AJDNW4S2B7E680", name = "IMPAX ASSET MANAGEMENT GROUP PLC" }  # Impax Asset Management Group
+"IQE.L" = { lei = "213800Y33WHD3ESJJP16", name = "IQE PLC" }  # IQE
+"ITM.L" = { lei = "21380042MB2JKZ6RRP12", name = "ITM POWER PLC" }  # ITM Power
+"JDG.L" = { lei = "2138004EXWWPTW1JOL31", name = "JUDGES SCIENTIFIC PLC" }  # Judges Scientific
+"JET2.L" = { lei = "I72RQ3PNLDPW8R7JIJ56", name = "JET2 PLC" }  # Jet2
+"JHD.L" = { lei = "213800C8FFBYVO6UL498", name = "JAMES HALSTEAD PLC" }  # James Halstead
+"JSE.L" = { lei = "21380076GWJ8XDYKVQ37", name = "JADESTONE ENERGY PLC" }  # Jadestone Energy
+"KEFI.L" = { lei = "213800OO6ETVDGE3QY15", name = "KEFI GOLD AND COPPER PLC" }  # KEFI Gold and Copper
+"KEYS.L" = { lei = "213800RTARHELL51S215", name = "KEYSTONE LAW GROUP PLC" }  # Keystone Law Group
+"KGH.L" = { lei = "213800URB59EOGJKT919", name = "KNIGHTS GROUP HOLDINGS PLC" }  # Knights Group Holdings
+"KIST.L" = { lei = "213800L2ET5KEP3OMV07", name = "KISTOS HOLDINGS PLC" }  # Kistos Holdings
+"KP2.L" = { lei = "213800NWX7EHG4UVC107", name = "KORE POTASH PLC" }  # Kore Potash
+"LTHM.L" = { lei = "2138008M4LVEDHBPBU41", name = "JAMES LATHAM PUBLIC LIMITED COMPANY" }  # Latham (James)
+"MHA.L" = { lei = "6488GWOR8UO490L88275", name = "MHA PLC" }  # MHA
+"MIDW.L" = { lei = "213800TUH2ZU68PZZN12", name = "MIDWICH GROUP PLC" }  # Midwich Group
+"MKA.L" = { lei = "213800RPILRWRUYNTS85", name = "MKANGO MAGNETIC MATERIALS LIMITED" }  # Mkango Magnetic Materials
+"MPE.L" = { lei = "2138003IBXJUCR4SZG26", name = "M.P. EVANS GROUP PLC" }  # M.P. Evans Group
+"MSI.L" = { lei = "213800Q34ZAXQ582YL41", name = "MS INTERNATIONAL PLC" }  # M.S. International
+"MTL.L" = { lei = "2138006CFXWG2OPRV987", name = "METALS EXPLORATION PLC" }  # Metals Exploration
+"NET.L" = { lei = "213800GZHEAA98QBJY98", name = "NETCALL PLC" }  # Netcall
+"NFG.L" = { lei = "213800BK9MBUZUUPMZ63", name = "NEXT 15 GROUP PLC" }  # Next 15 Group
+"NICL.L" = { lei = "213800EF5CMR3K8PND54", name = "NICHOLS PLC" }  # Nichols
+"NIOX.L" = { lei = "2138006YAT138TOGA556", name = "NIOX GROUP PLC" }  # NIOX Group
+"OPT.L" = { lei = "213800TOPWJSRCW4ON08", name = "OPTIMA HEALTH PLC" }  # Optima Health
+"PANR.L" = { lei = "213800SWHY5DNQS64J23", name = "PANTHEON RESOURCES PLC" }  # Pantheon Resources
+"POLR.L" = { lei = "549300OXX7YE1947B825", name = "POLAR CAPITAL HOLDINGS PLC." }  # Polar Capital Holdings
+"PPHC.L" = { lei = "2138008Z7B1IXVVJAZ79", name = "PUBLIC POLICY HOLDING COMPANY, INC." }  # Public Policy Holding Company
+"PTAL.L" = { lei = "21380047ER33PRH4XH56", name = "PETROTAL CORP" }  # PetroTal
+"RCN.L" = { lei = "213800FGYMMNE9OKFD14", name = "REDCENTRIC PLC" }  # Redcentric
+"RFX.L" = { lei = "2138004439PRUV6WB123", name = "RAMSDENS HOLDINGS PLC" }  # Ramsdens Holdings
+"RKH.L" = { lei = "213800IPXW6XRLVCL581", name = "ROCKHOPPER EXPLORATION PLC" }  # Rockhopper Exploration
+"RNWH.L" = { lei = "213800O3DC3V4WYA2E09", name = "RENEW HOLDINGS PLC." }  # Renew Holdings
+"RST.L" = { lei = "213800CE3EOGYML9AY08", name = "RESTORE PLC" }  # Restore
+"RWS.L" = { lei = "213800YGBGTTSKUVK111", name = "RWS HOLDINGS PLC" }  # RWS Holdings
+"SAA.L" = { lei = "213800XBLFQZ1T1KBA87", name = "M&C SAATCHI PLC" }  # M&C Saatchi
+"SAG.L" = { lei = "2138009OJQT79BDB3E93", name = "SCIENCE GROUP PLC" }  # Science Group
+"SAV.L" = { lei = "213800UCK16HW5KKGP60", name = "SAVANNAH RESOURCES PLC" }  # Savannah Resources
+"SEE.L" = { lei = "549300LNJJPZ2SU7A197", name = "SEEING MACHINES LIMITED" }  # Seeing Machines
+"SLP.L" = { lei = "2138005DSKINAZ4OA492", name = "SYLVANIA PLATINUM LIMITED" }  # Sylvania Platinum
+"SQZ.L" = { lei = "213800EZZOKA815VC426", name = "SERICA ENERGY PLC" }  # Serica Energy
+"SRB.L" = { lei = "213800LTYC1HF9RTUE37", name = "SERABI GOLD PLC" }  # Serabi Gold
+"SRC.L" = { lei = "213800Q3CJUERBGD1E44", name = "SIGMAROC PLC" }  # SigmaRoc
+"SRT.L" = { lei = "2138002DF3KFXL472938", name = "SRT MARINE SYSTEMS PLC" }  # SRT Marine Systems
+"SUP.L" = { lei = "213800DBHCI5WQWECL16", name = "SUPREME PLC" }  # Supreme
+"SVML.L" = { lei = "213800NSPXSASTENFQ34", name = "SOVEREIGN METALS LIMITED" }  # Sovereign Metals
+"TAM.L" = { lei = "213800G2F8I1N7HTVP88", name = "TATTON ASSET MANAGEMENT PLC" }  # Tatton Asset Management
+"TFW.L" = { lei = "2138007NXVPPRAXXHT76", name = "F.W. THORPE PUBLIC LIMITED COMPANY" }  # Thorpe (F.W.)
+"THX.L" = { lei = "213800AXZ8468CQYVT76", name = "THOR EXPLORATIONS LTD." }  # Thor Explorations
+"TPFG.L" = { lei = "2138008J5PTJ8C77I535", name = "THE PROPERTY FRANCHISE GROUP PLC" }  # The Property Franchise Group
+"TRB.L" = { lei = "2138003DLFRH7CB89Z84", name = "TRIBAL GROUP PLC" }  # Tribal Group
+"TSTL.L" = { lei = "2138009DZ4LH9CZGF662", name = "TRISTEL PLC" }  # Tristel
+"TUN.L" = { lei = "213800QNV72HX3JAFC56", name = "TUNGSTEN WEST PLC" }  # Tungsten West
+"TUNE.L" = { lei = "213800JJ51KA4LOTF736", name = "FOCUSRITE PLC" }  # Focusrite
+"UPR.L" = { lei = "21380028LJSQGRUAX965", name = "UNIPHAR PUBLIC LIMITED COMPANY" }  # Uniphar
+"VIC.L" = { lei = "894500R59II0S4WXGZ04", name = "VICTORIAN PLUMBING GROUP PLC" }  # Victorian Plumbing Group
+"VTU.L" = { lei = "213800GIKJEIUIGMI575", name = "VERTU MOTORS PLC" }  # Vertu Motors
+"W7L.L" = { lei = "213800EBJ2CN6KIDCO78", name = "WARPAINT LONDON PLC" }  # Warpaint London
+"YCA.L" = { lei = "213800CVMYUGOA9EZY95", name = "YELLOW CAKE PLC" }  # Yellow Cake
+"YOU.L" = { lei = "213800MZGBGCJIPOBB41", name = "YOUGOV PLC" }  # YouGov
+"YU.L" = { lei = "213800ACO9GDDBM7DS35", name = "YÜ GROUP PLC" }  # Yu Group

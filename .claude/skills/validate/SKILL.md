@@ -119,7 +119,8 @@ Then, per toolkit, `checks["technical"]`, `checks["levels"]`, `checks["relative_
 
 ## Step 4: Record
 
-Write `verdict.json` next to the pack per `uv run python scripts/record.py schema`:
+Write `verdict.json` next to the pack per `uv run python scripts/record.py schema`, with the
+Write tool (unattended runs allow no shell heredoc), and run commands from the repo root (no `cd`):
 
 ```json
 {
