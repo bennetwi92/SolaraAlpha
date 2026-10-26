@@ -11,7 +11,8 @@ A stock has a fresh catalyst when, per stock:
 * a **scheduled event** (results, trading update, AGM) is expected within ``horizon_weeks``,
   projected from the issuer's own filing history by :func:`analysis.events.expected_events`
   (an overdue one counts too);
-* a **press headline** (Google News RSS, discovery only) appeared since ``since``.
+* a **press headline** (Google News RSS, discovery only) that names the company
+  (:func:`named`) appeared since ``since``.
 
 Each catalyst is **tiered** deterministically from its NSM type code and headline (#222, #214
 F6), so the capped catalyst slots go to information before noise (:func:`pipeline.screen` fills
@@ -125,18 +126,19 @@ def catalyst_reason(
     """The one-line reason for one stock, tagged with its tier, or None. Each source failing is
     a warning, not an error: the reason is built from the sources that answered."""
     parts: list[Part] = []
-    name = ticker.removesuffix(".L")
+    name = ""
     try:
         issuer = resolve_issuer(ticker)
-        name = _short_name(issuer.name) or name
+        name = _short_name(issuer.name)
         ann = fetch_announcements(issuer.lei, end=f"{now:%Y-%m-%dT%H:%M:%S}")
         parts += filing_parts(ann, since, now) + event_parts(ann, now, horizon_weeks)
     except Exception as e:
         log.warning("%s: filings unavailable (%s: %s)", ticker, type(e).__name__, e)
-    if news:
+    # No legal name, no news: a search on the bare ticker (FRAN, NET, CNC) finds other things.
+    if news and name:
         try:
             days = max(1, math.ceil((now - since).total_seconds() / 86400))
-            parts += news_parts(fetch_news(f'"{name}"', days=days), since)
+            parts += news_parts(named(fetch_news(f'"{name}"', days=days), name), since)
         except Exception as e:
             log.warning("%s: news unavailable (%s: %s)", ticker, type(e).__name__, e)
     return join_parts(parts)
@@ -196,6 +198,22 @@ def event_parts(ann: pd.DataFrame, now: pd.Timestamp, horizon_weeks: int) -> lis
     tier = 2 if due or lo <= (nxt["likely"] - now).days / 7 <= hi else 3
     when = "due now" if due else f"expected ~{nxt['likely']:%Y-%m-%d}"
     return [(tier, f"event {when} (last: {nxt['headline']})")]
+
+
+def named(headlines: pd.DataFrame, name: str) -> pd.DataFrame:
+    """The headlines that name the company: its short legal name as whole words, any case,
+    without a leading "The" or a trailing "Group" / "Holdings" ("Keystone Law" for KEYSTONE LAW
+    GROUP). Google matches the quoted name anywhere in an article, so a headline about something
+    else ("Fran", "CNC machining") would otherwise count as the company's news."""
+    words = name.split()
+    if words and words[0].upper() == "THE":
+        words = words[1:]
+    while len(words) > 1 and words[-1].upper() in {"GROUP", "HOLDINGS"}:
+        words = words[:-1]
+    if headlines.empty or not words:
+        return headlines.iloc[:0]
+    pat = re.compile(r"(?<!\w)" + r"\s+".join(map(re.escape, words)) + r"(?!\w)", re.I)
+    return headlines[headlines["headline"].map(lambda h: bool(pat.search(str(h))))]
 
 
 def news_parts(headlines: pd.DataFrame, since: pd.Timestamp) -> list[Part]:
