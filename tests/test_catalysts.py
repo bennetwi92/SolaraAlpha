@@ -117,9 +117,30 @@ def test_news_parts() -> None:
     assert catalysts.news_parts(news.iloc[[0]], SINCE) == []
 
 
+def test_named_keeps_headlines_that_name_the_company() -> None:
+    news = _news(
+        ("2026-10-12 08:00", "Fran Drescher backs voter-education drive"),
+        ("2026-10-13 08:00", "Franchise Brands wins Pirtek deal"),
+        ("2026-10-14 08:00", "FRANCHISE BRANDS shares rise"),
+        ("2026-10-15 08:00", "Franchise Brandsworth opens"),  # not the whole name
+    )
+    kept = catalysts.named(news, "FRANCHISE BRANDS")
+    assert kept["headline"].tolist() == [
+        "Franchise Brands wins Pirtek deal",
+        "FRANCHISE BRANDS shares rise",
+    ]
+    law = _news(("2026-10-12 08:00", "Keystone Law hires partners"))
+    assert len(catalysts.named(law, "KEYSTONE LAW GROUP")) == 1  # "Group" dropped
+    tpfg = _news(("2026-10-12 08:00", "Property Franchise Group results"))
+    assert len(catalysts.named(tpfg, "THE PROPERTY FRANCHISE GROUP")) == 1  # "The" dropped
+    assert catalysts.named(news, "").empty
+    assert catalysts.named(_news(), "NETCALL").empty
+
+
 @pytest.fixture
 def fake_sources(monkeypatch: pytest.MonkeyPatch) -> dict[str, list]:
-    """AAA: a new filing; BBB: results due; CCC: nothing; DDD: the issuer lookup fails."""
+    """AAA: a new filing; BBB: results due; CCC: one headline naming it, one not; DDD: the
+    issuer lookup fails."""
     calls: dict[str, list] = {"ann": [], "news": []}
     filings = {
         "LEI_AAA": _ann(("2026-10-15 07:00", "TST", "Additional regulated information", "TU")),
@@ -139,8 +160,11 @@ def fake_sources(monkeypatch: pytest.MonkeyPatch) -> dict[str, list]:
 
     def news(query: str, days: int = 7) -> pd.DataFrame:
         calls["news"].append((query, days))
-        if query == '"DDD"':
-            return _news(("2026-10-17 09:00", "DDD wins contract"))
+        if query == '"CCC"':
+            return _news(
+                ("2026-10-16 09:00", "CCC wins contract"),
+                ("2026-10-17 09:00", "Football: a striker scores"),  # Google matched the body
+            )
         return _news()
 
     monkeypatch.setattr(catalysts, "resolve_issuer", issuer)
@@ -154,14 +178,15 @@ def test_fresh_catalysts(fake_sources: dict[str, list]) -> None:
     assert out == {
         "AAA.L": "tier 1: RNS 2026-10-15: TU",
         "BBB.L": "tier 2: event expected ~2026-11-18 (last: Half-year Report)",
-        "DDD.L": "tier 3: 1 headline, latest 2026-10-17: DDD wins contract",  # filings failed
+        "CCC.L": "tier 3: 1 headline, latest 2026-10-16: CCC wins contract",
     }
-    assert list(out) == ["AAA.L", "BBB.L", "DDD.L"]  # input order
+    assert list(out) == ["AAA.L", "BBB.L", "CCC.L"]  # input order
     # one NSM search per resolved stock, history up to now; news by short name over the window
     assert [lei for lei, _ in fake_sources["ann"]] == ["LEI_AAA", "LEI_BBB", "LEI_CCC"]
     assert fake_sources["ann"][0][1] == "2026-10-18T12:00:00"
     assert fake_sources["news"][0] == ('"AAA"', 7)
-    assert fake_sources["news"][-1] == ('"DDD"', 7)  # falls back to the TIDM
+    # no legal name (DDD's lookup failed), no news search: the bare ticker finds other things
+    assert [q for q, _ in fake_sources["news"]] == ['"AAA"', '"BBB"', '"CCC"']
 
 
 def test_fresh_catalysts_since_horizon_and_no_news(fake_sources: dict[str, list]) -> None:
