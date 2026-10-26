@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import math
 import os
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -116,3 +118,60 @@ def test_commit_and_rollback_outside_a_transaction_are_no_ops(fake: FakeTurso) -
     conn.commit()
     conn.rollback()
     assert fake.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 1
+
+
+class _Client(turso.Connection):
+    """A connection with its own fake server (``turso.session`` is one server per test)."""
+
+    def __init__(self, server: FakeTurso, monkeypatch: pytest.MonkeyPatch) -> None:
+        super().__init__("https://fake.turso.io", "t0ken")
+        self.server, self.monkeypatch = server, monkeypatch
+
+    def _post(self, reqs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        self.monkeypatch.setattr(turso, "session", lambda: self.server)
+        return super()._post(reqs)
+
+
+def _two_clients(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[_Client, _Client]:
+    """Two connections to one SQLite file with no busy timeout: a writer's lock blocks the other
+    with ``database is locked``, as on Turso (the parallel agent jobs, Agents run 39169446476)."""
+    clients = []
+    for _ in range(2):
+        server = FakeTurso()
+        server.db = sqlite3.connect(tmp_path / "db.sqlite", isolation_level=None, timeout=0)
+        clients.append(_Client(server, monkeypatch))
+    clients[0].execute("CREATE TABLE IF NOT EXISTS t (x INTEGER)")
+    return clients[0], clients[1]
+
+
+def test_a_locked_transaction_waits_for_the_other_writer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    a, b = _two_clients(monkeypatch, tmp_path)
+    with a:
+        a.execute("INSERT INTO t VALUES (1)")
+        waits: list[float] = []
+
+        def sleep(s: float) -> None:  # the other writer commits while this one waits
+            waits.append(s)
+            a.commit()
+
+        monkeypatch.setattr(turso.time, "sleep", sleep)
+        with b:
+            b.execute("INSERT INTO t VALUES (2)")
+    assert waits == [turso.LOCK_WAITS[0]]
+    assert sorted(r[0] for r in b.execute("SELECT x FROM t")) == [1, 2]
+
+
+def test_a_lock_that_outlasts_the_waits_is_raised(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    a, b = _two_clients(monkeypatch, tmp_path)
+    waits: list[float] = []
+    monkeypatch.setattr(turso.time, "sleep", waits.append)
+    with a:
+        a.execute("INSERT INTO t VALUES (1)")
+        with pytest.raises(turso.TursoError, match="database is locked"), b:
+            b.execute("INSERT INTO t VALUES (2)")
+        assert b.execute("SELECT COUNT(*) FROM t").fetchone() == (0,)  # nothing half-written
+    assert waits == list(turso.LOCK_WAITS)  # BEGIN IMMEDIATE only: reads pass a writer's lock
