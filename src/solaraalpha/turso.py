@@ -14,9 +14,13 @@ absent):
 * ``executescript(script)``: statements split on ``;``, so a script may hold several
   ``CREATE TABLE IF NOT EXISTS`` / ``ALTER TABLE ... ADD COLUMN`` statements but no literal ``;``
   inside a statement;
-* ``with conn:`` (``BEGIN`` ... ``COMMIT`` / ``ROLLBACK``; nested blocks join the outer
+* ``with conn:`` (``BEGIN IMMEDIATE`` ... ``COMMIT`` / ``ROLLBACK``; nested blocks join the outer
   transaction, as code that composes store and book writes needs), ``commit`` / ``rollback``
   (no-ops outside a transaction, as in sqlite3), ``close``;
+* another writer's lock: Turso has no busy timeout, so parallel jobs (the agents' matrix) get
+  ``database is locked``. A transaction takes the write lock at ``BEGIN IMMEDIATE``, and a
+  one-statement request that hits the lock (``BEGIN`` or an autocommit write, which had no
+  effect) is retried after ``LOCK_WAITS``;
 * ``PRAGMA table_info(t)`` and ``sqlite_master`` queries behave as in SQLite.
 
 Values: ints (incl. numpy and bool), floats (NaN -> NULL; ±inf <-> ±``MAX``), str, bytes, None.
@@ -28,6 +32,7 @@ from __future__ import annotations
 import base64
 import math
 import sys
+import time
 from collections.abc import Iterator
 from numbers import Integral, Real
 from types import TracebackType
@@ -36,6 +41,7 @@ from typing import Any
 from solaraalpha.data.http import DEFAULT_TIMEOUT, session
 
 BATCH = 500  # statements per HTTP request in executemany
+LOCK_WAITS = (0.5, 1.0, 2.0, 4.0, 8.0)  # seconds between retries of a locked statement
 # JSON has no infinity (Turso returns it as null), so ±inf travels and is stored as ±MAX.
 MAX = sys.float_info.max
 
@@ -104,7 +110,7 @@ class Connection:
 
     def __enter__(self) -> Connection:
         if self._depth == 0:
-            self.execute("BEGIN")
+            self.execute("BEGIN IMMEDIATE")  # the write lock now, while a retry is still safe
             self._open = True
         self._depth += 1
         return self
@@ -117,8 +123,15 @@ class Connection:
             self.rollback() if typ else self.commit()
 
     def _pipeline(self, reqs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        results = self._post(reqs)
+        if len(reqs) == 1:  # a lone failed statement changed nothing, so it can run again
+            for wait in LOCK_WAITS:
+                if not _locked(results[0]):
+                    break
+                time.sleep(wait)
+                results = self._post(reqs)
         out = []
-        for res in self._post(reqs):
+        for res in results:
             if res["type"] != "ok":
                 raise TursoError(res.get("error", {}).get("message", str(res)))
             out.append(res["response"]["result"])
@@ -138,6 +151,10 @@ class Connection:
         if body.get("base_url"):
             self.url = body["base_url"].rstrip("/")
         return list(body["results"])
+
+
+def _locked(res: dict[str, Any]) -> bool:
+    return res["type"] != "ok" and "database is locked" in res.get("error", {}).get("message", "")
 
 
 def _comment_only(sql: str) -> bool:
