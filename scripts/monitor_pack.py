@@ -42,6 +42,8 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"position {pid}: {e}")
                 sys.exit(2)
             out = write_pack(pack)
+            if pack["event_session"]:
+                print(pack["event_session"])
             hits = [t["condition"] for t in pack["thesis"] if t["hit"]]
             print(
                 f"position {pid} {pack['ticker']} ({pack['status']}): {len(pack['triggers'])} trigger(s); thesis hits: {', '.join(hits) or 'none'};"

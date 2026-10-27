@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -548,4 +549,35 @@ def test_a_saved_run_expires_entries_past_their_validity_before_the_checks(
     assert r.expired == [f"OLD.L: entry order #{oid} expired (valid until 2026-01-10)"]
     assert "OLD.L" not in r.tickers  # never reviewed as a pending entry
     assert "### Expired" in render_daily(r)
+    conn.close()
+
+
+def test_daily_for_an_event_session(
+    world: tuple[Path | None, dict[str, pd.DataFrame]],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from solaraalpha import desk_chat, event_sessions
+
+    db, frames = world
+    monkeypatch.setattr(
+        daily_cli,
+        "run_daily",
+        lambda conn, save, args: run_daily(conn, _fetchers(frames), save, args),
+    )
+    dbargs = ["--db", str(db)] if db else []
+    with pytest.raises(SystemExit, match="not scheduled"):
+        daily_cli.main(["--save", "--session", "1", *dbargs])
+    conn = store.connect(db)
+    sid = event_sessions.schedule(
+        conn, "2099-01-05 13:45", "UK Budget", "AIM", "agent:pm", now="2026-10-27T18:00:00Z"
+    )
+    conn.close()
+    daily_cli.main(["--save", "--session", str(sid), *dbargs])
+    conn = desk_chat.connect(db)
+    s = event_sessions.sessions(conn)[0]
+    assert s.status == "started" and s.run_id is not None
+    assert json.loads(store.run_info(s.run_id, conn=conn)["args"])["session"] == sid
+    thread = desk_chat.thread(conn=conn)
+    assert "Event session for UK Budget" in thread["text"].iloc[-1]
     conn.close()

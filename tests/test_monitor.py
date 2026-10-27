@@ -524,3 +524,25 @@ def test_pending_entry_review_amend_cancel_and_undo(
     text = notify.daily_message(conn, run, ("revisions",))
     assert text is not None and "### 1. JET2.L — Cancel an order" in text
     conn.close()
+
+
+def test_event_session_revisions_only_cut_risk(
+    world: tuple[Path | None, int, int], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from solaraalpha import event_sessions
+
+    db, pid, _ = world
+    run = store.start_run("daily", {"session": 1}, path=db)
+    conn = store.connect(db)
+    sid = event_sessions.schedule(
+        conn, "2026-10-28 13:45", "UK Budget", "AIM", "agent:pm", now="2026-10-27T18:00:00Z"
+    )
+    event_sessions.start(conn, sid, run)
+    conn.close()
+    with pytest.raises(SystemExit) as e:
+        _record(tmp_path, db, pid, run, {"action": "revise_target", "target": "1900"}, "rt")
+    assert e.value.code == 2
+    assert "only risk-cutting" in capsys.readouterr().out
+    assert "monitor" not in store.load_cards(run, "JET2.L", path=db)  # nothing recorded
+    _record(tmp_path, db, pid, run, {"action": "tighten_stop", "stop": "1450"}, "ts")
+    assert "applied to the book" in capsys.readouterr().out

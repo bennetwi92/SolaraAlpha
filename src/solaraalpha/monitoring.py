@@ -238,11 +238,15 @@ def build_pack(
                 row["text"] = f"unavailable: {e}"
         trig_rows.append(row)
     research = latest_research(conn, state.ticker)
+    from solaraalpha import event_sessions
+
+    es = event_sessions.for_run(conn, run_id)
     status = "pending" if state.status in ("draft", "approved") else str(state.status)
     return {
         "position_id": position_id,
         "ticker": state.ticker,
         "daily_run_id": run_id,
+        "event_session": event_sessions.pack_note(es) if es else None,
         "status": status,
         "pending_entry": book.pending_entry(conn, position_id) if status == "pending" else None,
         "state": asdict(state),

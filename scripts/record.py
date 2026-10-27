@@ -12,6 +12,10 @@ uv run python scripts/record.py latest-run [--script scan|daily] [--since ISO]  
 uv run python scripts/record.py outcome --run N --stage S                        # runner: exit 1 if all ERROR
 uv run python scripts/record.py called --run N                                   # runner: does the PM review the book today (ADR 0036)? exit 3 = no
 uv run python scripts/record.py usage --run N --ticker T --stage S --file execution.json [--status success|failure] [--error TEXT]
+uv run python scripts/record.py session add --at "2026-10-28 14:00" --event "UK Budget" --reason TEXT [--tickers T ...] --actor agent:pm
+uv run python scripts/record.py session list [--all]                              # upcoming event sessions (ADR 0037)
+uv run python scripts/record.py session cancel ID --reason TEXT --actor agent:pm
+uv run python scripts/record.py session due                                      # runner: the due session's id, exit 3 = none
 
 verdict validates FILE against the Verdict schema (`schema` prints it) and, in one transaction,
 writes a `labels` row (events / validate / research), a card under model = stage dated with the
@@ -33,6 +37,12 @@ open or pending, renewed entries lapsing before the next weekly run) and applied
 rotations (open: exit at market; pending: cancel), its renewals (the entry stays working until the
 next weekly run) and the lapses (every other pending entry valid until before the next weekly run
 is cancelled, ADR 0034).
+
+session books an event session (ADR 0037): a review of the whole book at a time inside a London
+session (a time without a zone is London time; 08:00 to 14:30 on a full day), run by the
+event-session workflow (daily check, then the monitor, the risk manager and the PM when called);
+its changes may only cut risk. The PM books the week's sessions, the risk manager the ones that
+turn up midweek.
 
 A pm_daily verdict (ticker _BOOK, ADR 0036) carries `actions` that only cut risk (tighten_stop with
 `stop`, take_partial with `qty`, exit, cancel), each applied at once as an agent revision; the
@@ -257,6 +267,41 @@ def _queue(args: argparse.Namespace) -> None:
         print(item)
 
 
+def _session(args: argparse.Namespace) -> None:
+    from solaraalpha import event_sessions
+
+    conn = store.connect(args.db)
+    try:
+        if args.action == "add":
+            try:
+                sid = event_sessions.schedule(
+                    conn, args.at, args.event, args.reason, args.actor, args.tickers
+                )
+            except ValueError as e:
+                sys.exit(f"error: {e}")
+            s = next(x for x in event_sessions.sessions(conn) if x.session_id == sid)
+            print(f"booked event session {event_sessions.describe(s)}")
+        elif args.action == "cancel":
+            try:
+                event_sessions.cancel(conn, args.id, args.reason, args.actor)
+            except ValueError as e:
+                sys.exit(f"error: {e}")
+            print(f"cancelled event session {args.id}")
+        elif args.action == "due":
+            due = event_sessions.due(conn)
+            if not due:
+                sys.exit(3)
+            print(due[0].session_id)
+        else:
+            rows = event_sessions.sessions(conn) if args.all else event_sessions.upcoming(conn)
+            for s in rows:
+                print(f"{event_sessions.describe(s)} [{s.status}]")
+            if not rows:
+                print("no event sessions booked")
+    finally:
+        conn.close()
+
+
 def _latest_run(args: argparse.Namespace) -> None:
     """The latest run of ``--script``; for ``scan`` the latest full weekly scan (a one-stock or
     one-toolkit scan is never the week's run). ``--since``: exit 3 when that run started before
@@ -396,7 +441,27 @@ def main(argv: list[str] | None = None) -> None:
     oc.add_argument("--run", type=int, required=True)
     oc.add_argument("--stage", required=True)
     oc.add_argument("--db", type=Path, default=None)
+    se = sub.add_parser("session", help="book / cancel / list event sessions (ADR 0037)")
+    se_sub = se.add_subparsers(dest="action", required=True)
+    sa = se_sub.add_parser("add", help="book a review of the whole book after an event")
+    sa.add_argument("--at", required=True, help="when (London time unless a zone is given)")
+    sa.add_argument("--event", required=True, help="the event, in plain words")
+    sa.add_argument("--reason", required=True, help="why the book needs a review then")
+    sa.add_argument("--tickers", nargs="*", default=[], help="held stocks it touches")
+    sa.add_argument("--actor", required=True, help="agent:pm / agent:risk / owner")
+    sc = se_sub.add_parser("cancel", help="cancel a booked session")
+    sc.add_argument("id", type=int)
+    sc.add_argument("--reason", required=True)
+    sc.add_argument("--actor", required=True)
+    sl = se_sub.add_parser("list", help="upcoming sessions")
+    sl.add_argument("--all", action="store_true", help="every session, any status")
+    se_sub.add_parser("due", help="runner: the due session's id; exit 3 = none")
+    for x in (sa, sc, sl, se_sub.choices["due"]):
+        x.add_argument("--db", type=Path, default=None)
     args = p.parse_args(argv)
+    if args.cmd == "session":
+        _session(args)
+        return
     if args.cmd == "called":
         conn = store.connect(args.db)
         try:

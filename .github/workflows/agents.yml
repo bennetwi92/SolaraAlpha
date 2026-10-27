@@ -8,7 +8,8 @@
 # the inbox says what to change in Trading212 and how to undo it. No positions: no monitor job.
 # After the monitors the risk manager reports the book's VaR / CVaR and P&L to the desk thread
 # (the owner's Telegram), and the PM reviews the book when a limit is breached or the risk
-# manager calls it, cutting risk as recorded (ADR 0036).
+# manager calls it, cutting risk as recorded (ADR 0036). An event session (ADR 0037) dispatches
+# the daily mode mid-session on its own daily run; its monitors may only cut risk.
 #
 # Skipped when the triggering workflow did not succeed (a crashed scan leaves a partial run).
 # INERT UNTIL THE OWNER ADDS A CLAUDE SECRET: the gate job skips everything unless
@@ -34,9 +35,15 @@ on:
       run_id:
         description: results-DB run id; blank = the latest scan / daily run
         default: ""
+      session:
+        description: event session id (set by event-session.yml, ADR 0037); blank otherwise
+        default: ""
 
+# An event session's agents run mid-session beside the execution job's 15-minute turns rather
+# than queue behind them in `book` (a newer queued run would cancel them); the book's writes are
+# transactions that wait out each other's lock (#274). Sessions queue behind each other.
 concurrency:
-  group: book
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.session != '' && 'event-session' || 'book' }}
   cancel-in-progress: false
 
 permissions:

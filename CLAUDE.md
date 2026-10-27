@@ -99,6 +99,15 @@ Current state:
   exactly what to change in Trading212 and can reverse it with `book.py undo REV_ID --reason`. The **market regime** (`analysis/regime.py` on `Rules.benchmark`, `^FTAI`: drawdown, 1-day z, realised
   vol percentile → calm / stressed / risk_off, placeholders) heads the daily report, is saved as a
   `regime` card, shows in the weekly pack and flags every plan `market risk_off` (advisory).
+- **Event sessions** (docs/decisions/0037): the PM (weekly, `/pm` Step 5) and the risk manager
+  (daily catch-up) book a mid-session review of the whole book for a dated event (Budget, rate
+  decision, results): `record.py session add --at "YYYY-MM-DD HH:MM" ...` (London time, 08:00 to
+  14:30), stored in the append-only `event_sessions` table (`event_sessions.py`).
+  `event-session.yml` polls every 15 minutes in the session; when one is due it runs `daily.py
+  --save --session ID` on the prices so far, then dispatches `agents.yml` (daily mode, own
+  concurrency group): monitor → risk → pm-daily when called, **risk-cutting only** (the monitor's
+  `add` / `revise_target` / `amend_entry` are refused); the execution job sends the cuts the same
+  afternoon.
 - **Risk manager** (docs/decisions/0036): the daily job saves a `book_risk` card on `_BOOK`
   (`portfolio/riskreport.py`): VaR and CVaR at 95% over 1 and 5 sessions (historical simulation
   on today's holdings, EWMA-filtered, and pro-forma with the pending entries filled), heat,
@@ -265,9 +274,10 @@ Current state:
 | Post-mortem pack for a closed position (record + weekly bars, hindsight labelled) | `uv run python scripts/postmortem_pack.py POSITION_ID` / `--since ISO` |
 | Post-mortem (agent): set-up, what worked / failed, signal right or wrong, rule proposals | `/postmortem POSITION_ID` in Claude Code → `record.py verdict ... --position ID` |
 | Record an agent verdict / read prior work / print the schema | `uv run python scripts/record.py verdict FILE --actor agent:NAME` / `revision FILE --position ID` / `prior JET2.L [--stage research]` / `schema`; runner: `error TICKER --run N --stage S --reason ...` / `queue --run N --stage S` / `latest-run [--since ISO]` (the latest full weekly scan) / `outcome --run N --stage S` / `usage --run N --ticker T --stage S --file execution.json` |
+| Event sessions: book / list / cancel a mid-session review of the book (PM, risk manager, owner; ADR 0037) | `uv run python scripts/record.py session add --at "2026-10-28 13:45" --event "UK Budget" --reason TEXT [--tickers T ...] --actor agent:pm` / `session list [--all]` / `session cancel ID --reason TEXT --actor A` / `session due` (runner; exit 3 = none) |
 | Desk thread: read (pulls the owner's Telegram replies first) / post / the owner's unanswered messages / find the Telegram chat id | `uv run python scripts/chat.py read [--last 30] [--ticker T]` / `post --as agent:NAME [--run N] [--ticker T] (TEXT \| --file F)` / `pending` (exit 3 = none) / `chats` |
 | PM answers the owner in the desk thread (agent; answer-only) | `/desk` in Claude Code |
-| Daily check: prices, triggers (stops, targets, gaps, breaks), new filings and headlines | `uv run python scripts/daily.py [--save] [--report FILE]` |
+| Daily check: prices, triggers (stops, targets, gaps, breaks), new filings and headlines | `uv run python scripts/daily.py [--save] [--report FILE] [--session ID]` (`--session`: an event session's run, ADR 0037) |
 | Notify the owner only when something needs them (exit 3 = nothing) | `uv run python scripts/notify.py --mode daily\|weekly --run N [--channel stdout\|github-issue]` |
 | Desk errors for a run / a failed workflow (exit 3 = nothing) | `uv run python scripts/notify.py --mode errors --run N --part pipeline\|agents [--channel github-errors]` / `--mode job-failed --workflow NAME --url URL` |
 | Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
@@ -327,6 +337,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         words, small groups flagged; the retro cadence (retro_due) and pack — 0035
   dashboard.py          render_dashboard: one self-contained HTML page from the DB (inline CSS,
                         base64 PNG charts, md_to_html for the pack) — #136
+  event_sessions.py     event sessions: book / cancel / due / start a mid-session review of the
+                        book for a dated event; append-only `event_sessions` table — 0037
   desk_chat.py          the desk thread: append-only `chat` table, post (+ Telegram), pull the
                         owner's replies, read / render — 0033
   notify.py             owner notifications: daily and weekly inbox messages in plain words (broker
@@ -427,7 +439,9 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
                         weekly_pack.py against Turso, from GitHub), desk-errors.yml (a failed run →
                         the desk-errors issue and the inbox), execute.yml (the execution job: every
                         15 minutes in the session and after Agents; the only one that may trade),
-                        desk-reply.yml (every 10 minutes 06:30-23:30 UK: the PM answers the owner)
+                        desk-reply.yml (every 10 minutes 06:30-23:30 UK: the PM answers the owner),
+                        event-session.yml (every 15 minutes in the session: a booked event
+                        session's daily check, then the daily agents, risk-cutting only)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
 .claude/skills/validate/  agent skill: re-checks a run's screen labels against the pack; downgrade only

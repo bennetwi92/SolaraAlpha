@@ -17,6 +17,9 @@ Arguments: `--run N` (the daily run).
 - **Only reduce risk** (ADR 0027 phase B): `tighten_stop` (a higher stop: the book refuses a
   lower one), `take_partial` (sell `qty` shares at market), `exit` (sell all at market),
   `cancel` (a pending entry). No adds, no new entries, no wider stops: those wait for Sunday.
+- **In an event session** (ADR 0037; the risk pack opens with `EVENT SESSION`): you are called
+  mid-session after a dated event. The same rules; what you cut goes to Trading212 this
+  afternoon, before the 15:45 exit deadline. Prices are the session so far.
 - **Get back inside the limits.** A VaR breach needs actions that bring the 5-day VaR under
   `max_var` x equity, or a written reason why none are worth taking today (e.g. the breach is a
   stale-price artefact, the risk manager doubts the number) - you own that call. Use each
