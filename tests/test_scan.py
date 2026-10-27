@@ -111,7 +111,7 @@ def test_scan_list_shows_bands(capsys: pytest.CaptureFixture[str]) -> None:
     scan.main(["--list"])
     out = capsys.readouterr().out
     assert "1. screen" in out and "runs on all" in out and "runs on all but ERROR" in out
-    assert "runs on the shortlist" in out and "top 7 + up to 3 on a catalyst" in out
+    assert "runs on the shortlist" in out and "top 12 + up to 3 on a catalyst" in out
     assert "act:   trend >= 0.25 | momentum > 0 | entry >= 0" in out
     assert "watch: new_low == false" in out  # levels (#194)
     assert "(always, once run)" in out

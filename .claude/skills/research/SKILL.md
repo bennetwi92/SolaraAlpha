@@ -13,9 +13,22 @@ hedge-fund strategist writes a pre-trade note, with every claim cited and every 
 
 Two rules frame everything:
 
-- **Fresh information.** We can't trade on months-old news. A section may argue for ACT only
-  on evidence published in the last **30 days** (for filings: since the last results). Older
-  material is **background**: it sets the scene and is labelled as such. Every evidence item
+- **Fresh information.** We can't trade on months-old news. ADR 0022 wants a catalyst,
+  **recent or upcoming**. A stock can be ACT on any one of:
+  - **recent**: evidence published in the last **30 days** (for filings: since the last
+    results);
+  - **upcoming**: a dated catalyst inside the holding horizon (results, a trading update, a
+    regulatory decision, a contract award) whose date is **confirmed** by the company or
+    **estimated** from its own reporting history (Step 4, section 3), with a set-up that
+    favours a beat or a re-rating;
+  - **confirmed**: a company-reported upgrade or material win up to **60 days** old that the
+    price is confirming now (a breakout, a new 52-week high, or within ~3% of one, on the
+    chart context, Step 3c). The market is still taking it in.
+
+  An ACT on *upcoming* or *confirmed* alone is **low conviction**: confidence at most 0.6,
+  with the doubt named in the verdict summary ("catalyst is 7 weeks old, price confirming";
+  "nothing new yet, interims due 24 Nov"), so the PM sizes it at 1%. Older material is
+  **background**: it sets the scene and is labelled as such. Every evidence item
   records `published` and `retrieved`; anything published *after* the run's card `date` is
   flagged in its `summary` as "post-dates the card".
 - **Facts versus interpretation.** Quote and cite facts; label interpretation as yours. Never
