@@ -10,6 +10,7 @@ uv run python scripts/record.py queue --run N --stage validate|research|monitor|
 uv run python scripts/record.py members --run N --sector "_SECTOR:Travel & Leisure"   # tickers in a macro group
 uv run python scripts/record.py latest-run [--script scan|daily] [--since ISO]   # runner: which run
 uv run python scripts/record.py outcome --run N --stage S                        # runner: exit 1 if all ERROR
+uv run python scripts/record.py called --run N                                   # runner: does the PM review the book today (ADR 0036)? exit 3 = no
 uv run python scripts/record.py usage --run N --ticker T --stage S --file execution.json [--status success|failure] [--error TEXT]
 
 verdict validates FILE against the Verdict schema (`schema` prints it) and, in one transaction,
@@ -32,6 +33,10 @@ open or pending, renewed entries lapsing before the next weekly run) and applied
 rotations (open: exit at market; pending: cancel), its renewals (the entry stays working until the
 next weekly run) and the lapses (every other pending entry valid until before the next weekly run
 is cancelled, ADR 0034).
+
+A pm_daily verdict (ticker _BOOK, ADR 0036) carries `actions` that only cut risk (tighten_stop with
+`stop`, take_partial with `qty`, exit, cancel), each applied at once as an agent revision; the
+book refuses a stop that is not higher.
 """
 
 from __future__ import annotations
@@ -62,7 +67,7 @@ def _verdict(args: argparse.Namespace) -> None:
         verdict = verdict.model_copy(update={"run_id": run_id})
     elif args.run is not None:
         verdict = verdict.model_copy(update={"run_id": args.run})
-    if verdict.stage == "pm":
+    if verdict.stage in ("pm", "pm_daily"):
         from solaraalpha.portfolio import book
 
         conn = book.connect(args.db)
@@ -71,6 +76,8 @@ def _verdict(args: argparse.Namespace) -> None:
     try:
         if verdict.stage == "pm":
             out = agents.record_book(conn, verdict, actor)
+        elif verdict.stage == "pm_daily":
+            out = agents.record_pm_daily(conn, verdict, actor)
         else:
             out = agents.record_verdict(conn, verdict, actor, args.position)
     except (agents.DowngradeError, ValueError) as e:
@@ -85,10 +92,10 @@ def _verdict(args: argparse.Namespace) -> None:
     print(f"evidence ids: {', '.join(map(str, out['evidence_ids'])) or 'none'}")
     for a in verdict.allocation or []:
         print(f"allocated {a.ticker} at {a.risk_pct:.1%} risk: {a.reason}")
-    for kind in ("rotations", "renewals", "lapsed"):
+    for kind in ("rotations", "renewals", "lapsed", "actions"):
         for r in out.get(kind, []):
             line = f"{kind.removesuffix('s')}: position {r['position_id']} {r['action']} (revision {r['revision_id']}) {r['status']}"
-            print(line + (f": {r['reason']}" if r["status"] == "declined" else ""))
+            print(line + (f": {r['reason']}" if r["status"] in ("declined", "refused") else ""))
 
 
 def _revision(args: argparse.Namespace) -> None:
@@ -318,7 +325,17 @@ def main(argv: list[str] | None = None) -> None:
     er.add_argument(
         "--stage",
         required=True,
-        choices=("validate", "research", "events", "monitor", "postmortem", "macro", "pm"),
+        choices=(
+            "validate",
+            "research",
+            "events",
+            "monitor",
+            "postmortem",
+            "macro",
+            "pm",
+            "risk",
+            "pm_daily",
+        ),
     )
     er.add_argument("--reason", required=True)
     er.add_argument("--position", type=int, help="postmortem: the closed position")
@@ -346,7 +363,17 @@ def main(argv: list[str] | None = None) -> None:
     us.add_argument(
         "--stage",
         required=True,
-        choices=("validate", "research", "events", "monitor", "postmortem", "macro", "pm"),
+        choices=(
+            "validate",
+            "research",
+            "events",
+            "monitor",
+            "postmortem",
+            "macro",
+            "pm",
+            "risk",
+            "pm_daily",
+        ),
     )
     us.add_argument("--file", help="claude-code-action execution_file (JSON); missing = no usage")
     us.add_argument("--status", choices=("success", "failure"), default="success")
@@ -360,11 +387,24 @@ def main(argv: list[str] | None = None) -> None:
     lr.add_argument("--script", default="scan")
     lr.add_argument("--since", help="ISO time: exit 3 if the run started before it")
     lr.add_argument("--db", type=Path, default=None)
+    ca = sub.add_parser(
+        "called", help="exit 0 when the PM reviews the book after a daily run, else 3"
+    )
+    ca.add_argument("--run", type=int, required=True)
+    ca.add_argument("--db", type=Path, default=None)
     oc = sub.add_parser("outcome", help="counts per stage; exit 1 when every item errored")
     oc.add_argument("--run", type=int, required=True)
     oc.add_argument("--stage", required=True)
     oc.add_argument("--db", type=Path, default=None)
     args = p.parse_args(argv)
+    if args.cmd == "called":
+        conn = store.connect(args.db)
+        try:
+            called = agents.pm_called(conn, args.run)
+        finally:
+            conn.close()
+        print("the PM reviews the book" if called else "no call for the PM")
+        sys.exit(0 if called else 3)
     if args.cmd == "usage":
         _usage(args)
         return

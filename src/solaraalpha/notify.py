@@ -231,7 +231,18 @@ def errors(conn: Conn, run_id: int) -> list[str]:
     return out
 
 
-AGENT_STAGES = ("validate", "macro", "research", "events", "pm", "monitor", "postmortem", "retro")
+AGENT_STAGES = (
+    "validate",
+    "macro",
+    "research",
+    "events",
+    "pm",
+    "monitor",
+    "postmortem",
+    "retro",
+    "risk",
+    "pm_daily",
+)
 # per stage: what the failure means and what happened automatically (ADR 0032)
 MEANS = {
     "screen": "the stock was left out of this week's screen and shortlist",
@@ -246,6 +257,9 @@ MEANS = {
     "monitor": "the position was not reviewed today: nothing changed, its stop order stands",
     "postmortem": "the closed trade has no post-mortem yet",
     "retro": "the desk area's retro was skipped: it is due again at the next weekly run",
+    "risk": "no risk report today: the risk card is in the daily report, and a breach on it"
+    " still calls the PM",
+    "pm_daily": "the PM did not review the book after the risk report: nothing was cut",
     "daily": "that part of today's check was skipped for the stock; the rest of the daily job"
     " and the monitor ran",
 }
@@ -262,6 +276,8 @@ def _rerun(stage: str, ticker: str, run_id: int, position_id: int | None = None)
         return f"`/macro --run {run_id}` in Claude Code"
     if stage == "pm":
         return f"`/pm --run {run_id}` in Claude Code"
+    if stage in ("risk", "pm_daily"):
+        return f"`/{stage.replace('_', '-')} --run {run_id}` in Claude Code"
     if stage == "retro":
         return f"`/retro {ticker.removeprefix('_DESK:')} --run {run_id}` in Claude Code"
     if stage in ("monitor", "postmortem") and position_id is not None:

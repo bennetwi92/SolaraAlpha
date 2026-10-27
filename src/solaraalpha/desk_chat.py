@@ -73,6 +73,8 @@ WHO = {
     "execute": "Execution trader",
     "events": "News analyst",
     "postmortem": "Trade reviewer",
+    "risk": "Risk manager",
+    "pm-daily": "Portfolio manager",
     "pipeline": "Solara (automatic)",
     "owner": "You",
 }
@@ -86,6 +88,8 @@ PROCESS = {
     "events": "News and announcements review",
     "postmortem": "Review of a closed trade",
     "retro": "Desk self-review: how its work has gone",
+    "risk": "Daily risk and P&L report",
+    "pm-daily": "Daily risk review: acting on the risk report",
     "pipeline": "Automatic job",
 }
 AREAS = {

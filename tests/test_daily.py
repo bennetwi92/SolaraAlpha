@@ -344,6 +344,7 @@ def test_run_daily_saves_triggers_and_reports(
     assert "Checked: JET2.L (open), W.L (watch), X.L (watch), E.L (pending)" in out
     assert "Market (^FTAI): **calm**" in out
     assert "Book drawdown" in out and "circuit-breaker limit 15%; breaker on" in out
+    assert "### Risk (" in out and "#### Where the day's P&L came from" in out  # ADR 0036
     assert "### Owner actions" in out and "traded through the stop 1,400.0" in out
     assert "reached the target 1,800.0" in out and "the stop and the daily review manage" in out
     assert "closed 301.0 above the trigger 300.0: place entry order" in out
@@ -407,6 +408,8 @@ def test_run_daily_saves_triggers_and_reports(
     )
     prices = store.load_prices("W.L", path=db)
     assert len(prices) == 60  # snapshot saved per ticker
+    risk_card = store.load_cards(3, "_BOOK", path=db)["book_risk"]  # the risk manager reads it
+    assert risk_card["positions"] == 1 and risk_card["var"] > 0
     # the next run only looks since this one; a recorded dividend and split are not proposed again
     conn = book.connect(db)
     with conn:

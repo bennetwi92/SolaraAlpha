@@ -46,6 +46,9 @@ class Rules:
     shortlist_size: int  # top-ranked tickers the screen sends to the agents (#192)
     shortlist_catalysts: int  # at most this many more join the shortlist on a catalyst
     min_adv_gbp: float  # the screen's liquidity floor: median daily traded value, GBP
+    var_confidence: float  # the risk report's VaR / CVaR confidence (ADR 0036)
+    var_horizon_days: int  # the risk report's headline horizon, sessions
+    max_var: float  # the headline VaR as a fraction of equity above which the PM is called
 
     @property
     def warning(self) -> str | None:
@@ -81,9 +84,19 @@ _TYPES = {
     "shortlist_size": int,
     "shortlist_catalysts": int,
     "min_adv_gbp": float,
+    "var_confidence": float,
+    "var_horizon_days": int,
+    "max_var": float,
 }
 EVENT_POLICIES = ("flag", "hold", "trim", "exit")
-_FRACTIONS = ("max_position_pct", "max_sector_pct", "max_heat", "max_adv_pct", "cash_buffer")
+_FRACTIONS = (
+    "max_position_pct",
+    "max_sector_pct",
+    "max_heat",
+    "max_adv_pct",
+    "cash_buffer",
+    "max_var",
+)
 
 
 def load_rules(path: Path = RULES) -> Rules:
@@ -171,6 +184,10 @@ def _validate(r: Rules) -> None:
         raise ValueError(f"shortlist_catalysts: must be >= 0, got {r.shortlist_catalysts}")
     if r.min_adv_gbp < 0:
         raise ValueError(f"min_adv_gbp: must be >= 0, got {r.min_adv_gbp}")
+    if not 0.5 < r.var_confidence < 1:
+        raise ValueError(f"var_confidence: must be in (0.5, 1), got {r.var_confidence}")
+    if r.var_horizon_days < 1:
+        raise ValueError(f"var_horizon_days: must be >= 1, got {r.var_horizon_days}")
     if r.entry_limit_buffer < 0:
         raise ValueError(f"entry_limit_buffer: must be >= 0, got {r.entry_limit_buffer}")
     if r.trail_atr <= 0:

@@ -219,6 +219,20 @@ def summarise(equity: pd.Series, flow: pd.Series, bench: pd.Series | None = None
     )
 
 
+def fills_in_todays_units(conn: object) -> pd.DataFrame:
+    """Every fill with its ``ticker`` and ``currency`` and a ``split_factor``: shares bought
+    before a split count in today's units, as the split-adjusted closes do."""
+    from solaraalpha.portfolio import book
+
+    fl = book.fills_with_tickers(conn)  # type: ignore[arg-type]
+    splits = {int(p): book._splits(conn, int(p)) for p in set(fl["position_id"])}  # type: ignore[arg-type]
+    fl["split_factor"] = [
+        math.prod(f for at, f in splits[int(p)] if at > str(t))
+        for p, t in zip(fl["position_id"], fl["at"], strict=True)
+    ]
+    return fl
+
+
 def history_from_book(
     conn: object,
     prices: Mapping[str, pd.DataFrame],
@@ -228,14 +242,7 @@ def history_from_book(
     from solaraalpha.portfolio import book
 
     cash = book.cash(conn)  # type: ignore[arg-type]
-    fl = book.fills_with_tickers(conn)  # type: ignore[arg-type]
-    # shares bought before a split count in today's units, as the split-adjusted closes do
-    splits = {int(p): book._splits(conn, int(p)) for p in set(fl["position_id"])}  # type: ignore[arg-type]
-    fl["split_factor"] = [
-        math.prod(f for at, f in splits[int(p)] if at > str(t))
-        for p, t in zip(fl["position_id"], fl["at"], strict=True)
-    ]
-    eq = equity_curve(cash, fl, prices)
+    eq = equity_curve(cash, fills_in_todays_units(conn), prices)
     fw = flows(cash)
     return eq, fw, summarise(eq, fw, bench)
 

@@ -63,8 +63,9 @@ defend after the trade fails.
 
 This file holds no status; it goes stale. Read the live state each time:
 
-- **Your phases** are in ADR 0027: A (Sunday construction) is built; B is a daily book review
-  after the monitors (all the day's revisions together, competing adds, regime de-risking,
+- **Your phases** are in ADR 0027: A (Sunday construction) is built; B is built as `/pm-daily`
+  (ADR 0036: you review the book when the risk manager's daily report breaches a limit or calls
+  you, and only cut risk); ADR 0027's fuller B is a daily book review after the monitors (all the day's revisions together, competing adds, regime de-risking,
   results clustering, agent failures; it may reverse a monitor's change but never loosens
   risk); C is a monthly feedback loop proposing rule changes to the owner, never applying them.
   What is in flight is in the open issues and recent PRs: find the one for your current phase.

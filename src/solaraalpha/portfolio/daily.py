@@ -33,7 +33,7 @@ from solaraalpha.data import prices as prices_mod
 from solaraalpha.data.clean import check_prices, clean_prices, trim_to_consistent
 from solaraalpha.log import get_logger
 from solaraalpha.pipeline import Condition, run_toolkit
-from solaraalpha.portfolio import book, risk
+from solaraalpha.portfolio import book, risk, riskreport
 from solaraalpha.portfolio.rules import load_rules
 from solaraalpha.portfolio.triggers import (
     AGENT_KINDS,
@@ -87,6 +87,7 @@ class DailyResult:
     booked: list[str] = field(default_factory=list)  # taken in from Trading212 (ADR 0030)
     resized: list[str] = field(default_factory=list)  # rotation buys sized to the cash freed
     expired: list[str] = field(default_factory=list)  # buys past their validity (ADR 0034)
+    risk: dict[str, Any] | None = None  # the book's risk card (ADR 0036), None without a book
 
     def of(self, kinds: tuple[str, ...]) -> list[Trigger]:
         return [t for t in self.triggers if t.kind in kinds]
@@ -280,6 +281,7 @@ def run_daily(
     result.triggers += [broker_trigger(d, now.strftime("%Y-%m-%d")) for d in broker_diffs]
     result.errors += broker_errors
 
+    frames: dict[str, pd.DataFrame] = {}
     for ticker in why:
         try:
             raw = fetch.daily(ticker)
@@ -288,6 +290,7 @@ def run_daily(
             log.exception("%s: prices failed", ticker)
             result.errors.append((ticker, f"prices: {type(e).__name__}: {e}"))
             continue
+        frames[ticker] = daily
         if run_id is not None:
             store.save_ticker(run_id, ticker, daily=raw, conn=conn)
         for pid, st in states.items():
@@ -316,9 +319,11 @@ def run_daily(
 
     # the market regime from the benchmark index (#142): advisory, at the top of the report
     rules = load_rules()
+    bench: pd.DataFrame | None = None
     try:
         idx_raw = fetch.daily(rules.benchmark)
-        result.regime = market_regime(clean_prices(idx_raw), rules.benchmark)
+        bench = clean_prices(idx_raw)
+        result.regime = market_regime(bench, rules.benchmark)
         if run_id is not None:
             store.save_ticker(
                 run_id, rules.benchmark, {"regime": result.regime}, daily=idx_raw, conn=conn
@@ -339,6 +344,17 @@ def run_daily(
         log.warning("drawdown unavailable (%s)", e)
     result.breaker_limit = rules.max_drawdown_new_entries
     result.breaker_on = rules.circuit_breaker
+
+    # the book's VaR / CVaR, P&L and where the day's change came from (ADR 0036): the risk
+    # manager agent reads the saved card; a stock the book held but no longer checks is read
+    # from its saved prices
+    try:
+        result.risk = riskreport.build_risk(conn, frames, bench, rules)
+        if run_id is not None and result.risk is not None:
+            store.save_ticker(run_id, riskreport.BOOK, {riskreport.MODEL: result.risk}, conn=conn)
+    except Exception as e:
+        log.exception("risk report failed")
+        result.errors.append((riskreport.BOOK, f"risk: {type(e).__name__}: {e}"))
 
     # orders past their validity with no fill entered (#130)
     result.triggers += stale_order_triggers(
@@ -591,6 +607,9 @@ def render_daily(r: DailyResult) -> str:
             + ("**ACTIVE: no new entries**" if tripped else ("on" if r.breaker_on else "off")),
             "",
         ]
+
+    if r.risk is not None:
+        lines += [riskreport.render_risk(r.risk, level=3)]
 
     if r.booked:
         lines += ["### Booked from Trading212", ""]
