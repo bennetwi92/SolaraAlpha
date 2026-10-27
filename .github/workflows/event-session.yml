@@ -1,0 +1,90 @@
+# Event sessions (docs/decisions/0037): a review of the whole book booked by the PM (weekly) or the
+# risk manager (daily) for a dated midweek event (the Budget, a rate decision, results). Every 15
+# minutes through the London session it asks the DB whether one is due (`record.py session due`,
+# a cheap read; nothing due = done). When one is: the daily check on the session's prices so far
+# (`daily.py --save --session ID`), then the daily agents on that run (monitor -> risk -> pm-daily
+# when called) via a dispatch of agents.yml, whose changes may only cut risk; the execution job's
+# next turn sends them the same afternoon. The minutes are offset from the execution job's so the
+# two rarely queue behind each other; a run cancelled in the `book` queue is retried by the next
+# poll (the session is only marked started by a saved daily run). Inert without the Turso secrets.
+name: Event session
+
+on:
+  schedule:
+    - cron: "7,22,37,52 7-15 * * 1-5"  # UTC; the session's own check keeps it inside 08:00-15:45 London
+  workflow_dispatch:
+
+concurrency:
+  group: book
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: write  # dispatches agents.yml for the session's run
+
+env:
+  SOLARA_ORDERS_BY: ${{ (secrets.SOLARA_T212_KEY != '' && secrets.SOLARA_T212_SECRET != '' && (vars.SOLARA_T212_TRADING || 'demo') == (vars.SOLARA_T212_ENV || 'demo')) && 'system' || 'owner' }}
+  SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+  SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+
+jobs:
+  session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - id: gate
+        run: |
+          if [ -z "$SOLARA_TURSO_URL" ] || [ -z "$SOLARA_TURSO_TOKEN" ]; then
+            echo "event sessions skipped: no Turso secrets" >> "$GITHUB_STEP_SUMMARY"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.go == 'true'
+      - uses: astral-sh/setup-uv@v3
+        if: steps.gate.outputs.go == 'true'
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+        if: steps.gate.outputs.go == 'true'
+      - id: due
+        if: steps.gate.outputs.go == 'true'
+        run: |
+          set +e
+          id=$(uv run --no-sync python scripts/record.py session due)
+          rc=$?
+          set -e
+          if [ "$rc" = "3" ]; then echo "no event session due" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          if [ "$rc" != "0" ]; then exit "$rc"; fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          uv run --no-sync python scripts/record.py session list --all | grep "^#$id " >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Daily check for the session (prices so far)
+        if: steps.due.outputs.id != ''
+        env:
+          SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
+          SOLARA_TELEGRAM_CHAT: ${{ secrets.SOLARA_TELEGRAM_CHAT }}
+          SOLARA_T212_KEY: ${{ secrets.SOLARA_T212_KEY }}
+          SOLARA_T212_SECRET: ${{ secrets.SOLARA_T212_SECRET }}
+          SOLARA_T212_ENV: ${{ vars.SOLARA_T212_ENV || 'demo' }}
+        run: uv run --no-sync python scripts/daily.py --save --session "${{ steps.due.outputs.id }}" --report "$GITHUB_STEP_SUMMARY" --run-id-file run_id.txt
+      - name: Agents on the session's run (monitor, risk, the PM when called)
+        if: steps.due.outputs.id != '' && hashFiles('run_id.txt') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh workflow run agents.yml -f mode=daily -f run_id="$(cat run_id.txt)" -f session="${{ steps.due.outputs.id }}"
+          echo "agents dispatched for daily run $(cat run_id.txt)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Desk errors (pipeline failures of the run, ADR 0032)
+        if: always() && hashFiles('run_id.txt') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set +e
+          uv run --no-sync python scripts/notify.py --mode errors --part pipeline --run "$(cat run_id.txt)" --channel github-errors
+          rc=$?
+          set -e
+          if [ "$rc" = "3" ]; then echo "no desk errors" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi

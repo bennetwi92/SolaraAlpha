@@ -508,6 +508,15 @@ def record_revision(conn: Conn, verdict: Verdict, position_id: int, actor: str) 
     action = verdict.checks.get("action", "hold")
     if action == "renew":
         raise ValueError("renewing a pending entry is the PM's decision (ADR 0034), not a revision")
+    from solaraalpha import event_sessions
+
+    es = event_sessions.for_run(conn, verdict.run_id)
+    if es is not None and action not in event_sessions.ALLOWED_ACTIONS:
+        raise ValueError(
+            f"run {verdict.run_id} is event session #{es.session_id} ({es.event}): only risk-cutting"
+            f" changes ({', '.join(sorted(event_sessions.ALLOWED_ACTIONS))}), not {action!r}"
+            " (ADR 0037); leave it to the evening review"
+        )
     out = record_verdict(conn, verdict, actor)
     out["revision_id"] = None
     if action == "hold":

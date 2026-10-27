@@ -1,6 +1,6 @@
 """Daily check of open positions, the watch list and pending breakout entries.
 
-uv run python scripts/daily.py [--save] [--report FILE] [--run-id-file FILE] [--db PATH]
+uv run python scripts/daily.py [--save] [--report FILE] [--run-id-file FILE] [--db PATH] [--session ID]
 
 Fetches daily prices (check / clean / trim), evaluates the triggers in portfolio.triggers
 (stop closed through, stop touched, target hit, gap, coil trigger broken, waiting entry
@@ -9,6 +9,9 @@ Owner actions, Agent review needed, Watch breaks, Headlines, Errors. --save reco
 run with a price snapshot per ticker and the triggers table (the monitor agent reads it).
 Exits 1 only if no stock's prices could be fetched, after reporting; other errors are saved
 (`error` triggers) for the desk errors. See docs/decisions/0017.
+
+--session ID runs it for a booked event session (ADR 0037, the event-session workflow): mid
+session, on the prices so far; the run is marked as the session's and the desk thread is told.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from solaraalpha import desk_chat
+from solaraalpha import desk_chat, event_sessions
 from solaraalpha.portfolio import book
 from solaraalpha.portfolio.daily import render_daily, run_daily
 
@@ -28,12 +31,33 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--report", type=Path, help="append the markdown report to this file")
     p.add_argument("--db", type=Path, default=None, help="local DB file (default: configured DB)")
     p.add_argument("--run-id-file", type=Path, help="write the saved run id to this file")
+    p.add_argument("--session", type=int, help="the event session this run is for (ADR 0037)")
     args = p.parse_args(argv)
+    if args.session is not None and not args.save:
+        sys.exit("--session needs --save: the session's agents read the saved run")
     if args.save:
         desk_chat.pull(args.db)
     conn = book.connect(args.db)
     try:
+        es = None
+        if args.session is not None:
+            es = next(
+                (s for s in event_sessions.sessions(conn) if s.session_id == args.session), None
+            )
+            if es is None or es.status != "scheduled":
+                sys.exit(f"event session {args.session} is not scheduled")
         result = run_daily(conn, save=args.save, args=vars(args))
+        if es is not None and result.run_id is not None:
+            event_sessions.start(conn, es.session_id, result.run_id)
+            desk_chat.post(
+                "pipeline",
+                f"Event session for {es.event}: reviewing every position and pending buy now on"
+                " today's prices so far. Changes can only cut risk (tighter stops, partial sales,"
+                " exits, cancelled buys); anything that does goes to Trading212 this afternoon.",
+                run_id=result.run_id,
+                ticker="_BOOK",
+                path=args.db,
+            )
     finally:
         conn.close()
     report = render_daily(result)

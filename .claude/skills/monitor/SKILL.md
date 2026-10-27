@@ -81,6 +81,9 @@ Read `pack.json` in the printed directory:
 - `research`: the latest research verdict (reasons, kill criteria, note) and its evidence ids;
   `research_levels`: the entry, stop and `stop_reason` it set (ADR 0023), when present.
 - `systematic_stops`: context for "The stop".
+- `event_session`: set when this run is an **event session** (ADR 0037): a mid-session review
+  booked for a dated event (the Budget, a rate decision, results), the prices being the session
+  so far, not a close. See "In an event session" below.
 - `limits`: what an add must fit (`max_position_pct`, `max_sector_pct`, `max_heat`,
   `cash_buffer` of equity; `max_adv_pct` of `now.liquidity.adv_gbp_20`, whose
   `max_position_gbp` is the most the whole position should be worth).
@@ -116,6 +119,13 @@ Read `pack.json` in the printed directory:
        trigger) and / or a new `stop`; optionally `qty`.
      - `cancel`: the trade no longer makes sense (thesis broken, catalyst priced in, capital
        event); the entry order is cancelled.
+   - **In an event session** (`event_session` set): **only cut risk**: `hold`, `tighten_stop`,
+     `take_partial`, `exit`; a pending entry `hold` or `cancel`. The book refuses `add`,
+     `revise_target` and `amend_entry` in an event session; leave them to the evening review.
+     Read what the event did to this stock (its announcement, the reaction so far, the thesis
+     and kill criteria it touches): a cut goes to Trading212 this afternoon. The last bar is
+     intraday, so a "close" below the stop is not yet a close; the stop at the broker is
+     already working.
 5. `label` encodes the urgency: `ACT` = acted on something that matters before tomorrow's open
    (exit, cancel, a stop raise, an add), `WATCH` = a change worth the owner's eye (partial,
    amendment, target revision, hold with a concern), `PASS` = no change. `ERROR` if the pack could not be

@@ -666,7 +666,11 @@ def build_pack(conn: Conn, run_id: int) -> str:
     card = latest_card(conn, run_id)
     if card is None:
         raise ValueError(f"daily run {run_id} has no risk card (no book, or the report failed)")
-    lines = [render_risk(card), "## Trend (one row a session)", ""]
+    from solaraalpha import event_sessions
+
+    es = event_sessions.for_run(conn, run_id)
+    lines = [f"> {event_sessions.pack_note(es)}", ""] if es else []
+    lines += [render_risk(card), "## Trend (one row a session)", ""]
     tr = trend(conn)
     lines += [
         "| Date | Equity | Day P&L | VaR | VaR % | CVaR | Heat | Drawdown |",
@@ -701,6 +705,10 @@ def build_pack(conn: Conn, run_id: int) -> str:
     events = {t: e for t, e in risk.next_events(conn).items() if t in held}
     lines += ["", "## Scheduled events on held stocks", ""]
     lines += [f"- {t}: {e}" for t, e in sorted(events.items())] or ["none known"]
+    lines += ["", "## Event sessions booked (record.py session list)", ""]
+    lines += [f"- {event_sessions.describe(s)}" for s in event_sessions.upcoming(conn)] or [
+        "none: book one for a dated event before the next daily run that can move the book"
+    ]
     prev = agents.prior(conn, BOOK, stage="risk", limit=1).get("verdicts", [])
     lines += ["", "## Your previous report", ""]
     if prev:

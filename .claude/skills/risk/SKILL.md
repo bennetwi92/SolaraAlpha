@@ -60,6 +60,23 @@ The pack (all numbers from code, never recompute them):
    Jet2 stop to 1,480p: cuts the heat by 0.4%", "take half of X before results", "cancel the
    pending Y entry: it would put the VaR over the limit"). Nothing needed → say so.
 
+5. **Event sessions** (ADR 0037). The pack lists the sessions booked. If a dated event before
+   the next daily run's close can move the book (a Budget or rate decision the macro notes or
+   the thread name, results on a held stock) and none is booked for it, book one, about an hour
+   after the announcement and never after 14:30 London:
+
+   ```
+   uv run python scripts/record.py session add --at "YYYY-MM-DD HH:MM" --event "UK Budget" --reason "why the book is exposed" [--tickers T ...] --actor agent:risk
+   ```
+
+   A session reviews the whole book mid-session (monitors, then you, then the PM when called)
+   and only cuts risk. Booking a review is not trading; it is the one thing you add to the
+   schedule. Say in the report that it is booked.
+
+   **In an event session** (the pack opens with `EVENT SESSION`): the prices are the session so
+   far, not a close, and the day's P&L is intraday. Judge the event: what it did to the book
+   and whether the PM needs to cut risk before the close (ACT), not the routine daily items.
+
 ## Step 3: Record
 
 Write `data/processed/risk/<N>/verdict.json` per `uv run python scripts/record.py schema`:
@@ -93,7 +110,8 @@ Plain text, at most fifteen short lines, in this order:
 2. 5-day 95% VaR and CVaR in GBP and % of the portfolio, against the limit; the 1-day VaR.
 3. What changed the P&L and the risk since yesterday, with the numbers.
 4. Where the risk sits: the biggest contributor, heat, drawdown vs the breaker, events ahead.
-5. Your call: all clear / keep an eye on X / "I've asked the PM to act on X".
+5. Your call: all clear / keep an eye on X / "I've asked the PM to act on X"; a review you
+   booked for an event ("I've booked a review of the book at 13:45 after the Budget").
 
 VaR and CVaR are words the owner asked for: use them, once explained as "a bad week (1 in 20)
 could lose about £X; the average of those bad weeks £Y". Otherwise plain English: company
@@ -107,5 +125,6 @@ Add a separate post starting `observation:`; the next retro reads it (ADR 0035).
 
 - Numbers from the pack only; cite them. Don't round a breach away.
 - You recommend; the PM decides; the owner sets the limits. Never record a revision or run a
-  `book.py` command that changes the book.
+  `book.py` command that changes the book. Booking an event session is allowed: it changes
+  nothing but when the book is reviewed.
 - A quiet day is a short report, PASS.

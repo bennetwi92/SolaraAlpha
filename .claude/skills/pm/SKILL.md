@@ -176,7 +176,7 @@ The owner reads this first every Sunday. One page, plain words, numbers cited fr
 4. **Rotations and pending entries**: what is closed or cancelled, why, and what it makes room
    for; each lapsing entry renewed (why it still earns its slot) or let go (one line).
 5. **The book after this week**: positions, heat, sector and driver concentrations, results
-   dates in the next four weeks, idle cash and why.
+   dates in the next four weeks, the event sessions booked (Step 5), idle cash and why.
 6. **Concerns and operations**: risks you are carrying knowingly; agent failures this week and
    what they mean (an idea never researched, a position not reviewed).
 7. **Next week**: what would change the stance.
@@ -218,6 +218,33 @@ applied it. If the pack cannot be built, record an
 to the rules' risk per trade in screen-rank order, approved by the pipeline, and the owner is
 told the PM did not decide. An ERROR renews and cancels nothing: pending entries then run to
 their own dates.
+
+## Step 5: Book the week's event sessions (ADR 0037)
+
+An event session is a review of the whole book in the middle of a trading day, right after a
+dated event that can move it: the monitors re-read every position and pending entry on the
+day's prices, the risk manager reports, and you are called when it is breached or asks. Its
+changes **only cut risk** (tighten, partial, exit, cancel), and the execution job sends them
+the same afternoon instead of the next morning.
+
+Look over the coming five sessions: the dated events in the macro notes' **Watch** sections
+(the Budget, a Bank of England decision, CPI or other data the book is exposed to), the
+`results_calendar` for holdings and pending entries, and what the thread says is coming. Book a
+session for each event that could plausibly move a holding through its stop or break a thesis;
+not for routine data the book is not exposed to. Time it after the market has had the news:
+about an hour after the announcement (07:00 results → 09:00; a 12:30 statement → 13:45), never
+after 14:30 London.
+
+```
+uv run python scripts/record.py session list
+uv run python scripts/record.py session add --at "YYYY-MM-DD HH:MM" --event "UK Budget" --reason "AIM IHT relief and CGT changes: every holding is AIM" [--tickers JET2.L ...] --actor agent:pm
+uv run python scripts/record.py session cancel ID --reason "..." --actor agent:pm
+```
+
+Times are London time. `--tickers` names the holdings most exposed (context; the session
+reviews the whole book). The command refuses a time outside 08:00-14:30 London or in the past,
+and returns the existing session for the same event and time. Name the sessions booked in the
+memo (section 5).
 
 ## The desk thread (ADR 0033)
 
