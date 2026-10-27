@@ -31,7 +31,7 @@ target_moves = [0.15, 0.30]  # plan targets: entry x (1 + each), the +15-30% mov
                            # a target hit is a review, not a sell order: the trailing stop exits
 trail_atr = 3.0            # chandelier trailing stop distance in ATRs (ADR 0003)
 event_flag_days = 14       # results / trading update within this many days of entry = flag
-max_agent_tickers = 10     # cap on tickers the unattended agents work per run (ADR 0019)
+max_agent_tickers = 15     # cap on tickers the unattended agents work per run (ADR 0019)
 # Adds to a winner are the monitor agent's call (size, timing; ADR 0025), within the limits above.
 event_policy = "flag"      # results inside event_flag_days of an open position: flag / hold / trim / exit (§6 Q9, #129);
                            # flag (owner, 2026-10-20): the monitor agent decides hold / trim / exit
@@ -39,7 +39,7 @@ event_trim_fraction = 0.5  # fraction of the shares a `trim` policy proposes to 
 circuit_breaker = true     # on (owner, 2026-10-20; #143, §6 Q1)
 max_drawdown_new_entries = 0.15  # equity this far below its high stops new entries while the breaker is on
 benchmark = "^FTAI"        # equity-curve comparison (Yahoo ticker): FTSE AIM All-Share, our own market (owner, 2026-10-20; #210)
-shortlist_size = 7         # top-ranked tickers the screen sends to the agents a week (ADR 0022, #192)
+shortlist_size = 12        # top-ranked tickers the screen sends to the agents a week (ADR 0022, #192)
 shortlist_catalysts = 3    # at most this many more join the shortlist on a catalyst (outside the top N)
 min_adv_gbp = 25000.0      # the screen's liquidity floor: 20-session median daily traded value, GBP
 # The risk manager's daily report (ADR 0036): VaR and CVaR of the book at this confidence over

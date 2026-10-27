@@ -6,7 +6,9 @@ pack: the position's state (``status`` ``open`` / ``pending``), orders, plan and
 entry order, the **entry conditions** frozen when it was drafted, the cards **now** (technical
 with the position's entry date and price when open, levels, relative strength, liquidity, re-run on fresh
 data), a per-field then → now diff, the thesis conditions (machine ones evaluated now), the
-day's triggers with the filing's full text, the latest research verdict and the levels it set
+day's triggers with the filing's full text, the **latest daily sessions** (``latest``: the
+weekly cards end on the last completed Friday; machine thesis conditions on ``close`` use the
+latest daily close), the latest research verdict and the levels it set
 (``research_levels``), the systematic stops (``systematic_stops``: levels, technical,
 chandelier) as context only: the agent sets the stop, and the limits an add must fit
 (``limits``, ADR 0025: the agent decides adds). The agent's revision is applied as it is
@@ -26,6 +28,7 @@ import pandas as pd
 from solaraalpha import store
 from solaraalpha.config import settings
 from solaraalpha.data.announcements import fetch_text
+from solaraalpha.data.clean import clean_prices
 from solaraalpha.log import get_logger
 from solaraalpha.pipeline import Condition, run_toolkit
 from solaraalpha.portfolio import book
@@ -119,6 +122,40 @@ def now_cards(
         for model, card in step.cards.items():
             out["cards"][model] = _jsonable(card)
     return out
+
+
+def latest_bars(x: Inputs, n: int = 10) -> dict[str, Any]:
+    """The last ``n`` daily sessions as fetched and cleaned (the weekly cards end at the last
+    completed Friday, so midweek they are days old): date, OHLC, volume, and the latest close
+    against the last weekly close. The daily job runs after the close, so the last bar is the
+    day's."""
+    daily = clean_prices(x.daily)
+    if daily.empty:
+        return {}
+    tail = daily.tail(n)
+    bars = [
+        {
+            "date": d.strftime("%Y-%m-%d"),
+            **{
+                k: float(r[k]) if pd.notna(r[k]) else None
+                for k in ("open", "high", "low", "close", "volume")
+            },
+        }
+        for d, r in zip(tail.index, tail.to_dict("records"), strict=True)
+    ]
+    weekly = x.weekly
+    last_week = float(weekly["close"].iloc[-1]) if not weekly.empty else None
+    close = float(tail["close"].iloc[-1])  # clean_prices drops rows with no close
+    return {
+        "date": tail.index[-1].strftime("%Y-%m-%d"),
+        "close": close,
+        "weekly_close": last_week,
+        "weekly_date": weekly.index[-1].strftime("%Y-%m-%d") if not weekly.empty else None,
+        "change_vs_weekly": close / last_week - 1 if last_week else None,
+        "high_n": float(tail["high"].max()),
+        "low_n": float(tail["low"].min()),
+        "bars": bars,
+    }
 
 
 def then_now_diff(
@@ -223,9 +260,11 @@ def build_pack(
         then.setdefault(str(r["model"]), {})[str(r["field"])] = (
             r["text"] if pd.notna(r["text"]) else r["value"]
         )
-    now = now_cards(state.ticker, state, inputs)
+    x = inputs or Inputs(state.ticker)
+    now = now_cards(state.ticker, state, x)
     cards_now = now["cards"]
-    close = (cards_now.get("technical") or {}).get("close")
+    latest = latest_bars(x)
+    close = latest.get("close", (cards_now.get("technical") or {}).get("close"))
     triggers = store.load_triggers(run_id, state.ticker, conn=conn)
     triggers = triggers[(triggers["position_id"] == position_id) | triggers["position_id"].isna()]
     trig_rows = []
@@ -249,6 +288,7 @@ def build_pack(
         "orders": json.loads(book.orders(conn, position_id).to_json(orient="records")),
         "plan": latest_plan(conn, position_id),
         "entry_conditions": then,
+        "latest": latest,
         "now": cards_now,
         "now_labels": now["labels"],
         "now_errors": now["errors"],
