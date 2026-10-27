@@ -99,6 +99,17 @@ Current state:
   exactly what to change in Trading212 and can reverse it with `book.py undo REV_ID --reason`. The **market regime** (`analysis/regime.py` on `Rules.benchmark`, `^FTAI`: drawdown, 1-day z, realised
   vol percentile → calm / stressed / risk_off, placeholders) heads the daily report, is saved as a
   `regime` card, shows in the weekly pack and flags every plan `market risk_off` (advisory).
+- **Risk manager** (docs/decisions/0036): the daily job saves a `book_risk` card on `_BOOK`
+  (`portfolio/riskreport.py`): VaR and CVaR at 95% over 1 and 5 sessions (historical simulation
+  on today's holdings, EWMA-filtered, and pro-forma with the pending entries filled), heat,
+  stress, drawdown, beta, volatility, correlation, % of ADV, a 1-day VaR backtest; the day's P&L
+  split (market / stock-specific / trading / income), month to date, since inception; and where
+  the VaR change came from (trades / price drift / new data). **Limit `max_var` = 5%** of equity
+  (owner, 2026-10-27); a breach (or heat over `max_heat`, drawdown past the breaker) calls the
+  PM. After the monitors, `/risk` records a `risk` verdict (ACT = call the PM) and posts the
+  daily risk and P&L report to the desk thread (the owner's Telegram: the owner never reads the
+  inbox); `/pm-daily` runs only when called (`record.py called`) and records `pm_daily`
+  `actions` that only cut risk (tighten / partial / exit / cancel), applied as recorded.
 - **Shadow book** (docs/decisions/0028, recording only): beside every decision, the `shadow`
   table (`portfolio/shadow.py`) records what fixed rules would have done (top 5 by rank, random 2
   from the shortlist, breakout entry, 2-ATR / levels stops, chandelier trail, flat 2%), written
@@ -108,7 +119,7 @@ Current state:
   to 2026-10-16): never look at it until the owner signs off a candidate.
 - **Agents run unattended when the owner adds a Claude secret** (docs/decisions/0019):
   `agents.yml` runs after the scan (`/validate` → `/macro` → `/research` → `/pm` → `/retro` (desk areas due one, ADR 0035) → `plan.py` → `weekly_pack.py`)
-  and after the daily job (`/monitor`) via `claude-code-action`, capped by
+  and after the daily job (`/monitor` → `/risk` → `/pm-daily` when called, ADR 0036) via `claude-code-action`, capped by
   `max_agent_tickers` and `--max-turns`; without `CLAUDE_CODE_OAUTH_TOKEN` or
   `ANTHROPIC_API_KEY` it skips and nothing is spent. A failed invocation is recorded as an
   ERROR verdict (`record.py error`); the job fails only if every item errored.
@@ -247,6 +258,9 @@ Current state:
 | Monitor (agent): daily re-evaluation; open: hold / tighten / partial / exit / revise target / add; pending: hold / amend_entry / cancel — applied as recorded (ADR 0024) | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions --status all` / `undo REV_ID --reason` (pipeline proposals: `accept REV_ID` / `decline REV_ID --reason`) |
 | An agent's own track record: decisions, what happened next (hindsight), where it was overruled, reliability and cost (ADR 0035) | `uv run python scripts/track_record.py --agent senior-quant\|fundamental-strategist\|portfolio-manager\|execution-trader\|STAGE\|all [--since D] [--out FILE]` |
 | Retro (agent): a desk area reviews its own track record and the thread's `observation:` posts, proposes changes (no cap, changes nothing); due weekly for the loop's first month, monthly to month 3, quarterly after | `/retro AREA --run N` in Claude Code (`track_record.py --agent AREA --retro` is its pack; `record.py queue --run N --stage retro` lists the areas due) |
+| Risk manager's pack for a daily run (the `book_risk` card: VaR / CVaR, limits, flags, P&L and VaR-change attribution, positions; trend, today's changes, regime, events, its previous report; exit 3 = no card) | `uv run python scripts/risk_pack.py --run N [--out FILE]` |
+| Risk manager (agent): daily risk and P&L report to the PM and the owner's Telegram; ACT calls the PM; never trades (ADR 0036) | `/risk --run N` in Claude Code → `record.py verdict risk.json --actor agent:risk` |
+| PM daily review (agent), only when called by a breach or the risk manager: risk-cutting `actions` applied as recorded | `/pm-daily --run N` in Claude Code (`record.py called --run N`: exit 3 = not called) |
 | Validator disagreement log (toolkits not warranted, concerns, rate per run) | `uv run python scripts/validator_stats.py [--since D]` |
 | Post-mortem pack for a closed position (record + weekly bars, hindsight labelled) | `uv run python scripts/postmortem_pack.py POSITION_ID` / `--since ISO` |
 | Post-mortem (agent): set-up, what worked / failed, signal right or wrong, rule proposals | `/postmortem POSITION_ID` in Claude Code → `record.py verdict ... --position ID` |
@@ -396,6 +410,9 @@ src/solaraalpha/        importable package — all reusable code lives here
     execution.py        orders to Trading212 through one guarded door: London calendar, guards
                         (check), send (sending first; the stop-for-exit swap), settle (cancel,
                         confirm, book the end state), turn, the agent's queue and pack — 0031
+    riskreport.py       the book's daily risk card (book_risk on _BOOK): VaR / CVaR (historical,
+                        EWMA-filtered, pro-forma), heat, stress, beta, correlation, backtest, P&L and
+                        VaR-change attribution, flags vs max_var; render_risk, the risk pack — 0036
     shadow.py           shadow book: systematic baselines beside every decision, append-only
                         `shadow` table, record (scan / plan time) and load — 0028
 scripts/                thin CLI entry points (argparse) that call into the package
@@ -424,6 +441,10 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
 .claude/skills/postmortem/  agent skill: post-mortem of a closed trade from its pack; setup / execution scores
 .claude/skills/retro/     agent skill: a desk area's retro: its track record, the thread's observations, its
                         earlier proposals → plain-English proposals (`_DESK:<area>`); proposes only — 0035
+.claude/skills/risk/      agent skill: the risk manager's daily report: VaR / CVaR, P&L, what changed and why,
+                        a risk verdict (ACT calls the PM), the owner's Telegram report; never trades — 0036
+.claude/skills/pm-daily/  agent skill: the PM's daily review when the risk manager calls it: risk-cutting
+                        actions only (tighten / partial / exit / cancel), applied as recorded — 0036
 .claude/skills/desk/      agent skill: the PM answering the owner's desk-thread messages; read-only + one post — 0033
 .claude/skills/execute/   agent skill: the execution trader: how and when each approved order goes to Trading212
                         through execute.py (send, hold, lapse, one retry), never what — 0031
@@ -436,7 +457,9 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
 .claude/agents/fundamental-strategist.md  subagent: fundamentals / balance sheet / valuation / macro / policy
                         specialist (fundamentals toolkit, expectations, financing risk, event gaps, #214);
                         `claude --agent fundamental-strategist`
-.claude/hooks/guard_live_writes.py  PreToolUse guard the four subagents load: blocks live book / DB
+.claude/agents/risk-manager.md  subagent: risk manager persona (the book's VaR / CVaR, P&L attribution, the
+                        call to the PM; independent, never trades); `claude --agent risk-manager`
+.claude/hooks/guard_live_writes.py  PreToolUse guard the five subagents load: blocks live book / DB
                         writes, workflow runs and inbox posts unless `SOLARA_ALLOW_WRITES=1`
 notebooks/              exploration only; promote anything reused into src/
 tests/                  pytest; mirrors src/ structure; fakes.py (FakeTurso), conftest.py (db_backend)
@@ -486,7 +509,7 @@ GitHub issues are the backlog and the hand-off between threads/agents.
 
 ### Desk ownership
 
-The four subagents (`.claude/agents/`) each own an area; one owner per file. Others propose in
+The five subagents (`.claude/agents/`) each own an area; one owner per file. Others propose in
 the owner's issue rather than edit. Status lives in each agent's issue, never in its file.
 Decision rules live in the skills (`.claude/skills/`), never duplicated in a subagent file.
 
@@ -494,8 +517,9 @@ Decision rules live in the skills (`.claude/skills/`), never duplicated in a sub
 |---|---|---|
 | `analysis/technical.py`, `levels.py`, `relative_strength.py`, `regime.py` (method), `backtest.py`, `scorecard.py`; the `fit.rank_score` formula and its test; `portfolio/shadow.py`; `docs/research/`; ADR 0029 | `senior-quant` | #210 |
 | `analysis/fundamentals.py`, `financing.py`, `events.py`, `jet2_value.py`; `data/fundamentals.py`, `announcements.py`; `catalysts.py`; `value_models`; the `growth` input to the rank; the fundamental content of `/events`, `/research`, `/macro` | `fundamental-strategist` | #214 |
-| `pm.py`, `portfolio/planner.py`, `plan.py`, `fit.py` (slots, sector, heat), `review.py`; the `/pm`, `/validate`, `/monitor`, `/postmortem` skills and the agent chain (`agents.yml`, failures, cost) | `portfolio-manager` | ADR 0027 phases; its current issue |
+| `pm.py`, `portfolio/planner.py`, `plan.py`, `fit.py` (slots, sector, heat), `review.py`; the `/pm`, `/pm-daily`, `/validate`, `/monitor`, `/postmortem` skills and the agent chain (`agents.yml`, failures, cost) | `portfolio-manager` | ADR 0027 phases; its current issue |
 | `portfolio/execution.py`, `scripts/execute.py`, `scripts/execution_pack.py`, the order calls in `data/trading212.py`, `execute.yml`, the `/execute` skill | `execution-trader` | #244 |
+| `portfolio/riskreport.py`, `scripts/risk_pack.py`, the `/risk` skill | `risk-manager` | ADR 0036 |
 | ADR 0022, bands, rank weights, `config/portfolio.toml`, the book and broker mechanics, data sources, anything unlisted; every live write (`SOLARA_ALLOW_WRITES=1`) | owner | — |
 - One issue = one deliverable. Title is imperative ("Persist events notes to the DB").
 - Body: **Context** (why, links to ADRs/PRs), **Scope** (what's in / out), **Acceptance**

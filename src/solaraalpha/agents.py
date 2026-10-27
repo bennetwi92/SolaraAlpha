@@ -21,6 +21,12 @@ and the book and applies the rotations (docs/decisions/0027). A pending entry wh
 expire before the next weekly run is **not kept** unless the PM lists it in ``renewals``: the
 renewed ones stay working until the next run, the rest are cancelled as the verdict is recorded,
 so the week's allocation is planned without them (docs/decisions/0034).
+
+The **risk manager** (stage ``risk``, ``_BOOK``) records one verdict per daily run on the code's
+risk card: ACT calls the PM's daily review, WATCH reports flags, PASS all clear; a card that
+breaches a limit calls the PM whatever the label. The **PM's daily review** (stage
+``pm_daily``, ``_BOOK``) answers it with ``actions`` that only cut risk (tighten a stop, take a
+partial, exit, cancel a pending entry), applied as agent revisions (docs/decisions/0036).
 """
 
 from __future__ import annotations
@@ -38,7 +44,18 @@ from solaraalpha.pipeline import SCREEN_TOOLKITS
 from solaraalpha.store import Conn, query
 
 Label = Literal["ACT", "WATCH", "PASS", "ERROR"]
-Stage = Literal["validate", "research", "events", "monitor", "postmortem", "macro", "pm", "retro"]
+Stage = Literal[
+    "validate",
+    "research",
+    "events",
+    "monitor",
+    "postmortem",
+    "macro",
+    "pm",
+    "retro",
+    "risk",
+    "pm_daily",
+]
 SECTOR_PREFIX = "_SECTOR:"  # pseudo-ticker of a shared sector / macro note (#140)
 BOOK = "_BOOK"  # pseudo-ticker of the portfolio manager's verdict (ADR 0027)
 DESK_PREFIX = "_DESK:"  # pseudo-ticker of a desk area's retro (ADR 0035)
@@ -143,6 +160,26 @@ class Renewal(BaseModel):
     reason: str = Field(min_length=1)
 
 
+class BookAction(BaseModel):
+    """One risk-reducing change the PM makes in its daily review (ADR 0036): never a loosening."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    position_id: int
+    action: Literal["tighten_stop", "take_partial", "exit", "cancel"]
+    stop: float | None = Field(default=None, gt=0)  # tighten_stop: the new, higher stop
+    qty: int | None = Field(default=None, gt=0)  # take_partial: shares to sell
+    reason: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _needs(self) -> BookAction:
+        if self.action == "tighten_stop" and self.stop is None:
+            raise ValueError("tighten_stop needs `stop`")
+        if self.action == "take_partial" and self.qty is None:
+            raise ValueError("take_partial needs `qty`")
+        return self
+
+
 class Proposal(BaseModel):
     """One change a desk area's retro puts to the PM and the owner (ADR 0035), in plain words."""
 
@@ -178,6 +215,7 @@ class Verdict(BaseModel):
     rotations: list[Rotation] = Field(default_factory=list)  # the PM's
     renewals: list[Renewal] = Field(default_factory=list)  # the PM's (ADR 0034)
     proposals: list[Proposal] = Field(default_factory=list)  # a retro's (ADR 0035)
+    actions: list[BookAction] = Field(default_factory=list)  # the PM's daily review (ADR 0036)
 
     @model_validator(mode="after")
     def _act_has_trade(self) -> Verdict:
@@ -218,6 +256,17 @@ class Verdict(BaseModel):
             raise ValueError(f"a retro is about a desk area: ticker must be {DESK_PREFIX}<area>")
         if self.label not in ("ERROR", "ACT" if self.proposals else "PASS"):
             raise ValueError("a retro is ACT with proposals, PASS with nothing to change")
+        return self
+
+    @model_validator(mode="after")
+    def _book_stages(self) -> Verdict:
+        if self.stage != "pm_daily" and self.actions:
+            raise ValueError("only the pm_daily stage gives `actions`")
+        if self.stage in ("risk", "pm_daily") and self.ticker != BOOK:
+            raise ValueError(f"a {self.stage} verdict is about the book: ticker must be {BOOK!r}")
+        ids = [a.position_id for a in self.actions]
+        if len(set(ids)) != len(ids):
+            raise ValueError("each position appears once in `actions`")
         return self
 
     @field_validator("scores")
@@ -348,6 +397,8 @@ def record_verdict(
             fields["renewals"] = json.dumps([r.model_dump() for r in v.renewals])
         if v.stage == "retro":
             fields["proposals"] = json.dumps([p.model_dump() for p in v.proposals])
+        if v.stage == "pm_daily":
+            fields["actions"] = json.dumps([a.model_dump() for a in v.actions])
         if v.trade is not None:
             fields |= {
                 f"{TRADE_PREFIX}{k}": val
@@ -613,6 +664,71 @@ def record_book(
     return out
 
 
+def record_pm_daily(conn: Conn, verdict: Verdict, actor: str = "agent:pm") -> dict[str, Any]:
+    """Record the PM's daily review (card + evidence), then apply each of its ``actions`` as an
+    agent revision (ADR 0024): the book refuses a stop that is not higher, an open-position
+    action on a pending entry and the reverse (recorded as declined). Returns the record result
+    plus ``actions``: ``{position_id, action, revision_id, status, reason}`` each. An ERROR
+    verdict applies nothing."""
+    from solaraalpha.portfolio import book
+
+    if verdict.stage != "pm_daily":
+        raise ValueError(f"record_pm_daily needs stage 'pm_daily', got {verdict.stage!r}")
+    out = record_verdict(conn, verdict, actor)
+    done = []
+    for a in verdict.actions if verdict.label != "ERROR" else []:
+        new: dict[str, Any] = {}
+        if a.action == "tighten_stop":
+            new["stop"] = a.stop
+        elif a.action in ("take_partial", "exit"):
+            new = {"type": "market", **({"qty": a.qty} if a.action == "take_partial" else {})}
+        try:
+            with conn:
+                rid = book.propose_revision(
+                    conn,
+                    a.position_id,
+                    a.action,
+                    new,
+                    f"risk review: {a.reason}",
+                    actor,
+                    out["evidence_ids"],
+                    f"risk run {verdict.run_id}",
+                )
+        except (ValueError, KeyError) as e:
+            done.append(
+                {
+                    "position_id": a.position_id,
+                    "action": a.action,
+                    "revision_id": None,
+                    "status": "refused",
+                    "reason": str(e),
+                }
+            )
+            continue
+        row = book.revisions(conn, a.position_id)
+        row = row[row["revision_id"] == rid]
+        done.append(
+            {
+                "position_id": a.position_id,
+                "action": a.action,
+                "revision_id": rid,
+                "status": str(row["status"].iloc[0]) if len(row) else "proposed",
+                "reason": row["decision_reason"].iloc[0] if len(row) else None,
+            }
+        )
+    return {**out, "actions": done}
+
+
+def pm_called(conn: Conn, run_id: int) -> bool:
+    """Whether the PM reviews the book after daily run ``run_id`` (ADR 0036): the risk card
+    breaches a limit, or the risk manager called it (an ACT verdict)."""
+    cards = store.load_cards(run_id, BOOK, conn=conn)
+    card, verdict = cards.get("book_risk"), cards.get("risk")
+    return bool(card and float(card.get("escalate") or 0)) or bool(
+        verdict and verdict.get("label") == "ACT"
+    )
+
+
 def pm_decision(conn: Conn, run_id: int) -> dict[str, Any] | None:
     """The PM's verdict card for ``run_id`` with ``allocation`` and ``rotations`` parsed, or
     None when there is none or it is an ERROR (the planner then falls back to the owner)."""
@@ -754,7 +870,7 @@ def sector_members(conn: Conn, run_id: int, sector: str) -> list[str]:
 def outcome(conn: Conn, run_id: int, stage: str) -> dict[str, int]:
     """Counts of labels for ``stage`` in ``run_id`` (``total`` and ``errors``); for ``monitor``,
     ``postmortem``, ``macro`` and ``pm`` the cards instead of labels."""
-    if stage in ("monitor", "postmortem", "macro", "pm"):
+    if stage in ("monitor", "postmortem", "macro", "pm", "risk", "pm_daily"):
         df = query(
             "SELECT ticker, text FROM results WHERE run_id = ? AND model = ? AND field = 'label'",
             conn,

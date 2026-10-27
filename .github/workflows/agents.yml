@@ -6,6 +6,9 @@
 # open position and pending entry each weekday (docs/decisions/0024; event-triggered first,
 # capped by max_agent_tickers) and its changes are applied by the book as they are recorded;
 # the inbox says what to change in Trading212 and how to undo it. No positions: no monitor job.
+# After the monitors the risk manager reports the book's VaR / CVaR and P&L to the desk thread
+# (the owner's Telegram), and the PM reviews the book when a limit is breached or the risk
+# manager calls it, cutting risk as recorded (ADR 0036).
 #
 # Skipped when the triggering workflow did not succeed (a crashed scan leaves a partial run).
 # INERT UNTIL THE OWNER ADDS A CLAUDE SECRET: the gate job skips everything unless
@@ -53,7 +56,7 @@ env:
   # Edit(/data/...) is anchored at the repo root: a bare `data/...` is relative to the shell's
   # current directory, which moves when an agent `cd`s (HSP.L's verdict write was refused, run 14).
   ALLOWED_TOOLS: >-
-    Bash(uv run python scripts/announcement.py *),Bash(uv run --no-sync python scripts/announcement.py *),Bash(uv run python scripts/chat.py *),Bash(uv run --no-sync python scripts/chat.py *),Bash(uv run python scripts/events.py *),Bash(uv run --no-sync python scripts/events.py *),Bash(uv run python scripts/jet2_value.py *),Bash(uv run --no-sync python scripts/jet2_value.py *),Bash(uv run python scripts/monitor_pack.py *),Bash(uv run --no-sync python scripts/monitor_pack.py *),Bash(uv run python scripts/pm_pack.py *),Bash(uv run --no-sync python scripts/pm_pack.py *),Bash(uv run python scripts/postmortem_pack.py *),Bash(uv run --no-sync python scripts/postmortem_pack.py *),Bash(uv run python scripts/record.py *),Bash(uv run python scripts/track_record.py *),Bash(uv run --no-sync python scripts/track_record.py *),Bash(uv run --no-sync python scripts/record.py *),Bash(uv run python scripts/validate_pack.py *),Bash(uv run --no-sync python scripts/validate_pack.py *),Bash(uv run python scripts/plan.py --dry-run *),Bash(uv run --no-sync python scripts/plan.py --dry-run *),Edit(/data/processed/**),Glob,WebSearch,WebFetch
+    Bash(uv run python scripts/announcement.py *),Bash(uv run --no-sync python scripts/announcement.py *),Bash(uv run python scripts/chat.py *),Bash(uv run --no-sync python scripts/chat.py *),Bash(uv run python scripts/events.py *),Bash(uv run --no-sync python scripts/events.py *),Bash(uv run python scripts/jet2_value.py *),Bash(uv run --no-sync python scripts/jet2_value.py *),Bash(uv run python scripts/monitor_pack.py *),Bash(uv run --no-sync python scripts/monitor_pack.py *),Bash(uv run python scripts/pm_pack.py *),Bash(uv run --no-sync python scripts/pm_pack.py *),Bash(uv run python scripts/postmortem_pack.py *),Bash(uv run --no-sync python scripts/postmortem_pack.py *),Bash(uv run python scripts/record.py *),Bash(uv run python scripts/risk_pack.py *),Bash(uv run --no-sync python scripts/risk_pack.py *),Bash(uv run python scripts/track_record.py *),Bash(uv run --no-sync python scripts/track_record.py *),Bash(uv run --no-sync python scripts/record.py *),Bash(uv run python scripts/validate_pack.py *),Bash(uv run --no-sync python scripts/validate_pack.py *),Bash(uv run python scripts/plan.py --dry-run *),Bash(uv run --no-sync python scripts/plan.py --dry-run *),Edit(/data/processed/**),Glob,WebSearch,WebFetch
   # The desk thread's Telegram mirror (ADR 0033); unset, the agents still post to the DB thread.
   SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
   SOLARA_TELEGRAM_CHAT: ${{ secrets.SOLARA_TELEGRAM_CHAT }}
@@ -579,8 +582,116 @@ jobs:
             --position "${{ matrix.position }}" \
             --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }}, position ${{ matrix.position }})" || true
 
+  risk:
+    # the risk manager's daily report (ADR 0036): after the monitors, on the code's risk card;
+    # posts the report to the desk thread (the owner's Telegram) and may call the PM
+    needs: [gate, monitor]
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'daily' && needs.gate.outputs.monitor != '[]' && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - id: card
+        run: |
+          set +e
+          uv run --no-sync python scripts/risk_pack.py --run "${{ needs.gate.outputs.run }}" > /dev/null
+          rc=$?
+          set -e
+          if [ "$rc" = "0" ]; then echo "has=true" >> "$GITHUB_OUTPUT"; elif [ "$rc" = "3" ]; then echo "no risk card in this run" >> "$GITHUB_STEP_SUMMARY"; else exit "$rc"; fi
+      - id: agent
+        if: steps.card.outputs.has == 'true'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}  # the action otherwise wants an OIDC token (id-token: write)
+          prompt: "/risk --run ${{ needs.gate.outputs.run }}"
+          claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
+      - name: Record agent usage
+        if: always() && steps.agent.outcome != 'skipped'
+        run: >
+          uv run --no-sync python scripts/record.py usage --run "${{ needs.gate.outputs.run }}"
+          --ticker _BOOK --stage risk
+          --file "${{ steps.agent.outputs.execution_file }}"
+          --status "${{ steps.agent.outcome == 'success' && 'success' || 'failure' }}" || true
+      - name: ERROR if the agent failed or ended without recording a verdict
+        if: always() && steps.agent.outcome != 'skipped'
+        run: >
+          uv run --no-sync python scripts/record.py error _BOOK
+          --run "${{ needs.gate.outputs.run }}" --stage risk --if-missing
+          --reason "${{ steps.agent.outcome == 'failure' && 'claude-code-action failed or hit the turn limit' || 'the agent ended without recording a verdict' }} (job ${{ github.run_id }})" || true
+      - uses: actions/upload-artifact@v4  # the agent's transcript, to see why it failed
+        if: always() && steps.agent.outputs.execution_file != ''
+        with:
+          name: transcript-risk
+          path: ${{ steps.agent.outputs.execution_file }}
+          if-no-files-found: ignore
+          retention-days: 14
+
+  pm-daily:
+    # the PM's daily review, only when the risk card breaches a limit or the risk manager called
+    # it (record.py called; ADR 0036): risk-reducing actions, applied as recorded
+    needs: [gate, risk]
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'daily' && needs.risk.result == 'success' && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
+      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - id: called
+        run: |
+          set +e
+          uv run --no-sync python scripts/record.py called --run "${{ needs.gate.outputs.run }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" = "0" ]; then echo "go=true" >> "$GITHUB_OUTPUT"; elif [ "$rc" != "3" ]; then exit "$rc"; fi
+      - id: agent
+        if: steps.called.outputs.go == 'true'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}  # the action otherwise wants an OIDC token (id-token: write)
+          prompt: "/pm-daily --run ${{ needs.gate.outputs.run }}"
+          claude_args: '--max-turns ${{ env.MAX_TURNS }} --allowedTools "${{ env.ALLOWED_TOOLS }}"'
+      - name: Record agent usage
+        if: always() && steps.agent.outcome != 'skipped'
+        run: >
+          uv run --no-sync python scripts/record.py usage --run "${{ needs.gate.outputs.run }}"
+          --ticker _BOOK --stage pm_daily
+          --file "${{ steps.agent.outputs.execution_file }}"
+          --status "${{ steps.agent.outcome == 'success' && 'success' || 'failure' }}" || true
+      - name: ERROR if the agent failed or ended without recording a verdict
+        if: always() && steps.agent.outcome != 'skipped'
+        run: >
+          uv run --no-sync python scripts/record.py error _BOOK
+          --run "${{ needs.gate.outputs.run }}" --stage pm_daily --if-missing --actor agent:pm
+          --reason "${{ steps.agent.outcome == 'failure' && 'claude-code-action failed or hit the turn limit' || 'the agent ended without recording a verdict' }} (job ${{ github.run_id }})" || true
+      - uses: actions/upload-artifact@v4  # the agent's transcript, to see why it failed
+        if: always() && steps.agent.outputs.execution_file != ''
+        with:
+          name: transcript-pm-daily
+          path: ${{ steps.agent.outputs.execution_file }}
+          if-no-files-found: ignore
+          retention-days: 14
+
   monitor-outcome:
-    needs: [gate, monitor, postmortem]
+    needs: [gate, monitor, postmortem, risk, pm-daily]
     if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'daily' && (needs.gate.outputs.monitor != '[]' || needs.gate.outputs.postmortem != '[]') && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -595,6 +706,7 @@ jobs:
       - run: uv sync --no-default-groups
       - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage monitor | tee -a "$GITHUB_STEP_SUMMARY" || true
       - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage postmortem | tee -a "$GITHUB_STEP_SUMMARY" || true
+      - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage risk | tee -a "$GITHUB_STEP_SUMMARY" || true
       - name: Notify the owner of plan changes applied, revision proposals and errors (GitHub inbox issue)
         env:
           GH_TOKEN: ${{ github.token }}

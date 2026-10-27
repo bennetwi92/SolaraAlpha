@@ -42,3 +42,9 @@ benchmark = "^FTAI"        # equity-curve comparison (Yahoo ticker): FTSE AIM Al
 shortlist_size = 7         # top-ranked tickers the screen sends to the agents a week (ADR 0022, #192)
 shortlist_catalysts = 3    # at most this many more join the shortlist on a catalyst (outside the top N)
 min_adv_gbp = 25000.0      # the screen's liquidity floor: 20-session median daily traded value, GBP
+# The risk manager's daily report (ADR 0036): VaR and CVaR of the book at this confidence over
+# this many sessions (historical simulation, and EWMA-filtered); the larger of the two above
+# max_var x equity calls the PM's daily review (owner, 2026-10-27: "the standard 95 and 5")
+var_confidence = 0.95      # one session in twenty is worse than the VaR
+var_horizon_days = 5       # a trading week: the book trades weekly
+max_var = 0.05             # 5-day 95% VaR above 5% of equity: the PM reviews the book that day
