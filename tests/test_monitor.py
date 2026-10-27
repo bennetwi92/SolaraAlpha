@@ -158,6 +158,10 @@ def test_pack_then_now_diff_and_thesis(
     assert pack["entry_conditions"]["technical"]["trend"] == 0.9
     assert set(pack["now"]) >= {"technical", "position", "levels", "relative_strength"}
     assert pack["now"]["position"]["entry_price"] == 1500.0
+    latest = pack["latest"]
+    assert len(latest["bars"]) == 10 and latest["date"] == latest["bars"][-1]["date"]
+    assert latest["weekly_date"] <= latest["date"] and latest["close"] > 0
+    assert latest["change_vs_weekly"] == pytest.approx(latest["close"] / latest["weekly_close"] - 1)
     assert set(pack["now_labels"]) == {"technical", "levels", "relative_strength", "liquidity"}
     d = pack["diff"]["technical.trend"]
     assert (

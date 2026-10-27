@@ -65,7 +65,7 @@ Current state:
   `events` (the shortlist). **The screen is a ranked shortlist** (`pipeline.screen`, ADR 0014
   amendment #192): past a sanity floor (no ERROR, `min_adv_gbp`), stocks are ranked by
   `portfolio.fit.rank_score` (mean of technical `trend`, levels `compression`, fundamentals
-  `growth`); the top `shortlist_size` (7) plus up to `shortlist_catalysts` (3) with a fresh
+  `growth`); the top `shortlist_size` (12, owner 2026-10-27) plus up to `shortlist_catalysts` (3) with a fresh
   catalyst (`solaraalpha.catalysts.fresh_catalysts`: new filings, headlines naming the company,
   scheduled events, tiered information > scheduled > discovery > warnings only, slots by tier
   then rank, #222)
@@ -323,7 +323,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         entry conditions, reviews, revisions, triggers, agent verdicts + evidence,
                         weekly bars as seen at the close (post-exit weeks = hindsight) — 0016
   monitoring.py         the monitor's pack: position then (entry conditions) vs now (fresh cards),
-                        thesis conditions evaluated, triggers + filing text — docs/decisions/0018
+                        the latest daily bars, thesis conditions evaluated, triggers + filing
+                        text — docs/decisions/0018
   catalysts.py          fresh_catalysts: ticker -> tier-tagged one-line reason (new material filings,
                         headlines, a scheduled event in the window); a stock with one can join the
                         shortlist, best tier first

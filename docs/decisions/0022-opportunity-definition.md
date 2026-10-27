@@ -48,3 +48,11 @@ reference that every toolkit, band and agent is checked against.
 reviewed against this ADR in follow-up issues: the ranked shortlist, a catalyst route onto the
 shortlist, levels as compression context, and the relative-strength investigation. Until those
 land, the bands still run as coded.
+
+**Amendment (2026-10-27, owner).** "Recent or upcoming" is applied in research as written: a
+stock can be ACT on news from the last 30 days, on a dated catalyst inside the horizon, or on a
+company-reported upgrade up to 60 days old that the price is confirming (breakout or near a
+52-week high). The last two alone are low conviction (research confidence ≤ 0.6, PM 1% risk).
+Before this, research let only the last 30 days argue for ACT and downgraded 12 of 16 validated
+names in runs 9 and 14, nearly all for "no fresh catalyst". The shadow book measures whether
+the extra small trades pay.

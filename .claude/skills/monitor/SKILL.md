@@ -67,6 +67,11 @@ Read `pack.json` in the printed directory:
 - `state`: shares, average cost, stop, risk at the stop, R unit; `orders`; `plan` (the trade
   plan the position was drafted from: entry, stop, targets, horizon, flags).
 - `entry_conditions`: the cards frozen when the position was drafted ("then").
+- `latest`: the last 10 daily sessions (`bars`: OHLC, volume), the latest `close` and its
+  `date`, the last `weekly_close` and `change_vs_weekly`, the 10-session `high_n` / `low_n`.
+  **Judge today's price on `latest`, not on the weekly cards**: `now` is built on completed
+  weeks, so midweek it ends on last Friday. Distance to a pending entry, to the stop and to the
+  target is from `latest.close` (and today's high / low); quote its date.
 - `now`: fresh `technical` (and for an open position `position`: the chandelier stop, R so far,
   hold / review / exit), `levels`, `relative_strength` cards; `now_labels`; `now_errors`.
 - `diff`: then → now for trend, momentum, entry, structure, reward:risk, rs, growth, quality.
