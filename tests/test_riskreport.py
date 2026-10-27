@@ -291,3 +291,21 @@ def test_the_risk_pack_script(
     with pytest.raises(SystemExit) as e:
         risk_pack.main(["--run", str(empty), *dbarg])
     assert e.value.code == 3
+
+
+def test_a_weekend_deposit_is_not_counted_as_profit(db_backend: Path | None) -> None:
+    a = _px("A.L", 0.02 * np.random.default_rng(2).standard_normal(300))
+    conn = book.connect(db_backend)
+    with conn:
+        book.cash_event(conn, "deposit", 5_000.0, at="2026-10-17T09:00:00+00:00")  # a Saturday
+        pid, oid = book.draft_position(
+            conn, "A.L", 1000.0, 900.0, 10, at="2026-10-19T18:00:00+00:00"
+        )
+        book.approve_position(conn, pid)
+        book.fill(
+            conn, oid, 10, float(a["close"].iloc[-3]), at=f"{a.index[-3]:%Y-%m-%d}T10:00:00+00:00"
+        )
+    card = build_risk(conn, {"A.L": a}, None, _rules())
+    assert card is not None
+    assert card["pnl_total"] == pytest.approx(card["equity"] - 5000, abs=0.01)
+    conn.close()

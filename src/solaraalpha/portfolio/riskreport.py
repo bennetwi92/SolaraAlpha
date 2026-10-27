@@ -489,7 +489,8 @@ def build_risk(
         "avg_corr": _num(avg_corr),
         "pnl_day": round(pnl_day, 2),
         "pnl_mtd": round(float(eq.iloc[-1]) - base - mtd_flow, 2),
-        "pnl_total": round(summary.pnl, 2),
+        # every deposit and withdrawal so far: a weekend one is off the business-day curve
+        "pnl_total": round(equity - (float(flow[flow.index <= t].sum()) if len(flow) else 0.0), 2),
         "twr": _num(summary.twr),
         "bench_day": _num(bret),
         "bench_total": _num(summary.benchmark) if summary.benchmark is not None else None,
