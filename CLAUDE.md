@@ -75,7 +75,8 @@ Current state:
   compression / breakout context (`compression`, `compressed`, `wedge`, `new_high`, ADR 0004
   amendment #194; the breakout `trigger` only when `compressed`, amendment #210); relative
   strength is agent context with no bands (per-horizon z, `leadership` and `rs_spike` flags; ADR
-  0011 amendment #210, docs/research/0001). Stocks:
+  0011 amendment #210, docs/research/0001; re-tested in 0009: `rs` no edge, `rs_spike` a real
+  warning, `leadership` suggestive). Stocks:
   `config/watchlist.toml` (hand snapshot with a `snapshot` date; the scan warns once a quarterly
   FTSE review month has passed since it). After the pipeline the scan **reviews every open position** (all
   toolkits with the position's entry → a `review` card; the trailing stop is context for the
