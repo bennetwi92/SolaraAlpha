@@ -8,9 +8,10 @@ publication time. Free, no key. The search endpoint is the one the NSM website i
 
 The issuer is identified by its **LEI**, which survives renames (Jet2 plc filed as Dart Group
 plc until 2020). :func:`resolve_issuer` maps an LSE ticker to its LEI from ``config/issuers.toml``
-(looked up once per stock: an LEI never changes); a ticker not listed there goes TIDM → ISIN via
-the London Stock Exchange instrument endpoint, then ISIN → LEI via GLEIF (the official LEI
-registry). The LSE endpoint answers 403 from cloud runners, so the pipeline relies on the file.
+(the watchlist, looked up once per stock: an LEI never changes), else from
+``config/research_universe.toml`` (every AIM company Trading212 offers; LEI from GLEIF by ISIN),
+else from the NSM filer whose name matches the research universe's (:func:`lei_by_name`: GLEIF
+does not link many non-UK issuers' ISINs to their LEI, but they file on the NSM under it).
 
 ``published`` is the publication time (tz-aware UTC). That is when the market could first act
 on the announcement; see :func:`solaraalpha.analysis.events.reactions` for the session it lands in.
@@ -18,7 +19,9 @@ on the announcement; see :func:`solaraalpha.analysis.events.reactions` for the s
 
 from __future__ import annotations
 
+import re
 import tomllib
+import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import cache
@@ -27,14 +30,14 @@ from html.parser import HTMLParser
 import pandas as pd
 
 from solaraalpha.config import REPO_ROOT
-from solaraalpha.data.http import DEFAULT_TIMEOUT, get_json, session
+from solaraalpha.data.http import DEFAULT_TIMEOUT, session
 from solaraalpha.data.prices import LOOKBACK_YEARS
 
 NSM_SEARCH_URL = "https://api.data.fca.org.uk/search?index=nsm-search"
 NSM_DOC_BASE = "https://data.fca.org.uk/artefacts/"
-LSE_INSTRUMENT_URL = "https://api.londonstockexchange.com/api/gw/lse/instruments/alldata/{tidm}"
-GLEIF_URL = "https://api.gleif.org/api/v1/lei-records"
+GLEIF_URL = "https://api.gleif.org/api/v1/lei-records"  # ISIN -> LEI (scripts/research_universe.py)
 ISSUERS = REPO_ROOT / "config" / "issuers.toml"
+RESEARCH_UNIVERSE = REPO_ROOT / "config" / "research_universe.toml"
 COLUMNS = [
     "published",
     "type_code",
@@ -54,8 +57,8 @@ class Issuer:
     ticker: str
     isin: str
     lei: str
-    name: str  # legal name (GLEIF)
-    market: str  # e.g. "AIM", "MAINMARKET" (LSE); "" when read from config/issuers.toml
+    name: str  # legal name (as filed), or the research universe's short name
+    market: str  # "AIM" for a research-universe stock, else ""
 
 
 @cache
@@ -65,30 +68,27 @@ def known_issuers() -> dict[str, dict[str, str]]:
         return tomllib.load(f)["issuers"]
 
 
+@cache
+def research_issuers() -> dict[str, dict[str, str]]:
+    """``config/research_universe.toml``: ticker -> ``{"name", "isin", "lei", "t212"}``."""
+    with RESEARCH_UNIVERSE.open("rb") as f:
+        return tomllib.load(f)["stocks"]
+
+
 def resolve_issuer(ticker: str) -> Issuer:
     """Identify the issuer behind an LSE Yahoo ticker (e.g. ``"JET2.L"``)."""
     if not ticker.endswith(".L"):
         raise ValueError(f"only LSE tickers (*.L) are supported, got {ticker!r}")
     if known := known_issuers().get(ticker):
         return Issuer(ticker, "", known["lei"], known["name"], "")
-    tidm = ticker.removesuffix(".L")
-    lse = get_json(LSE_INSTRUMENT_URL.format(tidm=tidm))
-    assert isinstance(lse, dict)
-    gleif = get_json(GLEIF_URL, **{"filter[isin]": lse["isin"]})
-    assert isinstance(gleif, dict)
-    return parse_issuer(ticker, lse, gleif)
-
-
-def parse_issuer(ticker: str, lse: dict, gleif: dict) -> Issuer:
-    if not gleif["data"]:
-        raise ValueError(f"no LEI found for ISIN {lse['isin']}")
-    rec = gleif["data"][0]["attributes"]
-    return Issuer(
-        ticker=ticker,
-        isin=lse["isin"],
-        lei=rec["lei"],
-        name=rec["entity"]["legalName"]["name"],
-        market=lse.get("market") or "",
+    if r := research_issuers().get(ticker):
+        if r["lei"]:
+            return Issuer(ticker, r["isin"], r["lei"], r["name"], "AIM")
+        if found := lei_by_name(r["name"]):
+            return Issuer(ticker, r["isin"], found[1], found[0], "AIM")
+    raise ValueError(
+        f"no LEI for {ticker}: add it to config/issuers.toml "
+        "(scripts/issuers.py finds the NSM candidates by name)"
     )
 
 
@@ -174,6 +174,33 @@ def filers(payload: dict) -> list[tuple[str, str, int]]:
             row[2] += 1
     rows = [(co, lei, n) for lei, (co, _, n) in seen.items()]
     return sorted(rows, key=lambda r: -r[2])
+
+
+_LEGAL = {"plc", "ltd", "limited", "inc", "incorporated", "corp", "corporation", "company", "co"}
+_LEGAL |= {"public", "oy", "sa", "ag", "nv", "se", "llc", "the"}
+
+
+def _norm(name: str) -> str:
+    """A company name without case, accents, punctuation or legal-form words ("Arrow
+    Exploration Corp." and "ARROW EXPLORATION CORP" -> "arrow exploration")."""
+    plain = unicodedata.normalize("NFKD", name.lower()).encode("ascii", "ignore").decode()
+    plain = re.sub(r"[.'\-]", "", plain.replace("&", " and "))  # Fever-Tree, M.S.
+    words = re.sub(r"[^a-z0-9]+", " ", plain).split()
+    return " ".join(w for w in words if w not in _LEGAL)
+
+
+def match_filer(name: str, found: list[tuple[str, str, int]]) -> tuple[str, str] | None:
+    """``(company, lei)`` of the filer in ``found`` (:func:`search_issuers`) whose name is
+    ``name``, ignoring case, punctuation and legal form; ``None`` when none is. The NSM search
+    matches substrings (a search for "UIL" ranks Quilter first), so the top hit is not enough."""
+    want = _norm(name)
+    return next(((co, lei) for co, lei, _ in found if _norm(co) == want), None)
+
+
+@cache
+def lei_by_name(name: str) -> tuple[str, str] | None:
+    """The NSM filer named ``name`` (:func:`match_filer` over :func:`search_issuers`)."""
+    return match_filer(name, search_issuers(name))
 
 
 def _iso(ts: pd.Timestamp) -> str:

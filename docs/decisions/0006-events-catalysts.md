@@ -83,3 +83,12 @@ days since `retrieved_to`, and recent catalysts, upcoming events and the verdict
 redone. Where `config/value_models.toml` registers a value model for the stock (Jet2 today, ADR
 0009), research calls it to turn the catalysts into an earnings and fair-value impact instead
 of guessing.
+
+**Amendment (2026-10-28).** The LSE instrument endpoint answers 403 from the cloud, so the LEI no
+longer comes through it: `resolve_issuer` reads `config/issuers.toml` (the watchlist), else
+`config/research_universe.toml` (LEI from GLEIF by ISIN), else the NSM filer whose name matches
+the research universe's, ignoring case, accents, punctuation and legal form (`match_filer`; the
+NSM's name search matches substrings, so its top hit alone is not trusted). A ticker in neither
+file fails with a pointer to `scripts/issuers.py`. 46 of the research universe's 53 blank LEIs
+(mostly non-UK issuers whose ISIN GLEIF does not link) were filled this way; 7 have no NSM filer
+under that name.
