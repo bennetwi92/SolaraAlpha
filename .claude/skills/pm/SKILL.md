@@ -130,8 +130,9 @@ research or monitor note when you consider rotating it.
    - **mid (2%)**: a good trade with an ordinary caveat.
    - **low (1%)**: worth owning but with a named doubt (priced-in risk, an event soon, thin
      volume, a gap in the research). Below that conviction, don't fund it. A research ACT on
-     an *upcoming* or *confirmed* catalyst alone (nothing new in 30 days, research's
-     fresh-information rule) is 1% at most.
+     one catalyst kind alone (*recent*, *upcoming* or *confirmed*, research's
+     fresh-information rule) is 1% at most: AIM prices news within minutes, so recent news
+     alone is mostly priced by the weekly run (docs/research/0007). 2-3% needs two.
    - **financing cap**: a loss-maker with under 12 months' runway and no completed raise gets
      1% at most, whatever else the case has (a placing gaps through any stop). Read the
      candidate's `financing` (`loss_making`, `runway_now_months` from `cash_period`,

@@ -56,3 +56,11 @@ company-reported upgrade up to 60 days old that the price is confirming (breakou
 Before this, research let only the last 30 days argue for ACT and downgraded 12 of 16 validated
 names in runs 9 and 14, nearly all for "no fresh catalyst". The shadow book measures whether
 the extra small trades pay.
+
+**Amendment (2026-10-28, owner).** Any one of the three alone is low conviction, *recent*
+included (research confidence ≤ 0.6, PM 1% risk); 2-3% needs two of them (e.g. good results
+the price is still confirming, or recent news with results due inside the horizon). Research
+0007: AIM prices a big news day's move about 80% within 15 minutes of the open, with only a
+small further drift (good results +2-3% in a week, little else), so by the weekly run recent
+news alone is mostly priced. Recent news still counts as a catalyst for ACT and for the
+shortlist's catalyst slots; only its sizing changes.
