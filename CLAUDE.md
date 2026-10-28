@@ -287,6 +287,7 @@ Current state:
 | Fresh catalysts (filings, headlines, scheduled events) per stock | `uv run python scripts/catalysts.py [TICKERS...] [--days 7] [--horizon 10] [--no-news]` |
 | Refresh the watchlist (FTSE AIM 100 + AIM UK 50; by hand, never CI) | `uv run python scripts/universe.py [--write]` |
 | LEIs for new watchlist stocks (`config/issuers.toml`; NSM name search; check the names) | `uv run python scripts/issuers.py [--write]` |
+| Refresh the AIM research universe (every AIM company Trading212 offers: its London lines minus the FCA Official List; by hand, never CI; needs the Trading212 keys) | `uv run python scripts/research_universe.py [--write]` |
 | Book trades by hand (draft, approve, amend, reject, tickets, placed, fills, exits) | `uv run python scripts/book.py new JET2.L --entry 1520 --stop 1400 --qty 100` / `list` / `show ID` / `approve ID` / `amend ID --qty N --price P --stop P` / `reject ID --reason TEXT` / `tickets` / `placed ORDER_ID [ORDER_ID ...] [--ref REF]` / `fill ORDER_ID --qty N --price P [--commission X]` / `unfilled ORDER_ID` / `cancel ORDER_ID` / `expire` / `exit ID --reason stop|target|thesis_broken|...` / `cash dividend TICKER GBP --at EXDATE` / `split ID --ratio 2:1` / `corporate-close ID --price P --reason takeover|delisting` / `stats [--since D]` (`--db PATH` for a local file; from GitHub: the **Book** workflow, `gh workflow run book.yml -f command='cash deposit 5000'`; `-f script=plan.py -f command='--run 8'` re-plans a run) |
 | Plan the week's trades from a saved scan run (final ACT labels → plan → fit → approved positions) | `uv run python scripts/plan.py --run N [--dry-run] [--replan]` (`--replan`: again for tickers whose draft was rejected; also records the shadow book's agent-paired baselines, ADR 0028) |
 | Weekly pack for a run (new plans with approve/reject commands, fit rejections, watch list, open positions, money, errors) | `uv run python scripts/weekly_pack.py --run N [--out FILE] [--report FILE]` |
@@ -360,6 +361,8 @@ src/solaraalpha/        importable package — all reusable code lives here
     announcements.py    regulatory filings for one issuer (FCA NSM, by LEI), ticker → LEI
                         (LSE + GLEIF), announcement full text
     news.py             press headlines (Google News RSS), discovery only
+    official_list.py    the FCA Official List (CSV) and aim_lines: Trading212's London lines not on
+                        it = the AIM research universe (#290)
     trading212.py       Trading212 API, read-only (GET only): account summary, positions, pending
                         and historical orders with fills, dividends, transactions, instruments;
                         lse_lines (Yahoo ticker -> Trading212 ticker) — 0030
@@ -431,6 +434,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         `shadow` table, record (scan / plan time) and load — 0028
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM 100 + AIM UK 50 snapshot)
+config/research_universe.toml  research only: every AIM company Trading212 offers (#290; snapshot,
+                        ticker -> name, ISIN, LEI, Trading212 ticker); not the live watchlist
 config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)
 config/issuers.toml     per-stock LEI + legal name: how filings are found (the LSE lookup 403s in CI)
 config/value_models.toml  per-stock value models (skill + script) the research agent calls — #127
