@@ -359,7 +359,8 @@ src/solaraalpha/        importable package — all reusable code lives here
     fundamentals.py     statements, TTM EPS, P/E / forward P/E / market cap for one stock
                         (Yahoo fundamentals-timeseries API), tidy long frame
     announcements.py    regulatory filings for one issuer (FCA NSM, by LEI), ticker → LEI
-                        (LSE + GLEIF), announcement full text
+                        (issuers.toml, research_universe.toml, else the NSM filer of the same
+                        name), announcement full text
     news.py             press headlines (Google News RSS), discovery only
     official_list.py    the FCA Official List (CSV) and aim_lines: Trading212's London lines not on
                         it = the AIM research universe (#290)

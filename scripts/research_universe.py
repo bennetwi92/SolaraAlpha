@@ -4,7 +4,8 @@ The LSE's own lists answer 403 from the cloud (bot protection), so the universe 
 them: the London share lines Trading212 offers in pence, minus every ISIN on the FCA Official List
 (AIM shares are not on it), minus preference lines and funds (by name). Each line is then checked
 on Yahoo (a bar in the last 10 days, else excluded as stale or delisted) and its ISIN looked up on
-GLEIF for the LEI the NSM files under. Writes config/research_universe.toml (with --write).
+GLEIF for the LEI the NSM files under (else the NSM filer whose name matches: GLEIF does not link
+many non-UK issuers' ISINs). Writes config/research_universe.toml (with --write).
 
 This is a research universe, not the live watchlist: today's companies only (the leavers ledger,
 #291, bounds the survivorship bias), and only those Trading212 offers (what we could trade). The
@@ -25,7 +26,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from solaraalpha.data.announcements import GLEIF_URL
+from solaraalpha.data.announcements import GLEIF_URL, lei_by_name
 from solaraalpha.data.http import get_json
 from solaraalpha.data.official_list import aim_lines, fetch_official_list, listed_isins
 from solaraalpha.data.prices import fetch_daily
@@ -39,7 +40,7 @@ HEADER = """\
 # Trading212 offers in pence, built by scripts/research_universe.py from free sources: Trading212's
 # instruments (London share lines in GBX) minus every ISIN on the FCA Official List (AIM shares are
 # not on it), minus preference lines and funds, minus lines with no Yahoo bar in the last {stale}
-# days. `lei` from GLEIF by ISIN ("" = none found). No liquidity cut here: studies apply the £10k
+# days. `lei` from GLEIF by ISIN, else the NSM filer of the same name ("" = none found). No liquidity cut here: studies apply the £10k
 # research floor point-in-time. Research only, not the live watchlist; today's companies only
 # (survivor snapshot: see the leavers ledger, #291). Refresh by hand:
 # `uv run python scripts/research_universe.py --write`.
@@ -64,14 +65,17 @@ def check_prices(ticker: str, day: date) -> tuple[str, float]:
     return "", float(value.median())
 
 
-def lei_for(isin: str) -> str:
-    """The LEI GLEIF holds for an ISIN, or "" when none."""
+def lei_for(isin: str, name: str) -> str:
+    """The LEI GLEIF holds for an ISIN, else the NSM filer named ``name``, or "" when neither."""
     try:
         data = get_json(GLEIF_URL, **{"filter[isin]": isin})
+        assert isinstance(data, dict)
+        if data["data"]:
+            return str(data["data"][0]["attributes"]["lei"])
+        found = lei_by_name(name)
     except Exception:
         return ""
-    assert isinstance(data, dict)
-    return str(data["data"][0]["attributes"]["lei"]) if data["data"] else ""
+    return found[1] if found else ""
 
 
 def toml_str(s: str) -> str:
@@ -103,7 +107,7 @@ def main(argv: list[str] | None = None) -> None:
     lines["why"], lines["adv60"] = reasons, adv
     dropped = lines[lines["why"] != ""]
     kept = lines[lines["why"] == ""].copy()
-    kept["lei"] = [lei_for(i) for i in kept["isin"]]
+    kept["lei"] = [lei_for(i, n) for i, n in zip(kept["isin"], kept["name"], strict=True)]
 
     for r in dropped.itertuples():
         print(f"excluded {r.ticker} ({r.name}): {r.why}", file=sys.stderr)
