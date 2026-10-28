@@ -105,7 +105,7 @@ to any of them.
 | 2 | #285 | E1, B4: placings event study | the most AIM-specific forced-seller case; `financing.py` already finds the raises |
 | 3 | #286 | B1, B2: the 52-week-high anchor and the gains overhang | prices and volume only, on the panel we already build |
 | 4 | #287 | B3, E3: exclusion pass (lottery stocks, `rs_spike`, overdue updates) | builds on 0008 and 0009; long-only value |
-| — | #288 | E5: the research universe | the owner's call; recommended: decide after 1–4 |
+| first | #290, #291 | E5: the research universe | **decided by the owner (#288), see the amendment below**; the tests wait for it |
 
 Two more ideas are noted and left until later:
 
@@ -114,6 +114,26 @@ Two more ideas are noted and left until later:
 - **Calendar flows** (E1): tax-loss selling before 5 April, AIM index reviews, the IHT relief
   halving from April 2026. Each has only a handful of in-sample occurrences. They are context
   for the agents, not testable signals yet.
+
+## Amendment 2026-10-28: the universe (#288)
+
+The owner decided to go well below the AIM 100, to micro caps:
+
+- **AIM only.**
+- **No upper size limit.** The whole of AIM is in, with the AIM 100 as the control, and results
+  are split by size (AIM 100 / the rest / under £50m).
+- **Research liquidity floor £10k a day** (20-session median, point-in-time). The live
+  `min_adv_gbp` stays at £25k.
+
+A data check from the cloud container found:
+
+- Yahoo has full daily history for small AIM stocks still listed, and nothing for delisted ones.
+- The LSE blocks the cloud, so the company list is fetched by hand.
+- The NSM still holds the filings of companies that left.
+
+So the universe is built first (#290), with a leavers ledger from the NSM (#291) to bound the
+survivorship bias every wide-universe note reports. Research 0005 is amended to the wide
+universe before it runs (#284).
 
 ## Caveats
 
