@@ -1,7 +1,7 @@
-"""Research 0008: the evidence behind the relative-strength toolkit, under ADR 0029.
+"""Research 0009: the evidence behind the relative-strength toolkit, under ADR 0029.
 
-uv run python scripts/research/r8_relative_strength.py build PANEL_DIR   # one fetch per ticker
-uv run python scripts/research/r8_relative_strength.py report PANEL_DIR  # the note's tables
+uv run python scripts/research/r9_relative_strength.py build PANEL_DIR   # one fetch per ticker
+uv run python scripts/research/r9_relative_strength.py report PANEL_DIR  # the note's tables
 
 ``build`` writes one parquet per watchlist stock to PANEL_DIR (keep it out of data/): per Friday
 the toolkit's own outputs (``rs``, market / industry / peers scores, market z per horizon, the

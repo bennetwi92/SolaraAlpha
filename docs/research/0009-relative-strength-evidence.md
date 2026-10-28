@@ -1,4 +1,4 @@
-# Research 0008: What the evidence says about the relative-strength toolkit
+# Research 0009: What the evidence says about the relative-strength toolkit
 
 *2026-10-28. Follows research 0001 and ADR 0011 (amendment #210). Run under ADR 0029: Monday-open
 entry, the `burst_10w` target, in-sample weeks only. Nothing in the pipeline is changed.*
@@ -155,8 +155,8 @@ agents see the two flags. Each of those choices is borne out:
 ## Reproduce
 
 ```
-uv run python scripts/research/r8_relative_strength.py build PANEL_DIR   # ~10 min, one fetch per ticker
-uv run python scripts/research/r8_relative_strength.py report PANEL_DIR  # the tables above
+uv run python scripts/research/r9_relative_strength.py build PANEL_DIR   # ~10 min, one fetch per ticker
+uv run python scripts/research/r9_relative_strength.py report PANEL_DIR  # the tables above
 ```
 
 **A method note.** A first pass ranked the burst outcome *after* subtracting the volatility
