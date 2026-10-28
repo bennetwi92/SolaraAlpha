@@ -25,9 +25,13 @@ Two rules frame everything:
     price is confirming now (a breakout, a new 52-week high, or within ~3% of one, on the
     chart context, Step 3c). The market is still taking it in.
 
-  An ACT on *upcoming* or *confirmed* alone is **low conviction**: confidence at most 0.6,
+  An ACT on **any one of the three alone** is **low conviction**: confidence at most 0.6,
   with the doubt named in the verdict summary ("catalyst is 7 weeks old, price confirming";
-  "nothing new yet, interims due 24 Nov"), so the PM sizes it at 1%. Older material is
+  "nothing new yet, interims due 24 Nov"; "results 12 days ago, priced on the day"), so the
+  PM sizes it at 1%. AIM prices news within minutes of the open (docs/research/0007): by the
+  weekly run a *recent* catalyst is mostly in the price. Higher confidence needs **two**:
+  e.g. good results with the price still confirming them, or recent news with results or a
+  trading update due inside the horizon. Older material is
   **background**: it sets the scene and is labelled as such. Every evidence item
   records `published` and `retrieved`; anything published *after* the run's card `date` is
   flagged in its `summary` as "post-dates the card".
