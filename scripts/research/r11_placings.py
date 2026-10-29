@@ -25,6 +25,9 @@ import pyarrow.parquet as pq
 
 from solaraalpha.analysis.financing import RAISE
 from solaraalpha.analysis.universe import SIZES, research_tickers
+from solaraalpha.data.announcements import fetch_text
+from solaraalpha.data.http import patient
+from solaraalpha.data.raises import directors_in, issue_price, use_class
 
 FIRST, LAST = pd.Timestamp("2022-12-16", tz="UTC"), pd.Timestamp("2025-08-08", tz="UTC")
 LAG = 4  # weeks: the second entry, "once the overhang clears"
@@ -130,6 +133,62 @@ def count(panel: Path) -> None:
     print("| by year | " + ", ".join(f"{y}: {n}" for y, n in yr.items()) + " |")
 
 
+# --- pre-step ---------------------------------------------------------------------------------
+
+
+def text(panel: Path, url: str) -> str:
+    out = panel / "raise" / (url.rsplit("/", 1)[-1] + ".txt")
+    if not out.exists():
+        out.parent.mkdir(exist_ok=True)
+        out.write_text(patient(fetch_text, url))
+    return out.read_text()
+
+
+def raise_text(panel: Path, ev: pd.Series) -> str:
+    """The raise's filings' texts, in publication order, joined."""
+    return "\n\n".join(text(panel, u) for u in ev["urls"])
+
+
+def past_floor(panel: Path) -> pd.DataFrame:
+    e = events(panel)
+    m = e.merge(panel_meta(panel), on=["ticker", "week"], how="left")
+    return m[m["floor"].fillna(False).astype(bool)].reset_index(drop=True)
+
+
+def pick(panel: Path, seed: int, skip: int | None = None) -> pd.DataFrame:
+    """40 events past the floor at random (``seed``); ``skip``: leave out that seed's 40."""
+    e = past_floor(panel).sort_values(["published", "id"]).reset_index(drop=True)
+    pool = list(range(len(e)))
+    if skip is not None:
+        random.seed(skip)
+        gone = set(random.sample(pool, 40))
+        pool = [i for i in pool if i not in gone]
+    random.seed(seed)
+    return e.iloc[sorted(random.sample(pool, 40))].reset_index(drop=True)
+
+
+def sample(panel: Path, seed: int = SEED, skip: int | None = None) -> pd.DataFrame:
+    """The pre-step events with the rules' reading (written to PANEL_DIR/prestep_<seed>.csv)."""
+    e = pick(panel, seed, skip)
+    rows = []
+    for _, ev in e.iterrows():
+        t = raise_text(panel, ev)
+        rows.append(
+            {
+                "ticker": ev["ticker"],
+                "published": ev["published"],
+                "id": ev["id"],
+                "headline": ev["headline"],
+                "rules_price": issue_price(t),
+                "rules_use": use_class(t),
+                "rules_directors": directors_in(t),
+            }
+        )
+    out = pd.DataFrame(rows)
+    out.to_csv(panel / f"prestep_{seed}.csv", index=False)
+    return out
+
+
 if __name__ == "__main__":
     step, panel = sys.argv[1], Path(sys.argv[2])
-    {"count": count}[step](panel)
+    {"count": count, "sample": sample}[step](panel)

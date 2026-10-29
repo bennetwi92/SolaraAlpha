@@ -1,0 +1,41 @@
+n,event_id,ticker,event_date,headline,hand_event_ok,late_days,hand_price_p,hand_use,hand_directors,note,rules_price,rules_use,rules_directors
+1,4611237,HE1.L,2022-12-13,Proposed Fundraise of Minimum £7.0 million,True,0.0,5.0,other,True,,5.0,other,True
+2,4685939,MKA.L,2023-02-27,MKANGO PROVIDES UPDATE ON PLACING,True,14.0,12.5,other,False,late: placing announced 13 Feb,,other,False
+3,4748901,TERN.L,2023-04-25,Konektio Fundraise,False,,,,,"a portfolio company's raise, not the issuer's",,other,False
+4,4831019,CHAR.L,2023-07-11,Result of Oversubscribed Placing and Subscription,True,0.0,14.0,other,False,,14.0,other,True
+5,4847090,GWMO.L,2023-07-26,Placing of New Ordinary Shares,True,0.0,0.055,working_capital,True,,,other,True
+6,4902067,HAYD.L,2023-09-15,Result of Fundraising,True,0.0,0.5,working_capital,True,,0.5,working_capital,True
+7,4988976,SCLP.L,2023-12-01,Results of Placing,True,0.0,11.0,other,True,,11.0,other,True
+8,5011098,HE1.L,2023-12-20,Proposed Placing  of a minimum of £5.8 million,True,0.0,0.25,other,True,,0.25,other,True
+9,5042842,TERN.L,2024-01-24,"Placing to raise £400,000",True,0.0,2.0,other,False,,2.0,other,False
+10,5065545,EME.L,2024-02-13,"Empyrean completes £700,000  Placing",True,0.0,0.25,other,True,,0.25,working_capital,True
+11,5082704,ENSI.L,2024-02-27,Placing to raise £1.1 million and notice of GM,True,0.0,50.0,working_capital,False,,50.0,working_capital,False
+12,5100401,ARCM.L,2024-03-12,Result of Placing and Subscription,True,0.0,1.8,other,True,,1.8,other,True
+13,5109176,QED.L,2024-03-18,"Proposed Placing, Subscription and Open Offer",True,0.0,1.25,working_capital,True,,1.25,working_capital,True
+14,5125634,FORG.L,2024-04-02,Update on Verde Corporation Subscription,False,,,,,status update on a subscription not yet completed,,other,False
+15,5176937,IKA.L,2024-05-10,Proposed Placing and Open Offer & Notice of GM,True,0.0,28.0,other,True,,28.0,other,True
+16,5203661,AURA.L,2024-05-30,Oversubscribed Share Purchase Plan,True,0.0,,other,True,"Australian SPP, priced in A$",,working_capital,False
+17,5211513,FARN.L,2024-06-05,Proposed REX Retail Offer,True,0.0,85.0,other,False,,,other,False
+18,5219401,HE1.L,2024-06-11,Result of Placing and Subscription,True,0.0,0.5,other,True,,0.5,other,True
+19,5224193,PANR.L,2024-06-14,"Quarterly Bond, Private Placing & Funding Strategy",True,0.0,,other,False,private placement priced in US$,,other,False
+20,5337270,OPTI.L,2024-09-05,ProBiotix Health plc Fundraise,False,,,,,"an investee's raise, not the issuer's",,other,False
+21,5381677,CTL.L,2024-10-08,Proposed interim fundraising,True,0.0,11.0,other,True,,11.0,other,True
+22,5404020,ALL.L,2024-10-25,Successful Completion of A$10m Equity Placing,True,0.0,11.73,other,True,"A$0.23, stated as 11.73p",,working_capital,True
+23,5424673,EME.L,2024-11-11,Results of Retail Offer,True,5.0,0.1,other,True,"late: placing 6 Nov, event = retail result 11 Nov",0.1,working_capital,True
+24,5429816,SRT.L,2024-11-14,Result of Retail Offer,True,0.0,35.0,other,False,,35.0,other,True
+25,5453732,DUKE.L,2024-12-03,Result of General Meeting and Issue of Equity,True,19.0,27.5,other,False,late: event = GM result after the raise,,other,False
+26,5457051,W7L.L,2024-12-05,Result of Placing,True,0.0,510.0,other,True,,510.0,other,True
+27,5465857,UOG.L,2024-12-12,Results of Fundraising and TVR,True,0.0,0.1,working_capital,True,,0.15,working_capital,True
+28,5478333,STX.L,2024-12-23,Results of RetailBook Offer,True,17.0,3.0,other,False,"late: subscription 6 Dec, event = RetailBook result 23 Dec",,other,False
+29,5517408,TIN.L,2025-01-28,Result of Fundraising,True,0.0,8.0,other,True,,8.0,working_capital,True
+30,5536740,IMM.L,2025-02-13,£2.91m fundraising; related party transactions,True,0.0,3.75,other,False,,3.75,working_capital,False
+31,5571033,CBOX.L,2025-03-12,Result of Placing,True,0.0,180.0,other,True,,180.0,other,True
+32,5572777,SAR.L,2025-03-13,Institutional Equity Fundraise,True,0.0,12.5,other,False,,12.5,working_capital,False
+33,5586486,CTL.L,2025-03-24,Result of GM Admission of Retail Offer Shares TVR,True,41.0,16.0,other,False,"late: placing 11 Feb, event = GM / admission 24 Mar",16.0,other,False
+34,5593466,GCM.L,2025-03-28,Placing to raise £1.0 million,True,0.0,3.0,working_capital,False,,3.0,working_capital,False
+35,5597623,GDR.L,2025-04-01,Result of RetailBook Offer,True,5.0,1.5,working_capital,False,"late: subscription 27 Mar, event = retail result 1 Apr",1.5,working_capital,False
+36,5657915,QHE.L,2025-05-16,Retail Offer,True,0.0,0.045,other,False,,0.045,other,False
+37,5672405,IKA.L,2025-05-28,Result of Oversubscribed Retail Offer,True,7.0,33.0,other,True,"late: placing 21 May, event = retail result 28 May",33.0,other,True
+38,4a2c15f2-40cb-42c8-b503-e1e6c9e0d73f,FARN.L,2025-06-03,Faron Pharmaceuticals Ltd: Approval of Share Subscriptions Based on Special Rights in connection with Amortisation of the First Tranche Bonds,False,,,,,"shares issued to amortise bonds, not for cash",,other,False
+39,5742108,AVCT.L,2025-07-17,Equity fundraise of £3.25 million,True,0.0,30.0,working_capital,False,,30.0,other,False
+40,5770638,HE1.L,2025-08-07,Result of Oversubscribed WRAP Retail Offer,True,0.0,0.54,working_capital,False,,0.54,working_capital,False

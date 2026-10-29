@@ -137,3 +137,27 @@ there to describe, and a pass on them would need to be striking.
   has already moved, and E0 cannot capture that day.
 - Survivors only: companies whose raise failed to save them and that later left AIM are in the
   bias bound, not the test.
+
+## Pre-step result (2026-10-29, before any outcome)
+
+40 events (seed 285) were labelled by hand from their filings before the rules' reading was
+compared. Labels: `docs/research/0013-labels.csv`.
+
+| check | result | bar | consequence |
+|---|---|---|---|
+| event right (a primary raise for cash; price and size public by the event date) | **36 of 40 (90%)** | 90% | **passes**: E0 and E4 run |
+| issue price within 1% (34 raises priced in pence) | 27 of 34 (79%) | 90% | fails: the discount split does not run |
+| use-of-proceeds class (36 raises) | 27 of 36 (75%) | 90% | fails: the use-of-proceeds split does not run |
+| directors took part (36 raises) | 33 of 36 (92%) | 90% | **passes**: the directors split runs |
+
+- **The 4 wrong events.** Two are raises by a portfolio company or investee, not by the issuer
+  (Tern, OptiBiotix). One is a status update on a subscription that had not completed (EQTEC).
+  One is shares issued to amortise a bond, not for cash (Faron).
+- **7 of the 36 right events are late.** Their date is a later result (a retail-offer result, a
+  general-meeting result) 5 to 41 days after the price was already public, because the first
+  `ROI` filing in the raise came after the placing announcement. They pass the check as written.
+  It means E0 enters after the first reaction for about 1 raise in 5. E4 is little affected.
+- **No v2.** The pre-registration allowed one fix for a failed field. It is not used: the two
+  failed splits had an MDE of about 26 pp, too weak to justify another round of rules and labels.
+  The Bonferroni count stays at 5 (the conservative side), with 3 tests run: E0, E4 and the
+  directors split.
