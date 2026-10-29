@@ -3,6 +3,7 @@
 uv run python scripts/research/r12_anchor_overhang.py build PANEL_DIR   # features, no outcomes
 uv run python scripts/research/r12_anchor_overhang.py count PANEL_DIR   # power, no outcomes
 uv run python scripts/research/r12_anchor_overhang.py run PANEL_DIR     # the pre-registered test
+uv run python scripts/research/r12_anchor_overhang.py leavers PANEL_DIR # the survivorship share
 
 PANEL_DIR is a research-universe panel (``build_panel.py PANEL_DIR research``; its daily bars in
 PANEL_DIR/raw/<ticker>.daily.parquet, filings ``<ticker>.ann.parquet``, fundamentals
@@ -14,6 +15,7 @@ holdout). Everything follows research 0014 as pre-registered. Research only.
 
 from __future__ import annotations
 
+import math
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -23,7 +25,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 from solaraalpha.analysis.events import reactions
-from solaraalpha.analysis.universe import research_tickers, shares_at
+from solaraalpha.analysis.universe import SIZES, research_tickers, shares_at
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 
 FIRST, LAST = pd.Timestamp("2022-12-16", tz="UTC"), pd.Timestamp("2025-08-08", tz="UTC")
@@ -167,6 +169,250 @@ def count(panel: Path) -> None:
     )
 
 
+# --- the test -----------------------------------------------------------------------------
+
+
+def null1(df: pd.DataFrame, target: str) -> np.ndarray:
+    """P(target) from a logistic on the weekly ranks of ATR % and log ADV (Newton)."""
+    x = np.column_stack([np.ones(len(df)), df["r_atr"], df["r_adv"]])
+    y = df[target].to_numpy(float)
+    b = np.zeros(3)
+    for _ in range(25):
+        p = 1 / (1 + np.exp(-x @ b))
+        h = x.T @ (x * (p * (1 - p))[:, None])
+        b += np.linalg.solve(h, x.T @ (y - p))
+    return 1 / (1 + np.exp(-x @ b))
+
+
+def load(panel: Path) -> pd.DataFrame:
+    df = joined(panel, outcomes=True).dropna(subset=["burst_3", "nearness", "cgo", "trend"])
+    df["r_atr"] = df.groupby("week")["atr_pct"].rank(pct=True)
+    df["r_adv"] = df.groupby("week")["adv"].transform(lambda s: np.log(s).rank(pct=True))
+    df = df.dropna(subset=["r_atr", "r_adv"]).reset_index(drop=True)
+    df["xs_8w"] = df["ret_8w"] - df.groupby("week")["ret_8w"].transform("mean")
+    return df
+
+
+def residual_rank(df: pd.DataFrame, sig: str, on: list[str]) -> pd.Series:
+    """Each Friday: the signal's rank less its OLS fit on the ranks of ``on``."""
+    out = pd.Series(np.nan, index=df.index)
+    for _, g in df.groupby("week"):
+        y = g[sig].rank(pct=True).to_numpy()
+        x = np.column_stack([np.ones(len(g))] + [g[c].astype(float).rank(pct=True) for c in on])
+        b, *_ = np.linalg.lstsq(x, y, rcond=None)
+        out.loc[g.index] = y - x @ b
+    return out
+
+
+def weekly_ic(df: pd.DataFrame, sig: str, y: str = "res") -> pd.Series:
+    """Per Friday: the Pearson correlation of the signal's rank with ``y``."""
+
+    def ic(g: pd.DataFrame) -> float:
+        r = g[sig].rank(pct=True)
+        return float(r.corr(g[y])) if len(g) > 10 else math.nan
+
+    return df.groupby("week").apply(ic, include_groups=False).dropna()
+
+
+def boot_mean(x: pd.Series) -> tuple[float, float]:
+    """96.7% moving-block bootstrap interval of a weekly series' mean (16-week blocks)."""
+    v = x.to_numpy(float)
+    rng = np.random.default_rng(SEED)
+    k = math.ceil(len(v) / BLOCK)
+    out = [
+        v[
+            np.concatenate(
+                [np.arange(s, s + BLOCK) for s in rng.integers(0, len(v) - BLOCK + 1, k)]
+            )[: len(v)]
+        ].mean()
+        for _ in range(REPS)
+    ]
+    a = 100 * 0.1 / TESTS / 2
+    lo, hi = np.percentile(out, [a, 100 - a])
+    return float(lo), float(hi)
+
+
+def halves(x: pd.Series) -> list[float]:
+    out = []
+    for _, a, b in HALVES:
+        h = x[(x.index >= pd.Timestamp(a, tz="UTC")) & (x.index <= pd.Timestamp(b, tz="UTC"))]
+        out.append(float(h.mean()) if len(h) else math.nan)
+    return out
+
+
+def ic_test(df: pd.DataFrame, sig: str, label: str, full: bool = True) -> dict:
+    ic = weekly_ic(df, sig)
+    est = float(ic.mean())
+    lo, hi = boot_mean(ic)
+    row = {"test": label, "weeks": len(ic), "IC": est, "lo": lo, "hi": hi}
+    if not full:
+        return row
+    hs = halves(ic)
+    same = sum(1 for h in hs if np.isfinite(h) and np.sign(h) == np.sign(est))
+    contrib = (df[sig].groupby(df["week"]).rank(pct=True) - 0.5) * df["res"]
+    by = contrib.groupby(df["ticker"]).sum()
+    best = (by.nlargest(3) if est > 0 else by.nsmallest(3)).index
+    rest = df[~df["ticker"].isin(best)]
+    ic3 = weekly_ic(rest, sig)
+    lo3, hi3 = boot_mean(ic3)
+    excl = lo > 0 or hi < 0
+    row |= {
+        "same sign": f"{same} of 6",
+        "halves": " / ".join(f"{h:+.3f}" for h in hs),
+        "without best 3": f"{ic3.mean():+.3f} [{lo3:+.3f}, {hi3:+.3f}]",
+        "pass": bool(
+            excl and same >= 5 and np.sign(ic3.mean()) == np.sign(est) and (lo3 > 0 or hi3 < 0)
+        ),
+    }
+    return row
+
+
+def ev_weekly(df: pd.DataFrame, ev: pd.Series) -> pd.DataFrame:
+    g = df.assign(ev=ev, r_ev=df["res"].where(ev, 0.0), r_ot=df["res"].where(~ev, 0.0))
+    return g.groupby("week").agg(
+        s=("r_ev", "sum"), n=("ev", "sum"), so=("r_ot", "sum"), no=("ev", lambda x: (~x).sum())
+    )
+
+
+def ev_stat(w: pd.DataFrame) -> float:
+    return (
+        float(w["s"].sum() / w["n"].sum() - w["so"].sum() / w["no"].sum())
+        if w["n"].sum()
+        else math.nan
+    )
+
+
+def ev_test(df: pd.DataFrame, ev: pd.Series, label: str, full: bool = True) -> dict:
+    w = ev_weekly(df, ev)
+    est = ev_stat(w)
+    a = w.to_numpy(float)
+    rng = np.random.default_rng(SEED)
+    k = math.ceil(len(a) / BLOCK)
+    draws = []
+    for _ in range(REPS):
+        idx = np.concatenate(
+            [np.arange(s, s + BLOCK) for s in rng.integers(0, len(a) - BLOCK + 1, k)]
+        )[: len(a)]
+        t = a[idx].sum(axis=0)
+        if t[1] and t[3]:
+            draws.append(t[0] / t[1] - t[2] / t[3])
+    q = 100 * 0.1 / TESTS / 2
+    lo, hi = (float(v) for v in np.percentile(draws, [q, 100 - q]))
+    row = {"test": label, "events": int(ev.sum()), "estimate": est, "lo": lo, "hi": hi}
+    if not full:
+        return row
+    hs = []
+    for _, h0, h1 in HALVES:
+        m = (w.index >= pd.Timestamp(h0, tz="UTC")) & (w.index <= pd.Timestamp(h1, tz="UTC"))
+        hs.append(ev_stat(w[m]) if w[m]["n"].sum() else math.nan)
+    same = sum(1 for h in hs if np.isfinite(h) and np.sign(h) == np.sign(est))
+    by = df[ev].groupby("ticker")["res"].sum()
+    best = (by.nlargest(3) if est > 0 else by.nsmallest(3)).index
+    keep = ~df["ticker"].isin(best)
+    r3 = ev_test(df[keep], ev[keep], label, full=False)
+    excl = lo > 0 or hi < 0
+    row |= {
+        "same sign": f"{same} of 6",
+        "halves": " / ".join(f"{h:+.3f}" if np.isfinite(h) else "n/a" for h in hs),
+        "without best 3": f"{r3['estimate']:+.3f} [{r3['lo']:+.3f}, {r3['hi']:+.3f}]",
+        "pass": bool(
+            excl
+            and same >= 5
+            and np.sign(r3["estimate"]) == np.sign(est)
+            and (r3["lo"] > 0 or r3["hi"] < 0)
+        ),
+    }
+    return row
+
+
+def run(panel: Path) -> None:
+    df = load(panel)
+    print(
+        f"panel: {len(df):,} stock-weeks past £10k, {df['ticker'].nunique()} stocks, "
+        f"{df['week'].nunique()} Fridays"
+    )
+    ev = (df["nearness"] >= NEAR) & df["good_news"]
+    df["near_resid"] = residual_rank(df, "nearness", ["trend", "new_high"])
+    df["cgo_resid"] = residual_rank(df, "cgo", ["trend"])
+    fmt = {"float_format": lambda x: f"{x:+.3f}", "index": False}
+    for target in ("burst_3", "burst_2", "burst_4"):
+        df["res"] = df[target] - null1(df, target)
+        main = target == "burst_3"
+        rows = [ic_test(df, "nearness", "V1 nearness", main), ic_test(df, "cgo", "V2 cgo", main)]
+        print(f"\n{target}, V1 / V2 (rank IC net of null 1, 96.7% interval):")
+        print(pd.DataFrame(rows).to_string(**fmt))
+        print(f"{target}, V3 (mean residual, events - others):")
+        print(pd.DataFrame([ev_test(df, ev, "V3 near high + good news", main)]).to_string(**fmt))
+        if main:
+            print("\noverlap (burst_3): partial IC after trend (+ new_high for nearness)")
+            print(
+                pd.DataFrame(
+                    [
+                        ic_test(df, "near_resid", "V1 partial", False),
+                        ic_test(df, "cgo_resid", "V2 partial", False),
+                        ic_test(df, "trend", "trend itself", False),
+                    ]
+                ).to_string(**fmt)
+            )
+            nh = df[df["new_high"]]
+            print("V3 within new_high weeks:")
+            print(
+                pd.DataFrame([ev_test(nh, ev[nh.index], "V3 | new_high", False)]).to_string(**fmt)
+            )
+            print("\nby size (burst_3):")
+            rows = []
+            for s in SIZES:
+                d = df[df["size"] == s]
+                rows += [
+                    ic_test(d, "nearness", f"V1 {s}", False),
+                    ic_test(d, "cgo", f"V2 {s}", False),
+                ]
+            print(pd.DataFrame(rows).to_string(**fmt))
+            print(
+                pd.DataFrame(
+                    [
+                        ev_test(df[df["size"] == s], ev[df["size"] == s], f"V3 {s}", False)
+                        for s in SIZES
+                    ]
+                ).to_string(**fmt)
+            )
+    print("\nsecondary xs_8w:")
+    print(
+        pd.DataFrame(
+            [
+                ic_test(
+                    df.assign(res=df["xs_8w"]).dropna(subset=["res"]), "nearness", "V1 xs_8w", False
+                ),
+                ic_test(
+                    df.assign(res=df["xs_8w"]).dropna(subset=["res"]), "cgo", "V2 xs_8w", False
+                ),
+            ]
+        ).to_string(**fmt)
+    )
+    x = df.dropna(subset=["xs_8w"])
+    print(
+        f"V3 xs_8w: events {x.loc[ev[x.index], 'xs_8w'].mean():+.3f} (median "
+        f"{x.loc[ev[x.index], 'xs_8w'].median():+.3f}), others {x.loc[~ev[x.index], 'xs_8w'].mean():+.3f}"
+    )
+    print(
+        f"burst_3 rate: V3 events {df.loc[ev, 'burst_3'].mean():.3f} vs others "
+        f"{df.loc[~ev, 'burst_3'].mean():.3f}"
+    )
+
+
+def leavers_share(panel: Path) -> None:
+    """Research 0012 case 3: the leavers' share of stock-weeks in the window."""
+    lv = pd.read_csv("config/aim_leavers.csv")
+    lv = lv[(lv["cancelled"] >= str(FIRST.date())) & (lv["how"] != "main_market")]
+    fridays = pd.date_range(FIRST, LAST, freq="W-FRI", tz="UTC")
+    weeks = sum(int((fridays < pd.Timestamp(c, tz="UTC")).sum()) for c in lv["cancelled"])
+    tested = len(joined(panel, outcomes=False))
+    print(
+        f"leavers in the window: {len(lv)}; their stock-weeks on AIM in it: {weeks:,}, "
+        f"against {tested:,} tested ({weeks / (weeks + tested):.0%} of the total)"
+    )
+
+
 if __name__ == "__main__":
     step, panel = sys.argv[1], Path(sys.argv[2])
-    {"build": build, "count": count}[step](panel)
+    {"build": build, "count": count, "run": run, "leavers": leavers_share}[step](panel)
