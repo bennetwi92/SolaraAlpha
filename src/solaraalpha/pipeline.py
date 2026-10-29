@@ -473,7 +473,7 @@ def run_pipeline(
         def runs(t: str, stage: Stage = stage, picked: set[str] = picked) -> bool:
             return t in picked if stage.on_shortlist else running[t] in stage.runs_on
 
-        alive = [x for x in inputs if runs(x.ticker)]
+        alive = [x for x in inputs if runs(x.ticker) and x.ticker not in thin]
         log.info("stage %s: %d of %d tickers", stage.name, len(alive), len(inputs))
         for x in inputs:
             if x.ticker in thin:
