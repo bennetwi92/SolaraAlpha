@@ -1,8 +1,9 @@
 """The monitor's pack: an open position or a pending entry, then versus now, for the monitor.
 
-Every weekday each open position and each pending entry (a draft / approved position with an
-unfilled entry order) has a ``daily_review`` in the daily run (ADR 0024), so every one gets a
-pack: the position's state (``status`` ``open`` / ``pending``), orders, plan and the pending
+On Friday (the weekly review, ADR 0039) each open position and each pending entry (a draft /
+approved position with an unfilled entry order) has a ``daily_review`` in the daily run; midweek
+only those with an event trigger (a filing, a gap, a thesis hit) are reviewed, and the agent may
+only cut risk (``MIDWEEK_ACTIONS``). Each gets a pack: the position's state (``status`` ``open`` / ``pending``), orders, plan and the pending
 entry order, the **entry conditions** frozen when it was drafted, the cards **now** (technical
 with the position's entry date and price when open, levels, relative strength, liquidity, re-run on fresh
 data), a per-field then → now diff, the thesis conditions (machine ones evaluated now), the
@@ -12,7 +13,7 @@ latest daily close), the latest research verdict and the levels it set
 (``research_levels``), the systematic stops (``systematic_stops``: levels, technical,
 chandelier) as context only: the agent sets the stop, and the limits an add must fit
 (``limits``, ADR 0025: the agent decides adds). The agent's revision is applied as it is
-recorded; the owner can undo it (``book.py undo``). See docs/decisions/0018, 0024.
+recorded; the owner can undo it (``book.py undo``). See docs/decisions/0018, 0024, 0039.
 """
 
 from __future__ import annotations
@@ -40,6 +41,9 @@ log = get_logger(__name__)
 
 AGENT_TRIGGERS = ("gap", "filing", "thesis_hit", "daily_review")
 EVENT_TRIGGERS = ("gap", "filing", "thesis_hit")  # reviewed first when the queue is capped
+# what the monitor may record outside the position's weekly review (ADR 0039): news can end a
+# thesis midweek, but the stop, the target, adds and entry amendments wait for Friday
+MIDWEEK_ACTIONS = frozenset({"hold", "take_partial", "exit", "cancel"})
 DIFF_FIELDS = (
     ("technical", "trend"),
     ("technical", "momentum"),
@@ -53,9 +57,35 @@ DIFF_FIELDS = (
 NOW_TOOLKITS = ("technical", "levels", "relative_strength", "liquidity")
 
 
+def weekly_review(conn: Conn, run_id: int, position_id: int | None = None) -> bool:
+    """Whether daily run ``run_id`` is the weekly review (ADR 0039; of ``position_id`` when
+    given): it carries a ``daily_review`` trigger (for that position)."""
+    sql = "SELECT 1 FROM triggers WHERE run_id = ? AND kind = 'daily_review'"
+    params: list[Any] = [run_id]
+    if position_id is not None:
+        sql += " AND position_id = ?"
+        params.append(position_id)
+    return conn.execute(sql + " LIMIT 1", params).fetchone() is not None
+
+
+def review_note(weekly: bool) -> str:
+    """What the monitor pack says about the kind of review this is (ADR 0039)."""
+    if weekly:
+        return (
+            "WEEKLY REVIEW (Friday, after the week's last close): every action is open, and this"
+            " is the one review of the week that sets the stop."
+        )
+    return (
+        "MIDWEEK REVIEW: only because news fired (a filing, a gap, a kill criterion hit). Only"
+        " cut risk on news that changes the thesis: hold, take_partial, exit; a pending entry"
+        " hold or cancel. No stop, target, add or entry change midweek: Friday's review does"
+        " those. A price move on its own is not news: hold."
+    )
+
+
 def positions_to_review(conn: Conn, run_id: int) -> list[int]:
-    """Positions with an agent trigger in daily run ``run_id`` (since ADR 0024 every open
-    position and pending entry has its ``daily_review``), most urgent first: an event trigger
+    """Positions with an agent trigger in daily run ``run_id`` (on Friday every open position
+    and pending entry has its ``daily_review``, ADR 0039), most urgent first: an event trigger
     (gap, filing, thesis hit), then open positions, then pending entries; by id within each."""
     marks = ", ".join("?" * len(AGENT_TRIGGERS))
     df = query(
@@ -277,15 +307,14 @@ def build_pack(
                 row["text"] = f"unavailable: {e}"
         trig_rows.append(row)
     research = latest_research(conn, state.ticker)
-    from solaraalpha import event_sessions
-
-    es = event_sessions.for_run(conn, run_id)
+    weekly = weekly_review(conn, run_id, position_id)
     status = "pending" if state.status in ("draft", "approved") else str(state.status)
     return {
         "position_id": position_id,
         "ticker": state.ticker,
         "daily_run_id": run_id,
-        "event_session": event_sessions.pack_note(es) if es else None,
+        "review": "weekly" if weekly else "midweek",
+        "review_note": review_note(weekly),
         "status": status,
         "pending_entry": book.pending_entry(conn, position_id) if status == "pending" else None,
         "state": asdict(state),

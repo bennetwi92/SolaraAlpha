@@ -1,13 +1,15 @@
 ---
 name: monitor
-description: Daily monitor for every open position and every pending entry (an approved or drafted entry order not yet filled). Reads the monitor pack (entry conditions then vs the toolkits now, thesis conditions, the day's filings, headlines and gaps, the research levels, the systematic stops as context), decides whether anything changed, sets the stop by judgement and records one action (open: hold, tighten the stop, take a partial, exit, revise the target, add to a winner; pending: hold, amend the entry / stop, cancel). The book applies it as it is recorded; the owner is notified and can undo it. Use for "/monitor --run N" (every position of a daily run) or "/monitor --position ID".
+description: Monitor for open positions and pending entries (an approved or drafted entry order not yet filled). On Friday's weekly review it sees every one; midweek only those with news (a filing, a gap, a kill criterion hit). Reads the monitor pack (entry conditions then vs the toolkits now, thesis conditions, the day's filings, headlines and gaps, the research levels, the systematic stops as context), decides whether anything changed and records one action. Weekly review: open: hold, tighten the stop, take a partial, exit, revise the target, add to a winner; pending: hold, amend the entry / stop, cancel. Midweek only hold, take a partial, exit, cancel. The book applies it as it is recorded; the owner is notified and can undo it. Use for "/monitor --run N" (every position a daily run puts up) or "/monitor --position ID".
 ---
 
 # Monitor: has anything changed?
 
-Every weekday the daily job (ADR 0017) gives each **open position** and each **pending entry**
-(a draft / approved position whose entry order has not filled) a `daily_review` (ADR 0024). You
-compare what the trade was planned on (the frozen entry conditions, the research thesis and its
+The strategy is weekly (ADR 0039). On **Friday** the daily job (ADR 0017) gives each **open
+position** and each **pending entry** (a draft / approved position whose entry order has not
+filled) a `daily_review`: the **weekly review**, after the week's last close. **Midweek** you
+see a position only when news fired on it (a material filing, a gap of more than 2 ATR, a kill
+criterion hit). You compare what the trade was planned on (the frozen entry conditions, the research thesis and its
 levels) with what the toolkits say **now** and what the day brought (filings, headlines, gaps,
 thesis conditions), and you record **one** action. **Your action is applied by the book as you
 record it** (the owner is told what to change at the broker and can undo it), so be right and
@@ -15,6 +17,18 @@ be sparing: churn is the failure mode. Nothing changed → `hold`.
 
 Arguments: `--run N` (every position the daily run put up for review) or `--position ID` (one
 position, under the latest daily run).
+
+## Weekly or midweek (the pack's `review`)
+
+- **`weekly`** (Friday): every action is open, and this is the **only** review of the week that
+  sets the stop, revises a target, adds or amends an entry. Judge on the completed week.
+- **`midweek`**: you are here because news fired. Ask one question: **does this news change
+  the thesis?** If it does, cut risk: `take_partial` or `exit` an open position, `cancel` a
+  pending entry. If it does not, `hold`. The book **refuses** `tighten_stop`, `add`,
+  `revise_target` and `amend_entry` midweek; they wait for Friday. **A price move on its own is
+  not news**: a gap with no announcement behind it, a red day, a stock near its stop is a
+  `hold` (the stop at the broker is already working). Don't act on a daily signal in a weekly
+  strategy.
 
 ## What counts as a change (the only reasons for anything but hold)
 
@@ -27,24 +41,28 @@ position, under the latest daily run).
    business.
 5. **A weekly-trend break**: the weekly close below a falling 40-week MA (`now.technical.trend`
    turned negative; for an open position `now.position.action` `exit` or `review`).
-6. **The stop no longer sits where the thesis is invalidated** (open positions: the stock has
-   moved on, a new higher low or a broken-out level now marks invalidation; see "The stop").
+6. **The stop no longer sits where the thesis is invalidated** (open positions, **weekly review
+   only**: the stock has moved on, a new higher low or a broken-out level now marks
+   invalidation; see "The stop").
 7. **The pending entry no longer makes sense as planned** (pending entries only): the catalyst
    is now priced in (the stock ran away from the entry without triggering it), the set-up
-   changed (a new level, the compression resolved down), or one of 1-5 above.
+   changed (a new level, the compression resolved down), or one of 1-5 above. Midweek only 1-4
+   (news) can cancel it; a set-up change waits for Friday.
 
 Everything else is **noise**: no new information (a director's scheme award, a TR-1 with no
 message), a move inside the plan's risk, a headline about another company. Noise → `hold`
 with reason "no change", label `PASS`.
 
-## The stop (you set it; the rules are context)
+## The stop (you set it on Friday; the rules are context)
 
 The stop goes **where the thesis is invalidated**, not at a fixed distance: below the higher
 low or the level the trade depends on, with room for the stock's normal daily range (the
 volatility is wanted: don't strangle a volatile winner). `systematic_stops` in the pack
 (`levels`: the level map's stop; `technical`: the ATR stop; `chandelier`: the trailing stop for
 an open position) and `research_levels.stop` (the research agent's, with its `stop_reason`) are
-inputs to your judgement, not answers.
+inputs to your judgement, not answers. The stop moves **once a week**, on the weekly review:
+the volatility is wanted, and a stop raised on every good day shakes the trade out before the
+burst it was bought for.
 
 - **Open position:** never lower the stop (the book refuses it). Raise it when invalidation has
   moved up: a new higher low, a breakout level that has held, a winner well past the first
@@ -81,9 +99,8 @@ Read `pack.json` in the printed directory:
 - `research`: the latest research verdict (reasons, kill criteria, note) and its evidence ids;
   `research_levels`: the entry, stop and `stop_reason` it set (ADR 0023), when present.
 - `systematic_stops`: context for "The stop".
-- `event_session`: set when this run is an **event session** (ADR 0037): a mid-session review
-  booked for a dated event (the Budget, a rate decision, results), the prices being the session
-  so far, not a close. See "In an event session" below.
+- `review`: `weekly` (Friday) or `midweek`; `review_note` says what that allows (see "Weekly
+  or midweek").
 - `limits`: what an add must fit (`max_position_pct`, `max_sector_pct`, `max_heat`,
   `cash_buffer` of equity; `max_adv_pct` of `now.liquidity.adv_gbp_20`, whose
   `max_position_gbp` is the most the whole position should be worth).
@@ -95,7 +112,7 @@ Read `pack.json` in the printed directory:
 2. Check `diff` and `now_labels`: has the set-up deteriorated since it was planned, or is the
    move inside the plan?
 3. Check the stop against "The stop".
-4. Record **one** action:
+4. Record **one** action (midweek only `hold`, `take_partial`, `exit`, `cancel`):
    - **Open position:**
      - `hold`: nothing changed (the default).
      - `tighten_stop`: raise the stop to a named level. Give `stop`.
@@ -119,13 +136,6 @@ Read `pack.json` in the printed directory:
        trigger) and / or a new `stop`; optionally `qty`.
      - `cancel`: the trade no longer makes sense (thesis broken, catalyst priced in, capital
        event); the entry order is cancelled.
-   - **In an event session** (`event_session` set): **only cut risk**: `hold`, `tighten_stop`,
-     `take_partial`, `exit`; a pending entry `hold` or `cancel`. The book refuses `add`,
-     `revise_target` and `amend_entry` in an event session; leave them to the evening review.
-     Read what the event did to this stock (its announcement, the reaction so far, the thesis
-     and kill criteria it touches): a cut goes to Trading212 this afternoon. The last bar is
-     intraday, so a "close" below the stop is not yet a close; the stop at the broker is
-     already working.
 5. `label` encodes the urgency: `ACT` = acted on something that matters before tomorrow's open
    (exit, cancel, a stop raise, an add), `WATCH` = a change worth the owner's eye (partial,
    amendment, target revision, hold with a concern), `PASS` = no change. `ERROR` if the pack could not be
@@ -164,8 +174,9 @@ it. Trading212 holds one order per stock (ADR 0026): an exit, a partial or an ad
 stop order off until it fills or ends, and nothing else can be applied to that position while
 one is working. If the book refuses it (a lower stop on an open position, an open-position
 action on a pending entry, a stop at or above the entry, an add over a portfolio limit, an
-exit or add already working) it is recorded as declined with the reason and nothing changes:
-read the reason and record a corrected verdict (e.g. a smaller add) only if it still matters.
+exit or add already working) it is recorded as declined with the reason and nothing changes
+(midweek, a stop, target, add or entry change is refused before anything is recorded).
+Read the reason and record a corrected verdict (e.g. a smaller add) only if it still matters.
 
 ## The desk thread (ADR 0033)
 
@@ -199,4 +210,5 @@ reads it (ADR 0035).
   other in `note_md`.
 - Never lower an open position's stop, add to a loser, or act outside the actions above.
 - A quiet day is `hold`. Moving a stop or an entry a few pence is churn, not judgement.
+- Midweek, act only on news that changes the thesis; everything else waits for Friday.
 - If `now_errors` is non-empty, say which toolkit failed and judge on what is there.

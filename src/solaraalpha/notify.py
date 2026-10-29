@@ -98,7 +98,7 @@ def owner_items(conn: Conn, run_id: int) -> tuple[list[str], list[str]]:
         elif kind == "target_hit":
             info.append(
                 f"{tk} reached its target {broker.price(d['target'], ccy)}. Nothing to do: the stop and the"
-                " daily review manage the exit."
+                " weekly review manage the exit."
             )
         elif kind == "entry_break":
             checks.append(

@@ -4,8 +4,8 @@ Pure functions over daily bars (checked, cleaned, trimmed by the caller), the bo
 targets, and the day's filings and headlines. Each returns :class:`Trigger` rows whose
 ``detail`` carries the numbers that fired. Owner triggers need the owner; agent triggers wake
 the monitor (:mod:`.claude/skills/monitor`); every open position and pending entry gets a
-``daily_review`` each weekday whether or not anything fired (ADR 0024), carrying what fired as
-context. Thresholds are placeholders (docs/decisions/0017).
+``daily_review`` on the weekly review day (Friday, ADR 0039) whether or not anything fired,
+carrying what fired as context. Thresholds are placeholders (docs/decisions/0017).
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ OWNER_KINDS = (
 )
 EVENT_DUE_SESSIONS = 2  # warn when a scheduled event is this many sessions away (#129)
 AGENT_KINDS = ("gap", "filing", "thesis_hit", "daily_review")
+REVIEW_WEEKDAY = 4  # Friday: the weekly review of every position, after the week's last close
 REPORT_KINDS = ("watch_break", "watch_pullback", "news", "market")
 PULLBACK_ATR = (
     1.0  # a WATCH stock is "back at the 10w MA" within this many daily ATRs (placeholder)
@@ -177,6 +178,14 @@ def entry_break(
     return None
 
 
+def review_day(at: Any) -> bool:
+    """Whether the daily run at ``at`` (a timestamp) is the weekly review (ADR 0039): Friday in
+    London, or a weekend re-run of it."""
+    t = pd.Timestamp(at)
+    t = t.tz_localize("UTC") if t.tz is None else t
+    return t.tz_convert("Europe/London").weekday() >= REVIEW_WEEKDAY
+
+
 def daily_review(
     ticker: str,
     position_id: int,
@@ -185,9 +194,10 @@ def daily_review(
     at: str,
     order_id: int | None = None,
 ) -> Trigger:
-    """The weekday agent review of one open position (``status`` ``open``) or pending entry
+    """The weekly agent review of one open position (``status`` ``open``) or pending entry
     (``pending``: a draft / approved position with an unfilled entry order ``order_id``), ADR
-    0024. ``detail.fired`` lists the day's other triggers on it (kind and date) as context."""
+    0024 / 0039. ``detail.fired`` lists the day's other triggers on it (kind and date) as
+    context."""
     return Trigger(
         ticker,
         "daily_review",

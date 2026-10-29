@@ -58,7 +58,7 @@ Kept as written (lightly tidied); everything below expands them.
 | **Pipeline** | deterministic Python (`scripts/scan.py`), GitHub Actions | Sunday + daily |
 | **Validator agent** | Claude, a fixed prompt, re-checks toolkit verdicts against the data | Sunday, shortlist only |
 | **Strategist agent** | Claude with web search: catalysts, news, headwinds, scored and logged | Sunday, shortlist only; daily on triggers |
-| **Monitor agent** | Claude: daily review of open positions, proposes plan revisions | daily, open positions only |
+| **Monitor agent** | Claude: weekly review (Friday) of open positions and pending entries; midweek on news only, risk-cutting only (ADR 0039) | Friday; midweek on news |
 
 Nothing waits for the owner's approval (ADR 0024, 0026): plans are approved as they are drafted,
 and agents' and the pipeline's revisions are applied as recorded. The owner places the orders in

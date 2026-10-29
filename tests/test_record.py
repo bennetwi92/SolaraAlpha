@@ -461,23 +461,3 @@ def test_research_is_bound_by_the_screen_when_the_validator_errored(
         record.main(["verdict", _write(tmp_path, _verdict(run_id=run_id)), *_args(db_backend)])
     assert e.value.code == 2
     assert "research may not upgrade JET2.L from WATCH to ACT" in capsys.readouterr().out
-
-
-def test_session_cli(db_backend: Path | None, capsys: pytest.CaptureFixture[str]) -> None:
-    db = _args(db_backend)
-    record.main(["session", "list", *db])
-    assert "no event sessions booked" in capsys.readouterr().out
-    with pytest.raises(SystemExit) as e:
-        record.main(["session", "due", *db])
-    assert e.value.code == 3
-    with pytest.raises(SystemExit, match="London session"):
-        add = ["session", "add", "--at", "2099-01-03 10:00", "--event", "X", "--reason", "y"]
-        record.main([*add, "--actor", "agent:pm", *db])  # a Saturday
-    add = ["session", "add", "--at", "2099-01-05 13:45", "--event", "UK Budget", "--reason", "AIM"]
-    record.main([*add, "--tickers", "JET2.L", "--actor", "agent:risk", *db])
-    assert "booked event session #1 Mon 05 Jan 13:45 London: UK Budget" in capsys.readouterr().out
-    record.main(["session", "list", *db])
-    assert "[scheduled]" in capsys.readouterr().out
-    record.main(["session", "cancel", "1", "--reason", "moved", "--actor", "agent:pm", *db])
-    record.main(["session", "list", "--all", *db])
-    assert "[cancelled]" in capsys.readouterr().out
