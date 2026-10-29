@@ -101,3 +101,86 @@ only find a large effect, or reject. The live record and the agents' reading car
   sign check and the owner's sign-off. It never becomes a hard filter (ADR 0022).
 - **Fail:** the note says "not shown above the MDE". Director buys stay as context in research
   §7, read by the agent as today.
+
+## Amendment 2026-10-29: the wide universe and the size split (#284, #288)
+
+*Written before any outcome was computed. No forward return, burst or residual for a director-buy
+week has been looked at. The text above stays as pre-registered; where this amendment differs, it
+replaces it.*
+
+**Why.** The owner moved research to the whole of AIM on 2026-10-28 (#288, research 0010
+amendment). The original universe (today's 104 watchlist stocks) gives roughly 80–170 events per
+variant and an MDE of 16–24 pp (the power table above). The wide universe has about three times as
+many stocks past the floor each week (research 0011), and director buys should matter most in the
+small, thinly held names the watchlist leaves out.
+
+**What changes.**
+
+1. **Universe.** Every stock in `config/research_universe.toml` (snapshot 2026-10-28, cleaned
+   2026-10-29: 554 AIM companies Trading212 offers, the AIM 100 among them) with a Yahoo price
+   history. A stock-week counts only when that Friday's 20-session median traded value is at
+   least **£10k** (the owner's research floor, `analysis.universe`), not the screen's £25k. Filings
+   by the LEI in that file. The panel is `scripts/research/build_panel.py OUT research`.
+2. **Size split.** Every result is also reported by size group (`analysis.universe.size_group` on
+   the signal Friday): `aim100` (today's watchlist, the control), `rest`, `micro` (under £50m).
+   **The pass or fail is decided on the full universe only.** The size groups are descriptive
+   (same statistic and interval, no pass claimed), so the multiple-testing adjustment stays at
+   2 variants.
+3. **Survivorship.** The universe holds only companies still trading. The note reports the bias
+   bound of research 0012 for an NSM-signal event test: the variant-A and variant-B signal events
+   among the leavers in `config/aim_leavers.csv` (their `DSH` notices are still on the NSM),
+   filled in at their known ends, low and high.
+4. **Pre-step sample.** The 40 notices (seed 223) are drawn from the `DSH` notices of the wide
+   universe published from 2022-11-16 (30 days before the first signal Friday, so clusters can
+   complete) to 2025-08-08.
+5. **The nulls are fitted on the wide universe.** Null 1 (logistic on the weekly ranks of daily
+   ATR % and log ADV) uses every stock-week past the £10k floor. Null 2 ("within 30 days after a
+   results filing": `FR`, `PRE`, `IR`) uses the wide universe's filings.
+
+**Made explicit (unchanged in intent, written down so nothing is chosen after the fact).**
+
+- **Statistic.** Per stock-week, residual = `burst_3` − the null-1 probability. Statistic = mean
+  residual over signal weeks − mean residual over null-2 weeks. Interval: a moving-block bootstrap
+  over weeks (16-week blocks, all stocks in a week together, 2,000 draws, seed 284), two-sided
+  95% per variant (90% family-wise, Bonferroni for 2).
+- **Half-years.** H1 2023 (with the December 2022 Fridays), H2 2023, H1 2024, H2 2024, H1 2025,
+  H2 2025 (to 8 August). Pass needs the statistic to have the same sign in at least 5 of the 6.
+- **Dropping the best 3 names.** Remove every week of the 3 tickers with the largest summed
+  residual over signal weeks, then recompute. The point estimate must keep its sign and the
+  interval must still exclude zero.
+- **Parse details (rules v1).** A notice is split into one block per PDMR (each "Details of the
+  person discharging managerial responsibilities" section). In each block, the name is the
+  section 1a field, the nature is the 4b field, and the price and volume pairs come from 4c (else
+  the 4d aggregate). A price marked £ or GBP is in pounds; one marked p or pence is in pence. An
+  unmarked price is read as pence or pounds, whichever is nearer the stock's close that day.
+  Other currencies (marked USD, $, EUR, €, AUD, CAD) are converted at that day's Yahoo FX close.
+  A block is an open-market buy by the keyword rules above. Its value is Σ price × volume over its
+  pairs. The transaction date is the 4e field (recorded, never the signal date).
+- **Targets.** As above: `burst_10w` at 3 ATR from Monday's open (2 and 4 ATR alongside), `ret_8w`
+  secondary. In-sample signal Fridays only (2022-12-16 to 2025-08-08). The panel holds later weeks
+  too; they are dropped on load and never read. The holdout stays locked.
+
+**Power (metadata only, wide universe, in-sample window).**
+
+| measure | value |
+|---|---|
+| issuers with NSM filings read | 540 of 554 |
+| window | 2022-11-16 to 2025-08-08 (2.73 years; clusters may complete from 30 days before the first Friday) |
+| `DSH` notices | **4,151** (3.3 per issuer a year; median 7 per issuer, p90 18), against 1,268 on the watchlist |
+| stock-weeks with a `DSH` notice | 3,547 |
+| `DSH` notices within 30 days after a results filing | 1,239 (30%) |
+
+The same assumptions as above (25–40% buys, a quarter to a third of those completing a cluster or
+over £50k) give roughly **260–550 signal events per variant** before the one-per-8-weeks rule,
+some of them on stock-weeks under the floor. MDE at 80% power (base rate 0.385 and design effect 2
+kept from the original, since the wide panel's burst rate is not looked at before the test;
+Bonferroni 2, z = 2.24):
+
+| events | SE of the rate (pp) | MDE (pp) |
+|---|---|---|
+| 260 | 4.3 | **13** |
+| 400 | 3.4 | **11** |
+| 550 | 2.9 | **9** |
+
+So the wide universe roughly halves the MDE (from 16–24 pp to about 9–13 pp). It still cannot
+see a 5 pp effect.
