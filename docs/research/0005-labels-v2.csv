@@ -1,0 +1,41 @@
+n,notice_id,ticker,published,hand_buy,hand_value_gbp,note,rules_buy,rules_value
+1,4602695,SEE.L,2022-12-06,True,12800.0,PCA (a fund manager) buying on market,True,12800.0
+2,4612766,RDT.L,2022-12-14,False,,,False,0.0
+3,4645462,ITM.L,2023-01-17,False,,SIP,False,0.0
+4,4692633,CML.L,2023-03-03,False,,,False,0.0
+5,4738123,PRM.L,2023-04-14,True,7900.0,"director's company buying, two fills",True,7900.0
+6,4766757,GEM.L,2023-05-12,False,,,False,0.0
+7,4803715,THX.L,2023-06-15,False,,option exercise and an off-market acquisition,True,1914200.1
+8,4912571,TRT.L,2023-09-26,True,4992.41,,False,0.0
+9,5014097,PEBB.L,2023-12-22,True,52100.0,own-money purchase from LTIP sellers on AIMX (judged a buy),False,0.0
+10,5069505,CRTA.L,2024-02-15,False,,,False,0.0
+11,5101034,DKL.L,2024-03-12,True,6500.0,,True,6500.0
+12,5178515,IKA.L,2024-05-10,False,,placing subscription,False,0.0
+13,5188130,BRCK.L,2024-05-17,True,11999.4,,True,11999.4048
+14,5206426,AKN.L,2024-05-31,False,,subscription,False,0.0
+15,5221521,RWS.L,2024-06-12,True,8820.0,,True,8820.0
+16,5270809,SYS1.L,2024-07-18,False,,,False,0.0
+17,5363815,CML.L,2024-09-25,True,19846.65,,True,19846.65
+18,5390696,OPT.L,2024-10-16,True,39867.06,two PDMRs,True,39867.062999999995
+19,5400856,BRCK.L,2024-10-23,False,,option exercise and sale,False,0.0
+20,5406763,NIOX.L,2024-10-28,True,5257.73,,True,5257.728
+21,5410652,BVXP.L,2024-10-31,True,9990.0,,True,9990.0
+22,5418264,VTU.L,2024-11-06,False,,EBT trustee buying for the company's plans (judged not a buy),True,713949.789216
+23,5439560,OBI.L,2024-11-22,False,,"holdings after a fundraise, no dealing table",False,0.0
+24,5441371,BVXP.L,2024-11-22,False,,dividend reinvestment (DRIP),False,0.0
+25,5461214,APTA.L,2024-12-09,True,60592.51,,True,60592.5132
+26,5477187,GDR.L,2024-12-20,False,,,False,0.0
+27,5478362,ALL.L,2024-12-23,False,,,False,0.0
+28,5520285,VNET.L,2025-01-30,True,22000.0,,True,22000.0
+29,5537862,XPF.L,2025-02-13,False,,SIP,False,0.0
+30,5539892,HERC.L,2025-02-17,True,9984.0,,True,9984.0
+31,5546800,BRCK.L,2025-02-20,False,,option exercise and sale,False,0.0
+32,5553058,CRU.L,2025-02-26,True,5151.96,,True,5151.96
+33,5562877,CSSG.L,2025-03-06,False,,,False,0.0
+34,5591413,MKA.L,2025-03-27,False,,,False,0.0
+35,5643239,IGP.L,2025-05-07,False,,SIP,False,0.0
+36,5660248,SAVE.L,2025-05-19,True,99838.2,intro mentions future Subscription Shares; the dealing is a market purchase,False,0.0
+37,5663910,RVRB.L,2025-05-21,True,72500.0,PCA (investment trust) buying B shares,True,72500.0
+38,5687590,MKA.L,2025-06-09,False,,,False,0.0
+39,5748333,JSE.L,2025-07-23,True,905472.14,PCA (fund) buying,False,0.0
+40,5754250,FDEV.L,2025-07-28,False,,,False,0.0

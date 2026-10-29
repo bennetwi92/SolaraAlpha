@@ -227,3 +227,56 @@ Written after the v1 failure and before the fresh sample was drawn (`data.dealin
 **Fresh sample:** 40 notices drawn with seed 2232 from the same population, leaving out the
 first 40. The bar is unchanged. If v2 fails too, the drift test does not run (0005 allows one
 fix only).
+
+## Results (2026-10-29): the pre-step failed twice, so the drift test did not run
+
+**Rules v2 on the fresh sample** (seed 2232, 40 notices, labelled by hand before the rules were
+run; `docs/research/0005-labels-v2.csv`):
+
+| check | v1 (seed 223) | v2 (fresh, seed 2232) | bar |
+|---|---|---|---|
+| buy / not-buy correct | 33 of 40 (82.5%) | **34 of 40 (85%)** | 90% |
+| value within 10%, true buys | 9 of 15 (60%) | **14 of 18 (78%)** | 90% |
+
+Two of the 40 fresh labels were judgement calls. A non-executive director buying 100,000 shares
+with his own money from LTIP sellers on AIMX was labelled a buy. An EBT trustee buying shares for
+the company's share plans was labelled not a buy. Read the other way round, buy / not-buy would be
+36 of 40 (90%), but the value check would still fail (at most 15 of 18). The failure does not
+depend on either call.
+
+What v2 still gets wrong:
+
+- **Layout variants it was not written for.** Section marks in brackets ("(a) |", "(c) |") break
+  the field boundaries, so a purchase price is lost or netted against a sale (2 notices). A "Price
+  and volume" label without "(s)" is missed (1).
+- **Its opening-text rule is too broad.** A notice that mentions future "Subscription Shares"
+  hides the market purchase it reports (1).
+- **The nature field cannot say who is buying.** An off-market acquisition next to an option
+  exercise, and an EBT trustee's purchase, both read as director buys (2).
+
+**So the drift test was not run.** 0005 allows one fix, and the amendment of 2026-10-29 said a v2
+failure stops the test. No forward return, burst or residual was computed for any director-buy
+week. The holdout was not touched. The fault is in reading the notices, not in the signal: this
+note says nothing about whether director buys predict bursts.
+
+**The bias bound** (research 0012) was not needed, because there is no result to bound.
+
+## Recommendation (to the PM and the owner)
+
+Director buys stay where they are: as context the research agent reads in §7 (ownership), notice
+by notice. That is how a person reads them, and it is the reading the agents already do.
+
+Whether to try again is the owner's call, because any path changes what 0005 pre-registered:
+
+1. **Rules v3 and a third fresh sample.** The remaining misses are mostly mechanical
+   (bracketed marks, label variants, an over-broad opening-text rule), so v3 would probably pass
+   the buy check. Two misses are not mechanical: who the buyer is (an EBT, an off-market seller)
+   is not in the nature field. Cost: about a day. Risk: tuning rules on samples until one passes.
+2. **Hand-label every notice that the rules call a buy** (roughly 1,000 of the 4,151), and keep
+   rules v2 only to drop the clear non-buys (options, SIP, grants, sales). Fixed in advance, it
+   would meet the bar by construction. Cost: several days of reading.
+3. **Leave E4 for now** and move to the placings study (#285). Placings are announced in
+   standard, structured RNS headlines, so the parse risk is lower.
+
+My recommendation is **3, then 1 if the owner wants E4 back**. The pre-registered MDE is 9–13 pp
+on the burst rate, so even a clean parse could only find a large effect.

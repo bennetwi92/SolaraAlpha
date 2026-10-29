@@ -180,7 +180,7 @@ def is_open_market_buy(nature: str) -> bool:
 
 
 def value_gbp(d: Dealing, close_pence: float | None, fx: dict[str, float] | None = None) -> float:
-    """Σ price × volume in pounds: pounds as is, pence ÷ 100, an unmarked price as pence or
+    """Σ price x volume in pounds: pounds as is, pence ÷ 100, an unmarked price as pence or
     pounds whichever is nearer ``close_pence`` (the stock's close that day, pence; pence when
     unknown), another currency at ``fx[code]`` (pounds per unit; NaN when missing)."""
     gross = sum(p * v for p, v in d.pairs)
