@@ -189,6 +189,166 @@ def sample(panel: Path, seed: int = SEED, skip: int | None = None) -> pd.DataFra
     return out
 
 
+# --- the test (only after the pre-step) ----------------------------------------------------
+
+
+def load(panel: Path) -> pd.DataFrame:
+    """Panel stock-weeks: in-sample Fridays, past the £10k floor, with a 3-ATR burst."""
+    frames = [
+        pd.read_parquet(p)
+        for p in sorted(panel.glob("*.L.parquet"))
+        if "ticker" in pq.read_schema(p).names
+    ]
+    df = pd.concat(frames, ignore_index=True)
+    df = df[(df["week"] >= FIRST) & (df["week"] <= LAST)]
+    df = df[df["ticker"].isin(research_tickers()) & df["floor"].astype(bool)]
+    df = df[df["burst_3"].notna()].copy()
+    df["r_atr"] = df.groupby("week")["atr_pct"].rank(pct=True)
+    df["r_adv"] = df.groupby("week")["adv"].transform(lambda s: np.log(s).rank(pct=True))
+    return df.dropna(subset=["r_atr", "r_adv"]).reset_index(drop=True)
+
+
+def one_per_8_weeks(e: pd.DataFrame) -> pd.DataFrame:
+    keep, last = [], {}
+    for i, r in e.sort_values(["ticker", "published"]).iterrows():
+        if r["ticker"] in last and r["published"] - last[r["ticker"]] < pd.Timedelta(days=56):
+            continue
+        last[r["ticker"]] = r["published"]
+        keep.append(i)
+    return e.loc[keep]
+
+
+def null1(df: pd.DataFrame, target: str) -> np.ndarray:
+    """P(target) from a logistic on the weekly ranks of ATR % and log ADV (Newton)."""
+    x = np.column_stack([np.ones(len(df)), df["r_atr"], df["r_adv"]])
+    y = df[target].to_numpy(float)
+    b = np.zeros(3)
+    for _ in range(25):
+        p = 1 / (1 + np.exp(-x @ b))
+        h = x.T @ (x * (p * (1 - p))[:, None])
+        b += np.linalg.solve(h, x.T @ (y - p))
+    return 1 / (1 + np.exp(-x @ b))
+
+
+def stat(df: pd.DataFrame, a: str, b: str) -> float:
+    """Mean residual in group ``a`` minus group ``b`` (boolean columns)."""
+    x, y = df.loc[df[a], "res"], df.loc[df[b], "res"]
+    return float(x.mean() - y.mean()) if len(x) and len(y) else math.nan
+
+
+def boot(df: pd.DataFrame, a: str, b: str) -> tuple[float, float]:
+    """98% moving-block bootstrap interval (16-week blocks, whole weeks) of :func:`stat`."""
+    weeks = np.sort(df["week"].unique())
+    agg = np.column_stack(
+        [
+            df.assign(v=df["res"].where(df[a], 0.0)).groupby("week")["v"].sum().reindex(weeks),
+            df.groupby("week")[a].sum().reindex(weeks),
+            df.assign(v=df["res"].where(df[b], 0.0)).groupby("week")["v"].sum().reindex(weeks),
+            df.groupby("week")[b].sum().reindex(weeks),
+        ]
+    ).astype(float)
+    rng = np.random.default_rng(SEED)
+    k = math.ceil(len(weeks) / BLOCK)
+    out = []
+    for _ in range(REPS):
+        starts = rng.integers(0, len(weeks) - BLOCK + 1, k)
+        idx = np.concatenate([np.arange(s, s + BLOCK) for s in starts])[: len(weeks)]
+        t = agg[idx].sum(axis=0)
+        if t[1] and t[3]:
+            out.append(t[0] / t[1] - t[2] / t[3])
+    lo, hi = np.percentile(out, [1, 99])
+    return float(lo), float(hi)
+
+
+def test(df: pd.DataFrame, a: str, b: str, label: str, full: bool = True) -> dict:
+    est = stat(df, a, b)
+    lo, hi = boot(df, a, b) if df[a].sum() >= 5 and df[b].sum() >= 5 else (math.nan, math.nan)
+    row = {
+        "test": label,
+        "n": int(df[a].sum()),
+        "vs": int(df[b].sum()),
+        "estimate": est,
+        "lo (98%)": lo,
+        "hi (98%)": hi,
+    }
+    if not full:
+        return row
+    halves = []
+    for _, h0, h1 in HALVES:
+        h = df[
+            (df["week"] >= pd.Timestamp(h0, tz="UTC")) & (df["week"] <= pd.Timestamp(h1, tz="UTC"))
+        ]
+        halves.append(stat(h, a, b))
+    same = sum(1 for h in halves if np.isfinite(h) and np.sign(h) == np.sign(est))
+    by = df[df[a]].groupby("ticker")["res"].sum()
+    best = (by.nlargest(3) if est > 0 else by.nsmallest(3)).index
+    rest = df[~df["ticker"].isin(best)]
+    est3 = stat(rest, a, b)
+    lo3, hi3 = boot(rest, a, b)
+    excl = bool(np.isfinite(lo) and (lo > 0 or hi < 0))
+    row |= {
+        "half-years same sign": f"{same} of 6",
+        "halves": " / ".join(f"{h:+.3f}" if np.isfinite(h) else "n/a" for h in halves),
+        "without best 3": f"{est3:+.3f} [{lo3:+.3f}, {hi3:+.3f}]",
+        "pass": excl and same >= 5 and np.sign(est3) == np.sign(est) and (lo3 > 0 or hi3 < 0),
+    }
+    return row
+
+
+def mark(df: pd.DataFrame, e: pd.DataFrame, lag: int) -> pd.Series:
+    key = set(zip(e["ticker"], e["week"] + pd.Timedelta(weeks=lag), strict=True))
+    return pd.Series([k in key for k in zip(df["ticker"], df["week"], strict=True)], df.index)
+
+
+def directors(panel: Path, e: pd.DataFrame) -> pd.Series:
+    """Directors took part: the raise's text says so, or a DSH filing within 7 days after."""
+    f = filings(panel)
+    dsh = f[f["type_code"] == "DSH"]
+    out = []
+    for _, ev in e.iterrows():
+        d = dsh[
+            (dsh["ticker"] == ev["ticker"])
+            & (dsh["published"] >= ev["published"])
+            & (dsh["published"] <= ev["published"] + pd.Timedelta(days=7))
+        ]
+        out.append(directors_in(raise_text(panel, ev)) or len(d) > 0)
+    return pd.Series(out, e.index)
+
+
+def run(panel: Path) -> None:
+    df = load(panel)
+    e = one_per_8_weeks(events(panel))
+    e["dir"] = directors(panel, e)
+    print(
+        f"panel: {len(df):,} stock-weeks past £10k, {df['ticker'].nunique()} stocks, "
+        f"{df['week'].nunique()} Fridays; raises after the 8-week rule: {len(e)}"
+    )
+    for target in ("burst_3", "burst_2", "burst_4"):
+        df["res"] = df[target] - null1(df, target)
+        rows = []
+        for lag, name in ((0, "E0"), (LAG, "E4")):
+            d = df.assign(ev=mark(df, e, lag))
+            d["other"] = ~d["ev"]
+            rows.append(test(d, "ev", "other", f"{name} all", target == "burst_3"))
+            if target == "burst_3":
+                rows += [
+                    test(d[d["size"] == s], "ev", "other", f"{name} {s}", False) for s in SIZES
+                ]
+        d = df.assign(ev=mark(df, e[e["dir"]], 0), no=mark(df, e[~e["dir"]], 0))
+        rows.append(test(d, "ev", "no", "E0 directors in - not", target == "burst_3"))
+        print(f"\n{target}:")
+        print(pd.DataFrame(rows).to_string(index=False, float_format=lambda x: f"{x:+.3f}"))
+    for lag, name in ((0, "E0"), (LAG, "E4")):
+        on = mark(df, e, lag)
+        p3 = null1(df, "burst_3")
+        print(
+            f"{name}: burst_3 rate {df.loc[on, 'burst_3'].mean():.3f} (null 1 "
+            f"{p3[on.to_numpy()].mean():.3f}), others {df.loc[~on, 'burst_3'].mean():.3f}; "
+            f"ret_8w mean {df.loc[on, 'ret_8w'].mean():+.3f} vs {df.loc[~on, 'ret_8w'].mean():+.3f}"
+            f"; median {df.loc[on, 'ret_8w'].median():+.3f} vs {df.loc[~on, 'ret_8w'].median():+.3f}"
+        )
+
+
 if __name__ == "__main__":
     step, panel = sys.argv[1], Path(sys.argv[2])
-    {"count": count, "sample": sample}[step](panel)
+    {"count": count, "sample": sample, "run": run}[step](panel)
