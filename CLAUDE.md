@@ -25,10 +25,15 @@ Current state:
 - **Trading frequency is weekly** unless the owner says otherwise. Weekly bars end Friday
   (`to_weekly`), and only completed weeks are used.
 - Working on **single-stock analysis**; first example is Jet2 (`JET2.L`, AIM-listed). The
-  pipeline universe is the **FTSE AIM 100 plus the FTSE AIM UK 50** (104 stocks; snapshot in
-  `config/watchlist.toml`, refreshed after each quarterly FTSE review with
-  `scripts/universe.py --write`, run by hand, never in CI; not point-in-time; then `scripts/issuers.py
-  --write` for the new stocks' LEIs in `config/issuers.toml`).
+  pipeline universe is **every AIM stock Trading212 offers** (ADR 0038, ~578: `pipeline.universe()`
+  = the watchlist, then the research universe's other tickers). The watchlist is the **FTSE AIM
+  100 plus the FTSE AIM UK 50** (104 stocks; snapshot in `config/watchlist.toml`, refreshed after
+  each quarterly FTSE review with `scripts/universe.py --write`, run by hand, never in CI; not
+  point-in-time; then `scripts/issuers.py --write` for the new stocks' LEIs in
+  `config/issuers.toml`); the rest come from `config/research_universe.toml`
+  (`scripts/research_universe.py --write`, by hand). Stocks with no `sector` on file skip the
+  sector cap (flagged); fewer than 26 clean weekly bars → PASS without running the toolkits;
+  NSM searches are paced one a second.
 - Price data is **fetched fresh each run** (no `@parquet_cache`). With `--save` the raw fetch is
   also snapshotted into the results DB (`solaraalpha.store`) — for the record, never as a cache.
 - **Results DB**: scripts' `--save` records the run, model cards and input snapshots in an
@@ -281,7 +286,7 @@ Current state:
 | Daily check: prices, triggers (stops, targets, gaps, breaks), new filings and headlines | `uv run python scripts/daily.py [--save] [--report FILE] [--session ID]` (`--session`: an event session's run, ADR 0037) |
 | Notify the owner only when something needs them (exit 3 = nothing) | `uv run python scripts/notify.py --mode daily\|weekly --run N [--channel stdout\|github-issue]` |
 | Desk errors for a run / a failed workflow (exit 3 = nothing) | `uv run python scripts/notify.py --mode errors --run N --part pipeline\|agents [--channel github-errors]` / `--mode job-failed --workflow NAME --url URL` |
-| Weekly pipeline over the watchlist | `uv run python scripts/scan.py [--save]` |
+| Weekly pipeline over the universe (watchlist + research universe) | `uv run python scripts/scan.py [--save]` |
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
 | Fresh catalysts (filings, headlines, scheduled events) per stock | `uv run python scripts/catalysts.py [TICKERS...] [--days 7] [--horizon 10] [--no-news]` |
@@ -435,8 +440,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         `shadow` table, record (scan / plan time) and load — 0028
 scripts/                thin CLI entry points (argparse) that call into the package
 config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM 100 + AIM UK 50 snapshot)
-config/research_universe.toml  research only: every AIM company Trading212 offers (#290; snapshot,
-                        ticker -> name, ISIN, LEI, Trading212 ticker); not the live watchlist
+config/research_universe.toml  every AIM company Trading212 offers (#290; snapshot, ticker -> name,
+                        ISIN, LEI, Trading212 ticker); the weekly scan runs it too (ADR 0038)
 config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)
 config/issuers.toml     per-stock LEI + legal name: how filings are found (the LSE lookup 403s in CI)
 config/value_models.toml  per-stock value models (skill + script) the research agent calls — #127

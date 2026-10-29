@@ -41,7 +41,7 @@ HEADER = """\
 # instruments (London share lines in GBX) minus every ISIN on the FCA Official List (AIM shares are
 # not on it), minus preference lines and funds, minus lines with no Yahoo bar in the last {stale}
 # days. `lei` from GLEIF by ISIN, else the NSM filer of the same name ("" = none found). No liquidity cut here: studies apply the £10k
-# research floor point-in-time. Research only, not the live watchlist; today's companies only
+# research floor point-in-time. The weekly scan runs it too (ADR 0038); today's companies only
 # (survivor snapshot: see the leavers ledger, #291). Refresh by hand:
 # `uv run python scripts/research_universe.py --write`.
 snapshot = {day}

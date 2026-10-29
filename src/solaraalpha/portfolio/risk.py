@@ -39,11 +39,14 @@ HOLDING_COLS = [
 ]
 
 
+UNKNOWN_SECTOR = "unknown"  # no `sector` on file: not one sector, so the sector cap skips it
+
+
 def sector_of(ticker: str, path: Path = BENCHMARKS) -> str:
-    """The stock's ``sector`` from ``config/benchmarks.toml``, else ``"unknown"``."""
+    """The stock's ``sector`` from ``config/benchmarks.toml``, else :data:`UNKNOWN_SECTOR`."""
     with path.open("rb") as f:
         cfg = tomllib.load(f)
-    return str(cfg.get("stocks", {}).get(ticker, {}).get("sector", "unknown"))
+    return str(cfg.get("stocks", {}).get(ticker, {}).get("sector", UNKNOWN_SECTOR))
 
 
 @dataclass(frozen=True)
@@ -166,7 +169,7 @@ def breaches(held: pd.DataFrame, eq: Equity, rules: Rules) -> list[str]:
                     f"{ticker} is {share:.0%} of equity > max_position_pct {rules.max_position_pct:.0%}"
                 )
         for sector, share in exposure(held, eq).items():
-            if share > rules.max_sector_pct:
+            if share > rules.max_sector_pct and sector != UNKNOWN_SECTOR:
                 out.append(
                     f"sector {sector} is {share:.0%} > max_sector_pct {rules.max_sector_pct:.0%}"
                 )

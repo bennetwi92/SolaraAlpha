@@ -1,6 +1,6 @@
-"""Run the weekly pipeline: the watchlist, some stocks, or one toolkit on one stock.
+"""Run the weekly pipeline: the universe, some stocks, or one toolkit on one stock.
 
-uv run python scripts/scan.py                          # every stock in config/watchlist.toml
+uv run python scripts/scan.py                          # config/watchlist.toml + research_universe.toml
 uv run python scripts/scan.py JET2.L                   # these stocks through the pipeline
 uv run python scripts/scan.py JET2.L --toolkit technical [--param entry_date=2025-03-14]
 uv run python scripts/scan.py --list                   # stages, toolkits and their bands
@@ -47,8 +47,8 @@ from solaraalpha.pipeline import (
     run_toolkit,
     screen,
     stale_watchlist,
+    universe,
     watch_on,
-    watchlist,
     watchlist_snapshot,
 )
 from solaraalpha.portfolio import book, shadow
@@ -182,7 +182,11 @@ def not_offered(tickers: list[str]) -> dict[str, str]:
 
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    p.add_argument("tickers", nargs="*", help="Yahoo tickers (default: config/watchlist.toml)")
+    p.add_argument(
+        "tickers",
+        nargs="*",
+        help="Yahoo tickers (default: the watchlist + the research universe, ADR 0038)",
+    )
     p.add_argument("--toolkit", help="run just this toolkit and print its label")
     p.add_argument("--param", action="append", default=[], help="toolkit param key=value")
     p.add_argument("--list", action="store_true", help="show stages, toolkits and bands")
@@ -196,7 +200,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.param and not args.toolkit:
         sys.exit("--param needs --toolkit")
 
-    inputs = [Inputs(t) for t in args.tickers or watchlist()]
+    inputs = [Inputs(t) for t in args.tickers or universe()]
     run_id = start_run("scan", vars(args)) if args.save else None
     if args.save:
         desk_chat.pull()  # the weekend's only scheduled pull (ADR 0033)

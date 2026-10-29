@@ -17,7 +17,7 @@ from typing import Any
 import pandas as pd
 
 from solaraalpha.portfolio.plan import TradePlan
-from solaraalpha.portfolio.risk import Equity, sector_of
+from solaraalpha.portfolio.risk import UNKNOWN_SECTOR, Equity, sector_of
 from solaraalpha.portfolio.rules import Rules
 
 # ADR 0022: reward:risk (levels setup) is not an estimate we rank on and relative strength is
@@ -142,6 +142,8 @@ def fit(
         if fl:
             flags[plan.ticker] = fl
         sec = sector(plan.ticker)
+        if sec == UNKNOWN_SECTOR:  # no sector on file (most of the wide universe, ADR 0038)
+            flags.setdefault(plan.ticker, []).append("sector unknown: sector cap not checked")
         reason = None
         if tripped:
             reason = (
@@ -157,6 +159,7 @@ def fit(
             )
         elif (
             equity.equity > 0
+            and sec != UNKNOWN_SECTOR
             and (by_sector.get(sec, 0.0) + plan.position_value) / equity.equity
             > rules.max_sector_pct
         ):

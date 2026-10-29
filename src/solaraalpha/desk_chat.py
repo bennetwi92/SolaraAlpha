@@ -11,6 +11,7 @@ post is already in the thread.
 from __future__ import annotations
 
 import re
+import tomllib
 from datetime import UTC, datetime
 from functools import cache
 from pathlib import Path
@@ -103,12 +104,16 @@ OBSERVATION = "observation:"
 
 @cache
 def _names() -> dict[str, str]:
-    """Ticker -> company name, from the watchlist's comments (``"JET2.L",  # Jet2``)."""
+    """Ticker -> company name, from the watchlist's comments (``"JET2.L",  # Jet2``), else the
+    research universe's ``name``."""
     try:
         text = (REPO_ROOT / "config" / "watchlist.toml").read_text()
+        with (REPO_ROOT / "config" / "research_universe.toml").open("rb") as f:
+            wide = tomllib.load(f)["stocks"]
     except OSError:
         return {}
-    return dict(re.findall(r'"([^"]+)",\s*#\s*(.+?)\s*$', text, re.M))
+    names = {t: str(v.get("name", "")) for t, v in wide.items() if v.get("name")}
+    return names | dict(re.findall(r'"([^"]+)",\s*#\s*(.+?)\s*$', text, re.M))
 
 
 def _about(ticker: str) -> str:

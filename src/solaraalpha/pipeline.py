@@ -54,6 +54,9 @@ from solaraalpha.toolkits import Cards, Inputs, get
 log = get_logger(__name__)
 
 WATCHLIST = REPO_ROOT / "config" / "watchlist.toml"
+# Every AIM company Trading212 offers in GBX (#290); the weekly scan runs it with the watchlist
+# (owner, 2026-10-29: docs/decisions/0038).
+RESEARCH_UNIVERSE = REPO_ROOT / "config" / "research_universe.toml"
 # FTSE reviews its UK indices quarterly; constituent changes take effect in these months. A
 # hand-copied snapshot is stale once a review month has passed (plus a week for the changes
 # to land) since it was taken.
@@ -62,6 +65,12 @@ REVIEW_GRACE_DAYS = 7
 LABELS = ("ACT", "WATCH", "PASS", "ERROR")
 ALL_LABELS = frozenset(LABELS)
 # Toolkits whose labels make the screen label (events is the input to research, not a gate).
+# Fewer clean weekly bars than this (after trim_to_consistent) and the toolkits are not run: the
+# stock is PASS "too little clean history", not an ERROR. Thin AIM lines with stale closes trim to
+# a few weeks (ADR 0038); the toolkits need 14+ weeks for an ATR.
+MIN_WEEKS = 26
+THIN = "too little clean history"
+
 SCREEN_TOOLKITS = ("technical", "levels", "relative_strength", "fundamentals")
 _OPS: dict[str, Callable[[Any, Any], bool]] = {
     ">=": operator.ge,
@@ -178,6 +187,14 @@ def watchlist(path: Path = WATCHLIST) -> list[str]:
         return list(tomllib.load(f)["tickers"])
 
 
+def universe(path: Path = WATCHLIST, research: Path = RESEARCH_UNIVERSE) -> list[str]:
+    """The weekly scan's stocks: the watchlist, then the research universe's other tickers."""
+    with research.open("rb") as f:
+        wide = list(tomllib.load(f)["stocks"])
+    names = watchlist(path)
+    return names + [t for t in wide if t not in set(names)]
+
+
 def watchlist_snapshot(path: Path = WATCHLIST) -> pd.Timestamp | None:
     """The ``snapshot`` date in the watchlist file, if any."""
     with path.open("rb") as f:
@@ -250,11 +267,14 @@ def screen_label(steps: list[Step]) -> tuple[str, str]:
         if (s.toolkit in SCREEN_TOOLKITS or (s.toolkit == "liquidity" and s.label == "ERROR"))
         and s.status != "skip"
     ]
-    label = combine([s.label for s in judged]) if judged else "ERROR"
+    if not judged:
+        thin = next((s.reason for s in steps if s.reason.startswith(THIN)), None)
+        return ("PASS", thin) if thin else ("ERROR", "no toolkit ran")
+    label = combine([s.label for s in judged])
     reason = "; ".join(
         f"{s.toolkit} {s.label}" + (f": {s.reason}" if s.label != "ACT" else "") for s in judged
     )
-    return label, reason or "no toolkit ran"
+    return label, reason
 
 
 def _field(cards: Cards, model: str, field: str) -> Any:
@@ -405,6 +425,16 @@ def screen(
     return out
 
 
+def thin_history(x: Inputs) -> str | None:
+    """Why ``x`` has too little clean history to judge (:data:`MIN_WEEKS`), or None (enough, or
+    the prices failed: the toolkits report that as an ERROR)."""
+    try:
+        n = len(x.weekly)
+    except Exception:
+        return None
+    return f"{THIN}: {n} weekly bars < {MIN_WEEKS}" if n < MIN_WEEKS else None
+
+
 def run_toolkit(
     toolkit: str, x: Inputs, params: dict[str, Any] | None = None, stage: str = ""
 ) -> Step:
@@ -433,6 +463,7 @@ def run_pipeline(
     :func:`screen`)."""
     steps: dict[str, list[Step]] = {x.ticker: [] for x in inputs}
     running: dict[str, str] = {x.ticker: "ACT" for x in inputs}  # nothing judged yet
+    thin = {x.ticker: why for x in inputs if (why := thin_history(x))}
     for stage in stages:
         picked: set[str] = set()
         if stage.on_shortlist:
@@ -445,6 +476,11 @@ def run_pipeline(
         alive = [x for x in inputs if runs(x.ticker)]
         log.info("stage %s: %d of %d tickers", stage.name, len(alive), len(inputs))
         for x in inputs:
+            if x.ticker in thin:
+                steps[x.ticker] += [
+                    Step(stage.name, k, "skip", thin[x.ticker]) for k in stage.toolkits
+                ]
+                continue
             if not runs(x.ticker):
                 why = (
                     "not shortlisted"
