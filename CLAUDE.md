@@ -292,7 +292,9 @@ Current state:
 | Fresh catalysts (filings, headlines, scheduled events) per stock | `uv run python scripts/catalysts.py [TICKERS...] [--days 7] [--horizon 10] [--no-news]` |
 | Refresh the watchlist (FTSE AIM 100 + AIM UK 50; by hand, never CI) | `uv run python scripts/universe.py [--write]` |
 | LEIs for new watchlist stocks (`config/issuers.toml`; NSM name search; check the names) | `uv run python scripts/issuers.py [--write]` |
-| Refresh the AIM research universe (every AIM company Trading212 offers: its London lines minus the FCA Official List; by hand, never CI; needs the Trading212 keys) | `uv run python scripts/research_universe.py [--write]` |
+| Refresh the AIM research universe (every AIM company Trading212 offers: its London lines minus the FCA Official List and `official_list.NOT_AIM`; by hand, never CI; needs the Trading212 keys) | `uv run python scripts/research_universe.py [--write]` |
+| Research-universe coverage per in-sample year (Yahoo history, past the £10k floor point-in-time, by size group; research 0011) | `uv run python scripts/research/coverage.py RAW_DIR` |
+| Research panels on the AIM research universe (adds `floor` / `mcap` / `size` per Friday) | `uv run python scripts/research/build_panel.py OUT research` / `r9_relative_strength.py build OUT research` (reports: `r5_rank_growth.py OUT STEP --floor 10000`, `r9_relative_strength.py report OUT research`) |
 | Book trades by hand (draft, approve, amend, reject, tickets, placed, fills, exits) | `uv run python scripts/book.py new JET2.L --entry 1520 --stop 1400 --qty 100` / `list` / `show ID` / `approve ID` / `amend ID --qty N --price P --stop P` / `reject ID --reason TEXT` / `tickets` / `placed ORDER_ID [ORDER_ID ...] [--ref REF]` / `fill ORDER_ID --qty N --price P [--commission X]` / `unfilled ORDER_ID` / `cancel ORDER_ID` / `expire` / `exit ID --reason stop|target|thesis_broken|...` / `cash dividend TICKER GBP --at EXDATE` / `split ID --ratio 2:1` / `corporate-close ID --price P --reason takeover|delisting` / `stats [--since D]` (`--db PATH` for a local file; from GitHub: the **Book** workflow, `gh workflow run book.yml -f command='cash deposit 5000'`; `-f script=plan.py -f command='--run 8'` re-plans a run) |
 | Plan the week's trades from a saved scan run (final ACT labels → plan → fit → approved positions) | `uv run python scripts/plan.py --run N [--dry-run] [--replan]` (`--replan`: again for tickers whose draft was rejected; also records the shadow book's agent-paired baselines, ADR 0028) |
 | Weekly pack for a run (new plans with approve/reject commands, fit rejections, watch list, open positions, money, errors) | `uv run python scripts/weekly_pack.py --run N [--out FILE] [--report FILE]` |
@@ -388,6 +390,9 @@ src/solaraalpha/        importable package — all reusable code lives here
                         vol-scaled excess returns, peer rank — see docs/decisions/0011
     liquidity.py        liquidity (any stock): median daily traded value (20 / 60 sessions),
                         zero-volume share, Corwin-Schultz spread proxy, max position at max_adv_pct
+    universe.py         the AIM research universe point-in-time (research only): research_tickers, the
+                        £10k floor per Friday, market cap from published share counts, size group
+                        (aim100 = today's watchlist / rest / micro < £50m), with_universe — #290
     charts.py           weekly_chart: candles + 10/40w MAs + levels, coil, trigger, stop/target
                         + volume as a PNG (Agg) for the validator's pack
     backtest.py         point-in-time replay of the screen (cards per Friday from the bars up to

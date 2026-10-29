@@ -52,6 +52,7 @@ def test_aim_lines_drop_listed_non_lse_and_noise() -> None:
             _inst("TWOl_EQ", "TWO", "GB0000000011", "Two Lines A"),  # same TIDM twice
             _inst("TWOl1_EQ", "TWO", "GB0000000029", "Two Lines B"),
             _inst("AAZl_EQ", "AAZ", "GB00B0C18177", "Anglo Asian Mining"),  # AIM: kept
+            _inst("SNRl_EQ", "SNR", "GB0007958233", "Senior"),  # NOT_AIM: off the live list
         ]
     )
     out = official_list.aim_lines(inst, {"GB00BMJ6DW54"})

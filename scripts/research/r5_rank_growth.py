@@ -28,13 +28,13 @@ REPS = 2000
 SEED = 223
 
 
-def load(panel: Path) -> pd.DataFrame:
+def load(panel: Path, floor: float = MIN_ADV) -> pd.DataFrame:
     df = pd.concat(
         [pd.read_parquet(p) for p in sorted(panel.glob("*.L.parquet"))], ignore_index=True
     )
     df = df[(df["week"] >= FIRST) & (df["week"] <= LAST_8W)].copy()
     df.loc[df["week"] > LAST_BURST, ["burst_2", "burst_3", "burst_4"]] = np.nan
-    df = df[df["adv"] >= MIN_ADV]
+    df = df[df["adv"] >= floor]
     df["xs_8w"] = df["ret_8w"] - df.groupby("week")["ret_8w"].transform("mean")
     return df.reset_index(drop=True)
 
@@ -302,8 +302,11 @@ def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument("panel", type=Path)
     p.add_argument("step", choices=["churn", "movers", "growth"])
+    p.add_argument(
+        "--floor", type=float, default=MIN_ADV, help="ADV floor, GBP (research universe: 10000)"
+    )
     a = p.parse_args(argv)
-    df = load(a.panel)
+    df = load(a.panel, a.floor)
     print(
         f"panel: {len(df)} stock-weeks past the floor, {df['ticker'].nunique()} tickers, "
         f"{df['week'].nunique()} weeks ({df['week'].min().date()} to {df['week'].max().date()})"
