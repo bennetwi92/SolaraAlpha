@@ -223,3 +223,14 @@ V3 and the result is final on these weeks. V3 goes to forward recording only, ne
 agents as a reason to buy. The live record from 2026-10-20 is the only test left. The micro-cap
 lean (20 events in-sample, 9 in the holdout) is too thin to be its own claim. Any future test of
 it would have to be pre-registered on the live record alone.
+
+**How V3 is recorded forward (fixed now, before any of these weeks is known).** No pipeline
+change is needed: `nearness` and `good_news` come from prices, volumes and NSM filing dates,
+which can be rebuilt at any time (`build_panel.py` then `r12_anchor_overhang.py build`). The
+forward test uses signal Fridays from **2026-10-23** on, the same V3 definition and statistic,
+null 1 refitted on those weeks. It is read **once**, when there are at least 100 events with a
+complete 50-session window, or on 2027-10-29, whichever comes first. The gate is the in-sample
+estimate's sign with at least half its size (≥ +4.45 pp), and the raw burst rate of events must
+also beat other weeks'. One caveat to watch: a company that leaves AIM before the test is run
+loses its Yahoo prices, so the ledger (`scripts/leavers.py`) should be refreshed at the same time
+to report the bias bound.
