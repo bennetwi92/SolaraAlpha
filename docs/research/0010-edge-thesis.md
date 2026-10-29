@@ -135,6 +135,9 @@ So the universe is built first (#290), with a leavers ledger from the NSM (#291)
 survivorship bias every wide-universe note reports. Research 0005 is amended to the wide
 universe before it runs (#284).
 
+2026-10-29: the owner also put the whole research universe into the live weekly scan, ahead of
+any signal passing (docs/decisions/0038).
+
 ## Caveats
 
 - Every source below is a **prior**, mostly from US or main-market data. None of them is

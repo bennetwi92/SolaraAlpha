@@ -1,8 +1,9 @@
 # Research 0011: The AIM research universe: coverage, noise and size groups
 
 *2026-10-29. A data note, not a signal test: no forward return was computed for it. Issue #290,
-epic #283, the universe the owner chose on #288 (research 0010 amendment). Nothing in the live
-pipeline or watchlist changes.*
+epic #283, the universe the owner chose on #288 (research 0010 amendment). Since ADR 0038 the
+weekly scan runs this list too, so the noise removal and LEI fixes below also reach the live scan
+(20 fewer non-AIM lines, 7 more stocks whose filings it can read); nothing else in it changes.*
 
 ## The answer in one paragraph
 

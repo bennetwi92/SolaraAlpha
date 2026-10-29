@@ -20,6 +20,7 @@ on the announcement; see :func:`solaraalpha.analysis.events.reactions` for the s
 from __future__ import annotations
 
 import re
+import time
 import tomllib
 import unicodedata
 from dataclasses import dataclass
@@ -34,6 +35,10 @@ from solaraalpha.data.http import DEFAULT_TIMEOUT, session
 from solaraalpha.data.prices import LOOKBACK_YEARS
 
 NSM_SEARCH_URL = "https://api.data.fca.org.uk/search?index=nsm-search"
+# Seconds between NSM searches: an unpaced scan of the whole universe got the caller refused
+# (403) within minutes, 2026-10-29 (docs/decisions/0038).
+NSM_GAP = 1.0
+_last_search = 0.0
 NSM_DOC_BASE = "https://data.fca.org.uk/artefacts/"
 GLEIF_URL = "https://api.gleif.org/api/v1/lei-records"  # ISIN -> LEI (scripts/research_universe.py)
 ISSUERS = REPO_ROOT / "config" / "issuers.toml"
@@ -121,9 +126,7 @@ def fetch_announcements(lei: str, start: str | None = None, end: str | None = No
                 ],
             },
         }
-        resp = session().post(NSM_SEARCH_URL, json=body, timeout=DEFAULT_TIMEOUT)
-        resp.raise_for_status()
-        page = parse_nsm(resp.json())
+        page = parse_nsm(_search(body))
         frames.append(page)
         offset += PAGE
         if len(page) < PAGE:
@@ -132,6 +135,18 @@ def fetch_announcements(lei: str, start: str | None = None, end: str | None = No
     df = df.sort_values("published", ignore_index=True)
     df.attrs["lei"] = lei
     return df
+
+
+def _search(body: dict) -> dict:
+    """One NSM search, at most one every :data:`NSM_GAP` seconds."""
+    global _last_search
+    time.sleep(max(0.0, _last_search + NSM_GAP - time.monotonic()))
+    try:
+        resp = session().post(NSM_SEARCH_URL, json=body, timeout=DEFAULT_TIMEOUT)
+    finally:
+        _last_search = time.monotonic()
+    resp.raise_for_status()
+    return dict(resp.json())
 
 
 def search_issuers(name: str, days: int = 365) -> list[tuple[str, str, int]]:
@@ -156,9 +171,7 @@ def search_issuers(name: str, days: int = 365) -> list[tuple[str, str, int]]:
             ],
         },
     }
-    resp = session().post(NSM_SEARCH_URL, json=body, timeout=DEFAULT_TIMEOUT)
-    resp.raise_for_status()
-    return filers(resp.json())
+    return filers(_search(body))
 
 
 def filers(payload: dict) -> list[tuple[str, str, int]]:

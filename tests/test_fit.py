@@ -122,6 +122,20 @@ def test_sector_and_heat_caps_reject() -> None:
     assert [p.ticker for p in rep.accepted] == ["C.L"]
     assert rep.rejected[0][1] == "rejected_by_fit: sector Tech would be 36% > max_sector_pct 35%"
 
+    # no sector on file is not one sector: two unknowns over the cap together both fit, flagged
+    unknown = {"X.L": "unknown", "Y.L": "unknown"}
+    rep = fit(
+        [plan("X.L", value=2000.0, risk=50.0), plan("Y.L", value=2000.0, risk=50.0)],
+        EMPTY,
+        EMPTY,
+        EQ,
+        CAPS,
+        {"X.L": 0.9, "Y.L": 0.5},
+        sectors=unknown,
+    )
+    assert [p.ticker for p in rep.accepted] == ["X.L", "Y.L"]
+    assert rep.flags["Y.L"] == ["sector unknown: sector cap not checked"]
+
     rep = fit(
         [plan("A.L", risk=550.0), plan("C.L", risk=100.0)],
         held,

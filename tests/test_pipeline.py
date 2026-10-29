@@ -22,6 +22,7 @@ from solaraalpha.pipeline import (
     run_toolkit,
     screen,
     screen_label,
+    universe,
     watch_on,
     watchlist,
 )
@@ -244,6 +245,16 @@ def test_errors_are_isolated(fake: list[tuple[str, str]]) -> None:
     assert c.status == "act"  # stage two runs on every label by default
 
 
+def test_thin_history_is_pass_without_running(fake: list[tuple[str, str]]) -> None:
+    thin, full = Inputs("THIN.L", daily=_daily(60)), Inputs("UP.L", daily=_daily())
+    got = run_pipeline([thin, full], (Stage("one", ("a",)),))
+    (a,) = got["THIN.L"]
+    assert a.status == "skip" and a.reason == "too little clean history: 12 weekly bars < 26"
+    assert got["UP.L"][0].status == "act"
+    assert screen_label(got["THIN.L"]) == ("PASS", a.reason)  # not an ERROR
+    assert screen_label([]) == ("ERROR", "no toolkit ran")
+
+
 def test_missing_verdict_field_is_an_error(
     fake: list[tuple[str, str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -290,6 +301,13 @@ def test_watchlist(tmp_path: Path) -> None:
     (tmp_path / "w.toml").write_text('tickers = ["A.L", "B.L"]\n')
     assert watchlist(tmp_path / "w.toml") == ["A.L", "B.L"]
     assert watchlist()  # the checked-in one loads
+
+
+def test_universe(tmp_path: Path) -> None:
+    (tmp_path / "w.toml").write_text('tickers = ["A.L", "B.L"]\n')
+    (tmp_path / "r.toml").write_text('[stocks]\n"B.L" = {}\n"C.L" = {}\n')
+    assert universe(tmp_path / "w.toml", tmp_path / "r.toml") == ["A.L", "B.L", "C.L"]
+    assert len(universe()) > len(watchlist())  # the checked-in ones load
 
 
 def _daily(n: int = 800) -> pd.DataFrame:

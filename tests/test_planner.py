@@ -58,7 +58,8 @@ def test_plan_run_drafts_one_position_and_is_idempotent(
     )
     assert (
         payload["capped_by"] == "risk"
-        and payload["fit_flags"] == ["event within 9 days"]
+        and payload["fit_flags"]
+        == ["event within 9 days", "sector unknown: sector cap not checked"]
         and "event within 9 days" in payload["flags"]
     )
     ec = book.entry_conditions(conn, 1)
