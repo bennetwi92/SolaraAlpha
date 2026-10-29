@@ -108,3 +108,77 @@ Weekly bars are built from the cleaned daily bars (`clean_prices`, `trim_to_cons
 - **A negative V2** (holders under water predict fewer bursts) would be an exclusion candidate
   for #287.
 - **Fail:** "not shown above the MDE". `new_high` and blue sky stay as levels context, as today.
+
+## Results (2026-10-29): no variant passes; V3 comes close and fails on consistency
+
+Run with `r12_anchor_overhang.py run` on the research panel: 34,104 stock-weeks past the £10k
+floor (324 stocks, 139 in-sample Fridays). Intervals are 96.7% (Bonferroni 3).
+
+| variant | estimate | 96.7% interval | half-years same sign | without the best 3 | pass |
+|---|---|---|---|---|---|
+| **V1 `nearness`** (rank IC) | −0.025 | −0.044 to +0.006 | 5 of 6 | −0.021 (−0.040 to +0.010) | no |
+| **V2 `cgo`** (rank IC) | −0.005 | −0.022 to +0.013 | 4 of 6 | −0.002 (−0.018 to +0.017) | no |
+| **V3 near the high + good news** (residual, pp) | **+8.9** | **+3.5 to +16.2** | **4 of 6** | +6.4 (+2.0 to +14.0) | **no** |
+
+- **V3 clears two of the three conditions and fails the third.** Its interval excludes zero and
+  survives dropping the best 3 names. But it has the same sign in only 4 of 6 half-years
+  (−14.6, +16.2, +13.0, +12.6, +14.4, −22.7 pp), short of the 5 required. The two negative
+  half-years are the thinnest (the first and last, partly covered), but the bar is fixed in
+  advance and it is not met.
+- **V3 is entirely a volatility-adjusted effect.** Raw, events burst at 42.1% and other weeks at
+  42.0%: no difference. The +8.9 pp is against the vol + ADV null. Stocks near their high after
+  good news are less volatile than the average AIM stock, so they burst as often as the rest
+  despite a lower expected rate. That is what the pre-registered target measures, but it is not a
+  higher hit rate.
+- **V3 at 2 and 4 ATR:** +9.9 and +12.0 pp, both intervals excluding zero. `xs_8w`: events
+  +2.4% (median +0.7%) against 0.0% for the rest.
+- **By size (descriptive):** the effect is concentrated in micro caps (20 events, +40.8 pp,
+  interval +26.0 to +62.4). The AIM 100 (86 events, +3.8 pp) and the rest (46 events, +3.2 pp)
+  show little. Twenty events is a handful of stocks.
+
+**Overlap with what the screen already has (reported, not part of the bar):**
+
+| | IC | 96.7% interval |
+|---|---|---|
+| V1 `nearness` after `trend` and `new_high` (partial) | **−0.048** | −0.070 to −0.011 |
+| V2 `cgo` after `trend` (partial) | −0.023 | −0.037 to −0.006 |
+| `trend` itself | +0.009 | −0.012 to +0.031 |
+| V3 within `new_high` weeks only (pp) | +6.7 | −0.3 to +17.7 |
+
+- **Being near the high, beyond what `trend` says, leans the wrong way for the anchoring
+  story.** Holding `trend` and `new_high` fixed, stocks closer to their 52-week high burst
+  *less* often than volatility predicts. This is the opposite of George & Hwang. Note that
+  `nearness` and `cgo` correlate 0.7–0.8 with `trend`, so the partial ICs measure a small slice
+  of the signal. Not tested, not a rule.
+- **By size,** V1 and V2 are negative in micro caps (IC −0.056 and −0.031, both intervals
+  excluding zero) and near zero elsewhere.
+
+**Survivorship (research 0012, case 3).** 266 companies left AIM (other than to the Main Market)
+in the window. Their stock-weeks on AIM in it number about 23,070, against the 34,104 tested:
+**the missing names are 40% of the total.** That is a ceiling: many were under the £10k floor or
+outside Trading212, so the true share past the floor is lower. These are price signals, so the
+leavers' cannot be computed. A result this close to the bar (V3), resting on 20 micro-cap
+events for most of its size, could move a lot if the leavers were in.
+
+## What it says
+
+- **No anchoring or overhang edge was shown** on the pre-registered bar.
+- **V3 ("good news near the 52-week high") is the most promising result in epic #283 so far.**
+  It is significant after Bonferroni and survives dropping the best names. It fails the
+  half-year consistency rule, and its raw hit rate is no higher than any other week's. It is a
+  candidate to watch, not a signal.
+- **Plain closeness to the high is not a buy signal here.** If anything, it leans negative once
+  `trend` is held fixed, and so does the overhang.
+
+## Recommendation (to the PM and the owner)
+
+1. **No change to the toolkits, the rank or the screen.** `new_high` and blue sky stay as levels
+   context.
+2. **The holdout stays locked.** ADR 0029 opens it only after an in-sample pass, and V3 did not
+   pass.
+3. **Record V3 as it happens, without trading on it.** "Good news near the 52-week high" can be
+   tracked forward on the live scans from 2026-10-20 (ADR 0029's second out-of-sample set): a
+   flag on the weekly cards or a shadow-book row (ADR 0028), recording only. Whether to build that
+   is the owner's call; it is a small change.
+4. **Do not promote `new_high` to anything stronger.** Its partial correlation leans the wrong
+   way.
