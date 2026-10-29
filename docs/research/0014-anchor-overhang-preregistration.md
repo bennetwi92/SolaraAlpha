@@ -203,3 +203,23 @@ applies to V3, and to V3 only. V1 and V2 stay closed.
 - **One look.** This spends the holdout for V3. If V3 clears the gate, it goes to the agents as
   catalyst context (not a rank weight, ADR 0022). If not, it is recorded forward only. Either
   way the result is final for this signal on these weeks.
+
+## Holdout result (2026-10-29): V3 fails the gate
+
+`r12_anchor_overhang.py holdout`: 13,071 stock-weeks past the £10k floor, 43 holdout Fridays
+(2025-10-24 to 2026-08-14), **41 events**.
+
+| | in-sample | holdout | gate |
+|---|---|---|---|
+| V3 estimate (pp, residual vs null 1) | +8.9 | **+1.3** (96.7% interval −21.7 to +23.3) | ≥ +4.45: **fail** |
+| raw burst rate, events vs other weeks | 42.1% vs 42.0% | **39.0% vs 45.6%** | — |
+
+By size: AIM 100 −14.9 pp (17 events), rest +7.8 pp (15), micro caps +26.6 pp (9). The micro-cap
+lean from in-sample shows again, on 9 events.
+
+**V3 is not a signal.** It keeps the in-sample sign but at less than a sixth of the size, and its
+raw hit rate was lower than other weeks'. As fixed in the amendment, the holdout is now spent for
+V3 and the result is final on these weeks. V3 goes to forward recording only, never shown to the
+agents as a reason to buy. The live record from 2026-10-20 is the only test left. The micro-cap
+lean (20 events in-sample, 9 in the holdout) is too thin to be its own claim. Any future test of
+it would have to be pre-registered on the live record alone.
