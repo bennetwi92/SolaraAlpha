@@ -1,0 +1,41 @@
+notice_id,cancelled,company,hand,rules,offer_pence,note
+4281409,2022-02-24,ARENA EVENTS GROUP PLC,takeover,takeover,21.0,
+4327369,2022-04-05,SIMIGON LTD.,other,other,,no NSM filings found
+4386602,2022-05-30,ORIGO PARTNERS PLC,suspension,suspension,,
+4403717,2022-06-15,MARSHALL MOTOR HOLDINGS PLC,takeover,takeover,400.0,
+4409010,2022-06-20,SENSYNE HEALTH PLC,cancellation,takeover,,offer-period filings (Rule 2.9) but left by a shareholder vote
+4415348,2022-06-24,DCD MEDIA PLC,cancellation,cancellation,,
+4431098,2022-07-07,SECURE INCOME REIT PLC,takeover,takeover,118.88,
+4682847,2023-02-23,CRESTCHIC PLC,takeover,takeover,401.0,
+4689167,2023-03-01,APPRECIATE GROUP PLC,takeover,takeover,,cash plus PayPoint shares: no single cash price
+4723496,2023-03-31,7DIGITAL GROUP PLC,takeover,takeover,0.695,
+4785726,2023-05-31,KAPE TECHNOLOGIES PLC,takeover,takeover,290.0,USD offer; 290p is the stated sterling equivalent
+4818060,2023-06-29,JOHN LEWIS OF HUNGERFORD PLC,cancellation,cancellation,,
+4892937,2023-09-08,CENKOS SECURITIES PLC,takeover,takeover,,all-share merger with finnCap: no cash price
+4921000,2023-10-04,INLAND HOMES PLC,administration,administration,,
+4938063,2023-10-17,SPORTECH PLC,cancellation,cancellation,,
+4943747,2023-10-23,BRANDSHIELD SYSTEMS PLC,cancellation,cancellation,,
+4999052,2023-12-12,MYANMAR INVESTMENTS INTERNATIONAL LIMITED,other,other,,no NSM filings found
+5002247,2023-12-14,ONTHEMARKET PLC,takeover,takeover,110.0,
+5022757,2024-01-05,REAL GOOD FOOD PLC,administration,administration,,
+5063015,2024-02-12,SAFESTYLE UK PLC,administration,administration,,
+5091245,2024-03-05,CITY PUB GROUP PLC (THE),takeover,takeover,,cash plus Young's shares: no single cash price
+5130681,2024-04-05,SAIETTA GROUP PLC,administration,administration,,
+5162247,2024-04-30,BYOTROL PLC,cancellation,cancellation,,
+5314695,2024-08-20,ALPHA FINANCIAL MARKETS CONSULTING PLC,takeover,takeover,505.0,
+5360286,2024-09-24,IQGEO GROUP PLC,takeover,takeover,480.0,
+5432445,2024-11-18,CROSSWORD CYBERSECURITY PLC,suspension,suspension,,
+5510644,2025-01-23,QUIZ PLC,cancellation,cancellation,,
+5539839,2025-02-17,NEXXEN INTERNATIONAL LTD,cancellation,other,,left AIM for a Nasdaq-only listing; no headline names the cancellation
+5546659,2025-02-21,TRIBE TECHNOLOGY PLC,cancellation,cancellation,,
+5568066,2025-03-11,RA INTERNATIONAL GROUP PLC,cancellation,cancellation,,
+5579183,2025-03-19,WINDWARD LTD,takeover,takeover,215.0,
+5638597,2025-05-02,BRIGHTON PIER GROUP PLC (THE),cancellation,cancellation,,
+5654583,2025-05-15,ALLIANCE PHARMA PLC,takeover,takeover,64.75,
+5741058,2025-07-17,OCEAN HARVEST TECHNOLOGY GROUP PLC,suspension,suspension,,
+5762110,2025-08-01,JOHNSON SERVICE GROUP PLC,main_market,main_market,,
+040c7faf-e69c-4282-9776-1aac4e687232,2025-12-18,CORNISH METALS INC.,continuing,continuing,,"redomicile: readmitted to AIM the same day, not a leaver"
+3ef726fd-99cf-4d1f-b0ba-74bd2e308b5c,2026-01-23,INDUS GAS LIMITED,other,other,,no filing explains the cancellation
+b7ebb042-7679-418e-9de3-1dbc55e42f6b,2026-05-29,IDOX PLC,takeover,takeover,71.5,
+654a83c8-d048-4e22-b724-aa4a106fec40,2026-07-09,Frenkel Topping Group Plc,takeover,takeover,50.0,
+1eb95a6a-3118-476d-ad48-63cf049229d4,2026-10-19,Gooch & Housego Plc,takeover,takeover,1230.0,

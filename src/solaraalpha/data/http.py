@@ -37,7 +37,7 @@ def get_json(url: str, **params: str | int | float) -> object:
     return resp.json()
 
 
-def patient[T](fn: Callable[..., T], *args: object, tries: int = 6, wait: float = 5.0) -> T:
+def patient[T](fn: Callable[..., T], *args: object, tries: int = 8, wait: float = 5.0) -> T:
     """``fn(*args)``, retried after an HTTP 403 / 429 with doubling waits. For bulk research
     reads of the FCA NSM, whose bot protection answers 403 to bursts (#290)."""
     for i in range(tries):

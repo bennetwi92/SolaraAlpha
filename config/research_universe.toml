@@ -6,7 +6,8 @@
 # name ("" = none found; 7 set by hand 2026-10-29, #290). No liquidity cut here: studies apply the
 # £10k research floor point-in-time. The weekly scan runs it too (ADR 0038); today's companies
 # only (survivor snapshot: see the leavers ledger, #291). 20 non-AIM lines removed 2026-10-29
-# (`official_list.NOT_AIM`, #290). Refresh by hand:
+# (`official_list.NOT_AIM`, #290); Gooch & Housego and Engage XR removed 2026-10-29 (left AIM on
+# 2026-10-19 and 2026-10-28, config/aim_leavers.csv, #291). Refresh by hand:
 # `uv run python scripts/research_universe.py --write`.
 snapshot = 2026-10-28
 
@@ -178,7 +179,6 @@ snapshot = 2026-10-28
 "ESO.L" = { name = "EPE Special Opportunities", isin = "BMG3163K1053", lei = "213800BQKN9C23A7LK98", t212 = "ESOl_EQ" }
 "EUA.L" = { name = "Eurasia Mining", isin = "GB0003230421", lei = "213800VWNISV35PTI539", t212 = "EUAl_EQ" }
 "EVPL.L" = { name = "Everplay Group", isin = "GB00BYVX2X20", lei = "2138006EUUCCL4ZI5E51", t212 = "TM17l_EQ" }
-"EXR.L" = { name = "Engage XR", isin = "IE00BG0HDR01", lei = "213800ESSTWEXIN22767", t212 = "VREl_EQ" }
 "EYE.L" = { name = "Eagle Eye Solutions", isin = "GB00BKF1YD83", lei = "2138002S1AIBVVMZ7A21", t212 = "EYEl_EQ" }
 "FAB.L" = { name = "Fusion Antibodies", isin = "GB00BDQZGK16", lei = "213800KBAYRC9VOQ9V39", t212 = "FABl_EQ" }
 "FADL.L" = { name = "Fadel Partners", isin = "USU3033R1024", lei = "2138006CF39FSLKDRZ65", t212 = "FADLl_EQ" }
@@ -219,7 +219,6 @@ snapshot = 2026-10-28
 "GFIN.L" = { name = "Gfinity", isin = "GB00BT9QD572", lei = "213800GNV14EDQNRWI17", t212 = "GFINl_EQ" }
 "GFM.L" = { name = "Griffin Mining", isin = "BMG319201049", lei = "213800VXEARSK4D5UG12", t212 = "GFMl_EQ" }
 "GGP.L" = { name = "Greatland Resources", isin = "AU0000397705", lei = "213800KQI75ZGE53GX44", t212 = "GGPl_EQ" }
-"GHH.L" = { name = "Gooch & Housego", isin = "GB0002259116", lei = "213800DO3DOOKYOPA952", t212 = "GHHl_EQ" }
 "GLR.L" = { name = "Galileo Resources", isin = "GB00B115T142", lei = "213800KSRIVLX7BJSP45", t212 = "GLRl_EQ" }
 "GMET.L" = { name = "Guardian Metal Resources", isin = "GB00BPQY8R36", lei = "213800J4SKZAMUEPGW34", t212 = "GMETl_EQ" }
 "GMR.L" = { name = "Gaming Realms", isin = "GB00BBHXD542", lei = "213800MJYF3DX78F6A39", t212 = "GMRl_EQ" }
