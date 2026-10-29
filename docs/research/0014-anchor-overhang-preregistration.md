@@ -182,3 +182,24 @@ events for most of its size, could move a lot if the leavers were in.
    is the owner's call; it is a small change.
 4. **Do not promote `new_high` to anything stronger.** Its partial correlation leans the wrong
    way.
+
+## Amendment 2026-10-29: the owner takes V3 to the holdout
+
+*Written before any holdout week was read.*
+
+V3 did not pass the in-sample bar. It failed one condition: the same sign in 4 of 6 half-years,
+not 5. The owner signed it off as a candidate anyway (2026-10-29), so ADR 0029's holdout gate
+applies to V3, and to V3 only. V1 and V2 stay closed.
+
+- **Weeks:** holdout signal Fridays from 2025-10-24 to **2026-08-14**. Later holdout Fridays
+  are left out, because their 50-session `burst_10w` window had not ended by the last price
+  (2026-10-28).
+- **Same everything else:** the research panel, stock-weeks past the £10k floor, V3 as defined
+  above (`nearness` ≥ 0.95 and good news that week), `burst_3` from Monday's open, null 1 refitted
+  on the holdout stock-weeks, and the V3 statistic.
+- **Gate (ADR 0029):** the holdout estimate has the **same sign as in-sample and at least half its
+  size**, so ≥ **+4.45 pp**. The 96.7% interval, the raw burst rates and the event count are
+  reported but are not part of the gate.
+- **One look.** This spends the holdout for V3. If V3 clears the gate, it goes to the agents as
+  catalyst context (not a rank weight, ADR 0022). If not, it is recorded forward only. Either
+  way the result is final for this signal on these weeks.
