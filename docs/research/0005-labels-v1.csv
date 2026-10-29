@@ -1,0 +1,41 @@
+n,notice_id,ticker,published,hand_buy,hand_value_gbp,note,v1_buy,v1_value_gbp
+1,4587838,GENI.L,2022-11-22,False,,,False,0.0
+2,4598831,YU.L,2022-12-02,False,,,False,0.0
+3,4640616,EVPL.L,2023-01-12,False,,SIP partnership shares,False,0.0
+4,4642580,CLX.L,2023-01-13,False,,,False,0.0
+5,4703463,FRP.L,2023-03-14,True,117820.0,,True,117820.0
+6,4726896,FKE.L,2023-04-03,True,6750.0,,True,6750.0
+7,4728843,BIG.L,2023-04-04,False,,"bed and SIPP: purchase and sale, no change in holding",True,26450.0
+8,4755166,MAI.L,2023-05-02,False,,,False,0.0
+9,4774886,CAS.L,2023-05-19,True,28166.7,,True,28166.6995
+10,4835024,JET2.L,2023-07-13,True,168600.0,,True,0.0
+11,4840935,WVIA.L,2023-07-19,False,,option exercise,False,0.0
+12,4841890,BOOM.L,2023-07-20,True,9831.47,,True,9831.465
+13,4917927,TRP.L,2023-10-02,False,,warrants in lieu of fees,False,0.0
+14,4979056,RCN.L,2023-11-23,True,56597.35,four PDMRs,True,56597.34
+15,4994387,SCLP.L,2023-12-06,False,,subscription in a placing (nature says acquisition),True,79999.92
+16,4994872,LIKE.L,2023-12-07,False,,dividend reinvestment (nature says purchase),True,3921018.995375
+17,5162649,YOU.L,2024-04-30,False,,"shares in lieu of fees, nil price (nature says acquisition)",True,0.0
+18,5184475,ITM.L,2024-05-15,False,,SIP,False,0.0
+19,5206033,EML.L,2024-05-31,False,,,False,0.0
+20,5212273,STAF.L,2024-06-05,True,179920.0,"buy of 520,000 at 34.6p; the 227,465 sold and repurchased the same day are not new buying",True,179920000.0
+21,5261365,LIKE.L,2024-07-11,False,,dividend reinvestment (nature says purchase),True,7757.7
+22,5366045,MPE.L,2024-09-26,False,,transfer from an estate,False,0.0
+23,5381218,ANIC.L,2024-10-08,True,96875.0,no MAR table: the buy is in the narrative only,False,0.0
+24,5382065,SVML.L,2024-10-09,True,145698.41,"ASX Appendix 3Y, no MAR table: A$283,414 on market",False,0.0
+25,5406287,IXI.L,2024-10-28,False,,subscription in a fundraise,False,0.0
+26,5407914,SPR.L,2024-10-29,False,,,False,0.0
+27,5412407,CRTA.L,2024-11-01,False,,,False,0.0
+28,5413773,ALU.L,2024-11-01,False,,,False,0.0
+29,5416380,ALU.L,2024-11-05,False,,,False,0.0
+30,5428690,ORR.L,2024-11-13,True,48130.0,"two PDMRs, several fills",True,48129.99915
+31,5468471,ITM.L,2024-12-16,False,,SIP,False,0.0
+32,5492306,DEBS.L,2025-01-08,True,99749.08,,True,99749.0844
+33,5507379,BRCK.L,2025-01-20,False,,LTIP exercise and sale,False,0.0
+34,5518491,OBI.L,2025-01-29,False,,,False,0.0
+35,5520587,DXRX.L,2025-01-30,False,,SIP,False,0.0
+36,5578957,TON.L,2025-03-18,True,71000.0,two PDMRs,True,71000.0
+37,5607020,JHD.L,2025-04-07,True,10810.47,PDMR and PCA in one block,True,14707503.95505
+38,5720473,RWS.L,2025-07-02,False,,,False,0.0
+39,5752073,NEXS.L,2025-07-24,True,4987.12,,True,4987.1244
+40,5761882,PHE.L,2025-07-31,True,37515.59,,True,31563049440.93172

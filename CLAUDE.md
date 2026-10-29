@@ -294,6 +294,7 @@ Current state:
 | LEIs for new watchlist stocks (`config/issuers.toml`; NSM name search; check the names) | `uv run python scripts/issuers.py [--write]` |
 | Refresh the AIM research universe (every AIM company Trading212 offers: its London lines minus the FCA Official List and `official_list.NOT_AIM`; by hand, never CI; needs the Trading212 keys) | `uv run python scripts/research_universe.py [--write]` |
 | AIM leavers ledger since 2022 from the LSE's AIM notices on the NSM (how each ended, offer price; by hand, never CI; research 0012) | `uv run python scripts/leavers.py [--write]` |
+| Research 0005 director buys on the wide universe: power, the parse pre-step sample, parse; the drift test only after a passed pre-step | `uv run python scripts/research/r10_director_buys.py count\|sample\|parse\|drift PANEL_DIR` |
 | Research-universe coverage per in-sample year (Yahoo history, past the £10k floor point-in-time, by size group; research 0011) | `uv run python scripts/research/coverage.py RAW_DIR` |
 | Research panels on the AIM research universe (adds `floor` / `mcap` / `size` per Friday) | `uv run python scripts/research/build_panel.py OUT research` / `r9_relative_strength.py build OUT research` (reports: `r5_rank_growth.py OUT STEP --floor 10000`, `r9_relative_strength.py report OUT research`) |
 | Book trades by hand (draft, approve, amend, reject, tickets, placed, fills, exits) | `uv run python scripts/book.py new JET2.L --entry 1520 --stop 1400 --qty 100` / `list` / `show ID` / `approve ID` / `amend ID --qty N --price P --stop P` / `reject ID --reason TEXT` / `tickets` / `placed ORDER_ID [ORDER_ID ...] [--ref REF]` / `fill ORDER_ID --qty N --price P [--commission X]` / `unfilled ORDER_ID` / `cancel ORDER_ID` / `expire` / `exit ID --reason stop|target|thesis_broken|...` / `cash dividend TICKER GBP --at EXDATE` / `split ID --ratio 2:1` / `corporate-close ID --price P --reason takeover|delisting` / `stats [--since D]` (`--db PATH` for a local file; from GitHub: the **Book** workflow, `gh workflow run book.yml -f command='cash deposit 5000'`; `-f script=plan.py -f command='--run 8'` re-plans a run) |
@@ -370,6 +371,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         (issuers.toml, research_universe.toml, else the NSM filer of the same
                         name), announcement full text
     news.py             press headlines (Google News RSS), discovery only
+    dealings.py         director / PDMR dealings from MAR notices (NSM DSH): parse_dsh, notice_buys (research
+                        0005 rules v2; failed its parse check, so research only) — #284
     leavers.py          AIM leavers from the LSE's AIM notices on the NSM: parse_notice, classify (takeover /
                         administration / suspension / cancellation / other), takeover_price — #291
     official_list.py    the FCA Official List (CSV) and aim_lines: Trading212's London lines not on
