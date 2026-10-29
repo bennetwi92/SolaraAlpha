@@ -2,8 +2,8 @@
 
 uv run python scripts/monitor_pack.py --run DAILY_RUN_ID [--position ID] [--db PATH] [--no-text]
 
-For each open position and pending entry in that daily run (every one has a daily_review, ADR
-0024; or the one given with --position), writes
+For each position the daily run puts up for review (on Friday every open position and pending
+entry, midweek only those with an event trigger, ADR 0039; or the one given with --position), writes
 data/processed/monitor/<position_id>/<run_id>/pack.json: status (open / pending), state, orders,
 plan and the pending entry order; the entry conditions (then); fresh technical / levels /
 relative-strength cards (now) and a then -> now diff; the thesis conditions with machine ones
@@ -42,8 +42,7 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"position {pid}: {e}")
                 sys.exit(2)
             out = write_pack(pack)
-            if pack["event_session"]:
-                print(pack["event_session"])
+            print(pack["review_note"])
             hits = [t["condition"] for t in pack["thesis"] if t["hit"]]
             print(
                 f"position {pid} {pack['ticker']} ({pack['status']}): {len(pack['triggers'])} trigger(s); thesis hits: {', '.join(hits) or 'none'};"

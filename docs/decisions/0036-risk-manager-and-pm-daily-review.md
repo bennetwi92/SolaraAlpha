@@ -1,6 +1,7 @@
 # 0036 — A risk manager reports the book's VaR, CVaR and P&L daily; the PM acts on a breach
 
-**Status:** accepted (owner, 2026-10-27). Builds ADR 0027's phase B (a daily PM review) and ADR
+**Status:** accepted (owner, 2026-10-27); amended by ADR 0039 (the risk card stays daily, the
+`/risk` agent runs on Friday's review run or on a breach). Builds ADR 0027's phase B (a daily PM review) and ADR
 0032's slice 4, triggered by risk rather than run every day.
 
 **Context.** The monitors review each position on its own; nobody looked at the whole book

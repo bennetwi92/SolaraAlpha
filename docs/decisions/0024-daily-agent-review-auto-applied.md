@@ -1,6 +1,7 @@
 # 0024: Daily agent review of every position and pending entry, changes applied
 
-**Status:** accepted (owner, 2026-10-20). Amends 0015 (weekly review), 0017 (daily job) and
+**Status:** accepted (owner, 2026-10-20); amended by ADR 0039 (the full review is weekly, on
+Friday's run; midweek only on news, risk-cutting only). Amends 0015 (weekly review), 0017 (daily job) and
 0018 (monitor agent).
 
 **Context.** Stops came from rules: the levels map or an ATR stop at planning, and the weekly

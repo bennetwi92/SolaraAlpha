@@ -1,6 +1,7 @@
 # 0037 — Event sessions: the agents book a mid-session review of the book for a known event
 
-**Status:** accepted (owner, 2026-10-27). Extends ADR 0017 / 0024 (the daily job and monitor)
+**Status:** superseded by ADR 0039 (owner, 2026-10-29): retired, code removed. Was accepted
+(owner, 2026-10-27). Extends ADR 0017 / 0024 (the daily job and monitor)
 and ADR 0036 (risk manager, PM daily review).
 
 **Context.** The book is reviewed once a weekday, after the close, so a decision about a

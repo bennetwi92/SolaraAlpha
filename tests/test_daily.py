@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import dataclasses
-import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +12,7 @@ import pytest
 from solaraalpha import notify, store
 from solaraalpha.data.announcements import Issuer
 from solaraalpha.portfolio import book
+from solaraalpha.portfolio import daily as daily_mod
 from solaraalpha.portfolio.daily import Fetchers, render_daily, run_daily
 from solaraalpha.portfolio.triggers import (
     Trigger,
@@ -21,6 +21,7 @@ from solaraalpha.portfolio.triggers import (
     filing_triggers,
     news_triggers,
     price_triggers,
+    review_day,
     watch_break,
     watch_pullback,
 )
@@ -335,6 +336,7 @@ def test_run_daily_saves_triggers_and_reports(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     db, frames = world
+    monkeypatch.setattr(daily_mod, "review_day", lambda at: True)  # Friday: the weekly review
     monkeypatch.setattr(
         daily_cli,
         "run_daily",
@@ -347,7 +349,7 @@ def test_run_daily_saves_triggers_and_reports(
     assert "Book drawdown" in out and "circuit-breaker limit 15%; breaker on" in out
     assert "### Risk (" in out and "#### Where the day's P&L came from" in out  # ADR 0036
     assert "### Owner actions" in out and "traded through the stop 1,400.0" in out
-    assert "reached the target 1,800.0" in out and "the stop and the daily review manage" in out
+    assert "reached the target 1,800.0" in out and "the stop and the weekly review manage" in out
     assert "closed 301.0 above the trigger 300.0: place entry order" in out
     assert (
         "ex-dividend 2026-10-20: 10.70p x 100 shares = £10.70 (position 1): confirm against the broker and record — `book.py cash dividend JET2.L 10.70 --at 2026-10-20`"
@@ -382,8 +384,8 @@ def test_run_daily_saves_triggers_and_reports(
             "dividend",
             "split",
             "watch_pullback",
-            # the pending E.L entry gets filings and headlines too, and each of the two
-            # positions its weekday agent review (ADR 0024)
+            # the pending E.L entry gets filings and headlines too, and on Friday each of the
+            # two positions its weekly agent review (ADR 0039)
             "filing",
             "news",
             "daily_review",
@@ -398,7 +400,7 @@ def test_run_daily_saves_triggers_and_reports(
     assert {"gap 2026-10-20", "stop_touched 2026-10-20"} <= set(detail[1]["fired"])
     assert detail[2]["status"] == "pending" and "entry_break 2026-10-20" in detail[2]["fired"]
     assert list(reviews.loc[reviews["position_id"] == 2, "order_id"]) == [3]
-    assert "### Daily agent review (ADR 0024)" in out and "position 2 (pending)" in out
+    assert "### Weekly agent review (Friday, ADR 0039)" in out and "position 2 (pending)" in out
     assert (
         trig.loc[trig["kind"] == "entry_break", "order_id"].iloc[0] == 3
     )  # 1 entry, 2 stop, 3 E.L
@@ -552,32 +554,35 @@ def test_a_saved_run_expires_entries_past_their_validity_before_the_checks(
     conn.close()
 
 
-def test_daily_for_an_event_session(
-    world: tuple[Path | None, dict[str, pd.DataFrame]],
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+def test_midweek_runs_review_only_the_triggered_positions(
+    world: tuple[Path | None, dict[str, pd.DataFrame]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from solaraalpha import desk_chat, event_sessions
+    from solaraalpha.monitoring import positions_to_review
 
     db, frames = world
-    monkeypatch.setattr(
-        daily_cli,
-        "run_daily",
-        lambda conn, save, args: run_daily(conn, _fetchers(frames), save, args),
-    )
-    dbargs = ["--db", str(db)] if db else []
-    with pytest.raises(SystemExit, match="not scheduled"):
-        daily_cli.main(["--save", "--session", "1", *dbargs])
-    conn = store.connect(db)
-    sid = event_sessions.schedule(
-        conn, "2099-01-05 13:45", "UK Budget", "AIM", "agent:pm", now="2026-10-27T18:00:00Z"
-    )
+    monkeypatch.setattr(daily_mod, "review_day", lambda at: False)  # a Tuesday
+    conn = book.connect(db)
+    r = run_daily(conn, _fetchers(frames), save=True)
+    assert not r.of(("daily_review",))  # no weekly review midweek (ADR 0039)
+    assert {t.position_id for t in r.of(("gap", "filing"))} == {1, 2}
+    assert r.run_id is not None
+    assert sorted(positions_to_review(conn, r.run_id)) == [1, 2]  # only on news / a gap
+    out = render_daily(r)
+    assert "none: midweek the monitor sees only the agent triggers above" in out
+    assert f"/monitor --run {r.run_id}" in out
     conn.close()
-    daily_cli.main(["--save", "--session", str(sid), *dbargs])
-    conn = desk_chat.connect(db)
-    s = event_sessions.sessions(conn)[0]
-    assert s.status == "started" and s.run_id is not None
-    assert json.loads(store.run_info(s.run_id, conn=conn)["args"])["session"] == sid
-    thread = desk_chat.thread(conn=conn)
-    assert "Event session for UK Budget" in thread["text"].iloc[-1]
-    conn.close()
+
+
+@pytest.mark.parametrize(
+    ("at", "weekly"),
+    [
+        ("2026-10-27T17:47:00Z", False),  # Tuesday
+        ("2026-10-29T17:47:00Z", False),  # Thursday
+        ("2026-10-30T17:47:00Z", True),  # Friday
+        ("2026-10-31T09:00:00Z", True),  # a Saturday re-run
+        ("2026-10-29T23:30:00Z", False),  # Thursday 23:30 UTC is still Thursday in London (GMT)
+        ("2026-07-02T23:30:00Z", True),  # Thursday 23:30 UTC is Friday 00:30 in London (BST)
+    ],
+)
+def test_review_day(at: str, weekly: bool) -> None:
+    assert review_day(at) is weekly

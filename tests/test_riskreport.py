@@ -266,6 +266,27 @@ def test_a_breach_on_the_card_calls_the_pm_whatever_the_label(
     conn.close()
 
 
+def test_the_risk_manager_reports_on_friday_or_a_breach(
+    risky_book: tuple[Path | None, dict[str, pd.DataFrame]],
+) -> None:
+    from solaraalpha import agents
+    from solaraalpha.portfolio.triggers import Trigger
+
+    db, px = risky_book
+    conn = book.connect(db)
+    calm, breach, friday = (store.start_run("daily", {}, conn=conn) for _ in range(3))
+    assert agents.queue(conn, calm, "risk", 5) == []  # no card yet
+    for run, max_var in ((calm, 0.99), (breach, 0.001), (friday, 0.99)):
+        card = build_risk(conn, px, None, _rules(max_var=max_var))
+        store.save_ticker(run, "_BOOK", {"book_risk": card}, conn=conn)
+    review = Trigger("A.L", "daily_review", 1, None, {"status": "open", "fired": []})
+    store.save_triggers(friday, [review], conn=conn)
+    assert agents.queue(conn, calm, "risk", 5) == []  # a quiet midweek day (ADR 0039)
+    assert agents.queue(conn, breach, "risk", 5) == ["_BOOK"]  # a limit breached
+    assert agents.queue(conn, friday, "risk", 5) == ["_BOOK"]  # the weekly review
+    conn.close()
+
+
 def test_the_risk_pack_script(
     risky_book: tuple[Path | None, dict[str, pd.DataFrame]],
     capsys: pytest.CaptureFixture[str],

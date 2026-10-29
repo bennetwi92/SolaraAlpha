@@ -134,11 +134,21 @@ def world(
                     {"headline": "x", "source": "y", "url": "z"},
                     "2026-10-20T07:00:00+00:00",
                 ),
+                # a Friday run: the weekly review, every action open (ADR 0039)
+                Trigger("JET2.L", "daily_review", pid, None, {"status": "open", "fired": []}),
             ],
             conn=conn,
         )
     conn.close()
     return db_backend, pid, daily_run
+
+
+def _weekly_run(db: Path | None, pid: int) -> int:
+    """A Friday daily run: the weekly review of ``pid`` (ADR 0039)."""
+    run = store.start_run("daily", {}, path=db)
+    review = Trigger("JET2.L", "daily_review", pid, None, {"status": "open", "fired": []})
+    store.save_triggers(run, [review], path=db)
+    return run
 
 
 def test_pack_then_now_diff_and_thesis(
@@ -147,12 +157,14 @@ def test_pack_then_now_diff_and_thesis(
     db, pid, run = world
     monitor_pack.main(["--run", str(run), *(["--db", str(db)] if db else [])])
     out = capsys.readouterr().out
-    assert f"position {pid} JET2.L (open): 2 trigger(s)" in out and "written to" in out
+    assert f"position {pid} JET2.L (open): 3 trigger(s)" in out and "written to" in out
+    assert "WEEKLY REVIEW" in out
     from solaraalpha.config import settings
 
     pack = json.loads(
         (settings.processed_dir / "monitor" / str(pid) / str(run) / "pack.json").read_text()
     )
+    assert pack["review"] == "weekly"
     assert pack["state"]["shares"] == 100 and pack["state"]["stop"] == 1400.0
     assert pack["plan"]["target"] == 1800.0 and pack["plan"]["qty"] == 100
     assert pack["entry_conditions"]["technical"]["trend"] == 0.9
@@ -182,7 +194,7 @@ def test_pack_then_now_diff_and_thesis(
         and "not evaluable" in thesis["unknown_field > 1"]["note"]
     )
     kinds = [t["kind"] for t in pack["triggers"]]
-    assert kinds == ["filing", "news"]
+    assert kinds == ["filing", "news", "daily_review"]
     assert pack["triggers"][0]["text"].startswith("FULL TEXT OF https://data.fca.org.uk/9")
     assert pack["research"]["reasons"] == "Winter bookings strong" and pack[
         "research_evidence_ids"
@@ -258,7 +270,7 @@ def test_revision_round_trip_each_action(
     assert "(none)" in capsys.readouterr().out
 
     # tighten_stop -> applied as recorded (ADR 0024): stop replaced, stop_raised
-    run2 = store.start_run("daily", {}, path=db)
+    run2 = _weekly_run(db, pid)
     _record(
         tmp_path,
         db,
@@ -313,7 +325,7 @@ def test_revision_round_trip_each_action(
     conn.close()
 
     # a lower stop is refused as it is recorded: declined by the pipeline, nothing changes
-    run3 = store.start_run("daily", {}, path=db)
+    run3 = _weekly_run(db, pid)
     _record(tmp_path, db, pid, run3, {"action": "tighten_stop", "stop": "1300"}, "lower")
     conn = book.connect(db)
     rv = book.revisions(conn).iloc[-1]
@@ -322,7 +334,7 @@ def test_revision_round_trip_each_action(
     conn.close()
 
     # take_partial: exit order for 40, stop re-sized to 60 on fill
-    run4 = store.start_run("daily", {}, path=db)
+    run4 = _weekly_run(db, pid)
     _record(
         tmp_path,
         db,
@@ -345,7 +357,7 @@ def test_revision_round_trip_each_action(
     conn.close()
 
     # revise_target: a revised event, no orders
-    run5 = store.start_run("daily", {}, path=db)
+    run5 = _weekly_run(db, pid)
     _record(tmp_path, db, pid, run5, {"action": "revise_target", "target": "1900"}, "target")
     conn = book.connect(db)
     assert monitoring.latest_plan(conn, pid)["target"] == 1900.0
@@ -353,7 +365,7 @@ def test_revision_round_trip_each_action(
     conn.close()
 
     # exit: an approved market exit with reason thesis_broken
-    run6 = store.start_run("daily", {}, path=db)
+    run6 = _weekly_run(db, pid)
     _record(
         tmp_path,
         db,
@@ -401,7 +413,7 @@ def test_agent_add_is_applied_within_the_limits(
     with conn:
         book.cash_event(conn, "deposit", 20_000.0, "GBP", at="2026-09-01T00:00:00+00:00")
     conn.close()
-    run2 = store.start_run("daily", {}, path=db)
+    run2 = _weekly_run(db, pid)
     _record(tmp_path, db, pid, run2, checks, "add")
     conn = book.connect(db)
     rv = book.revisions(conn).iloc[-1]
@@ -530,23 +542,27 @@ def test_pending_entry_review_amend_cancel_and_undo(
     conn.close()
 
 
-def test_event_session_revisions_only_cut_risk(
+def test_midweek_revisions_only_cut_risk(
     world: tuple[Path | None, int, int], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from solaraalpha import event_sessions
-
     db, pid, _ = world
-    run = store.start_run("daily", {"session": 1}, path=db)
-    conn = store.connect(db)
-    sid = event_sessions.schedule(
-        conn, "2026-10-28 13:45", "UK Budget", "AIM", "agent:pm", now="2026-10-27T18:00:00Z"
+    run = store.start_run("daily", {}, path=db)
+    store.save_triggers(  # a filing midweek: no daily_review, so not the weekly review
+        run, [Trigger("JET2.L", "filing", pid, None, {"headline": "x"}, "2026-10-27")], path=db
     )
-    event_sessions.start(conn, sid, run)
+    conn = store.connect(db)
+    assert not monitoring.weekly_review(conn, run, pid)
+    pack = monitoring.build_pack(conn, pid, run, text=False)
     conn.close()
-    with pytest.raises(SystemExit) as e:
-        _record(tmp_path, db, pid, run, {"action": "revise_target", "target": "1900"}, "rt")
-    assert e.value.code == 2
-    assert "only risk-cutting" in capsys.readouterr().out
+    assert pack["review"] == "midweek" and "MIDWEEK REVIEW" in pack["review_note"]
+    for checks in (
+        {"action": "tighten_stop", "stop": "1450"},
+        {"action": "revise_target", "target": "1900"},
+    ):
+        with pytest.raises(SystemExit) as e:
+            _record(tmp_path, db, pid, run, checks, "mw")
+        assert e.value.code == 2
+        assert "midweek review" in capsys.readouterr().out
     assert "monitor" not in store.load_cards(run, "JET2.L", path=db)  # nothing recorded
-    _record(tmp_path, db, pid, run, {"action": "tighten_stop", "stop": "1450"}, "ts")
+    _record(tmp_path, db, pid, run, {"action": "take_partial", "qty": "50"}, "tp")
     assert "applied to the book" in capsys.readouterr().out

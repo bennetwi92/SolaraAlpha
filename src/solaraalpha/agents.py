@@ -508,14 +508,13 @@ def record_revision(conn: Conn, verdict: Verdict, position_id: int, actor: str) 
     action = verdict.checks.get("action", "hold")
     if action == "renew":
         raise ValueError("renewing a pending entry is the PM's decision (ADR 0034), not a revision")
-    from solaraalpha import event_sessions
+    from solaraalpha.monitoring import MIDWEEK_ACTIONS, weekly_review
 
-    es = event_sessions.for_run(conn, verdict.run_id)
-    if es is not None and action not in event_sessions.ALLOWED_ACTIONS:
+    if action not in MIDWEEK_ACTIONS and not weekly_review(conn, verdict.run_id, position_id):
         raise ValueError(
-            f"run {verdict.run_id} is event session #{es.session_id} ({es.event}): only risk-cutting"
-            f" changes ({', '.join(sorted(event_sessions.ALLOWED_ACTIONS))}), not {action!r}"
-            " (ADR 0037); leave it to the evening review"
+            f"run {verdict.run_id} is a midweek review of position {position_id}: only"
+            f" {', '.join(sorted(MIDWEEK_ACTIONS))} on news, not {action!r} (ADR 0039);"
+            " leave it to Friday's weekly review"
         )
     out = record_verdict(conn, verdict, actor)
     out["revision_id"] = None
@@ -728,6 +727,17 @@ def record_pm_daily(conn: Conn, verdict: Verdict, actor: str = "agent:pm") -> di
     return {**out, "actions": done}
 
 
+def risk_due(conn: Conn, run_id: int) -> bool:
+    """Whether the risk manager reports on daily run ``run_id`` (ADR 0039): the run has a risk
+    card and is the weekly review (Friday) or the card breaches a limit."""
+    from solaraalpha.monitoring import weekly_review
+
+    card = store.load_cards(run_id, BOOK, conn=conn).get("book_risk")
+    if not card:
+        return False
+    return bool(float(card.get("escalate") or 0)) or weekly_review(conn, run_id)
+
+
 def pm_called(conn: Conn, run_id: int) -> bool:
     """Whether the PM reviews the book after daily run ``run_id`` (ADR 0036): the risk card
     breaches a limit, or the risk manager called it (an ACT verdict)."""
@@ -770,6 +780,7 @@ def queue(conn: Conn, run_id: int, stage: str, cap: int) -> list[str]:
     ``cap`` items: ``validate`` → the screen-ACT tickers (the week's shortlist, #192);
     ``research`` → tickers whose final label is ACT (once the validator has worked the run,
     only those it kept: one it never reached is not researched); ``monitor`` → position ids with an agent trigger in that daily run;
+    ``risk`` → ``_BOOK`` when the risk manager reports on that daily run (``risk_due``);
     ``postmortem`` → position ids closed since the daily run before ``run_id`` (ever, when
     there is none) with no post-mortem card yet. ``retro`` → the desk areas (``_DESK:<area>``) due a retro at
     this run (``track_record.retro_due``, uncapped). Tickers are ordered by ``rank_score`` over
@@ -781,6 +792,8 @@ def queue(conn: Conn, run_id: int, stage: str, cap: int) -> list[str]:
 
     if stage == "monitor":
         return [str(p) for p in positions_to_review(conn, run_id)[:cap]]
+    if stage == "risk":
+        return [BOOK] if risk_due(conn, run_id) else []
     if stage == "macro":
         return sector_groups(conn, run_id)[:cap]
     if stage == "retro":
