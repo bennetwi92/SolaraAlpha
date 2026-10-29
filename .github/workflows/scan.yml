@@ -1,4 +1,5 @@
-# Weekly pipeline: every stock in config/watchlist.toml through the stages in
+# Weekly pipeline: every stock in config/watchlist.toml and config/research_universe.toml
+# (ADR 0038, ~578 stocks) through the stages in
 # solaraalpha.pipeline (scripts/scan.py), one stage at a time. Results go to the job summary
 # and the hosted results DB (Turso, from the SOLARA_TURSO_* secrets; without them, the local
 # data/solara.db), then the weekly pack for the saved run (scripts/weekly_pack.py) is appended
@@ -12,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tickers:
-        description: Space-separated Yahoo tickers; blank = the watchlist
+        description: Space-separated Yahoo tickers; blank = the watchlist + the research universe
         default: ""
 
 concurrency:
@@ -31,7 +32,7 @@ env:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 240  # ~13 min for 104 stocks on 2026-10-25; 578 now
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
