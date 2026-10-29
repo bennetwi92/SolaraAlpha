@@ -7,7 +7,9 @@ def test_issue_price() -> None:
     assert issue_price("a placing of 10m new shares at 4.5 pence per new ordinary share") == 4.5
     assert issue_price("at an issue price of 12p per Placing Share") == 12.0
     assert issue_price("raise £5m at £1.25 per share") == 125.0
-    assert issue_price("1,230 pence in cash for each Scheme Share") is None  # not a share issue word
+    assert (
+        issue_price("1,230 pence in cash for each Scheme Share") is None
+    )  # not a share issue word
     assert issue_price("shares of 1p each; at 30p per new Ordinary Share") == 30.0
     assert issue_price("no price here") is None
 

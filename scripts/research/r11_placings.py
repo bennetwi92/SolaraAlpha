@@ -3,6 +3,7 @@
 uv run python scripts/research/r11_placings.py count PANEL_DIR    # power, metadata only
 uv run python scripts/research/r11_placings.py sample PANEL_DIR   # the 40 pre-step events
 uv run python scripts/research/r11_placings.py run PANEL_DIR      # only after the pre-step
+uv run python scripts/research/r11_placings.py bound PANEL_DIR    # the leavers' bias bound
 
 PANEL_DIR is a research-universe panel (``build_panel.py PANEL_DIR research``: per stock and
 Friday ``burst_2/3/4``, ``ret_8w``, ``adv``, ``atr_pct``, ``floor``, ``size``, and the stock's NSM
@@ -25,8 +26,9 @@ import pyarrow.parquet as pq
 
 from solaraalpha.analysis.financing import RAISE
 from solaraalpha.analysis.universe import SIZES, research_tickers
-from solaraalpha.data.announcements import fetch_text
+from solaraalpha.data.announcements import fetch_announcements, fetch_text
 from solaraalpha.data.http import patient
+from solaraalpha.data.leavers import INSOLVENT, OFFER_PERIOD, SUSPENDED, TAKEOVER
 from solaraalpha.data.raises import directors_in, issue_price, use_class
 
 FIRST, LAST = pd.Timestamp("2022-12-16", tz="UTC"), pd.Timestamp("2025-08-08", tz="UTC")
@@ -349,6 +351,55 @@ def run(panel: Path) -> None:
         )
 
 
+def bound(panel: Path, e0: float = -0.078, n0: int = 247, base: float = 0.559) -> None:
+    """Research 0012's bias bound for E0: raises by leavers (``config/aim_leavers.csv``, not Main
+    Market moves) found by the same rule in their filings, filled at their known ends (a takeover
+    with a cash price whose offer falls within 10 weeks = 1; administration / suspension within
+    10 weeks = 0), unknowns at 0 then 1. ``e0``, ``n0``: the survivors' E0 estimate and events;
+    ``base``: the E0 events' mean null-1 probability, used for the leavers (no prices)."""
+    lv = pd.read_csv("config/aim_leavers.csv")
+    lv = lv[(lv["cancelled"] >= str(FIRST.date())) & (lv["how"] != "main_market")]
+    out = []
+    for x in lv.itertuples():
+        f = patient(fetch_announcements, x.lei, "2022-11-01", "2025-11-01")
+        if f.empty:
+            continue
+        w = f[(f["published"] >= FIRST - pd.Timedelta(days=30)) & (f["published"] <= LAST)]
+        raise_ = w["headline"].str.contains(RAISE, na=False) | (w["type_code"] == "ROI")
+        hit = w[raise_ & ~w["headline"].str.contains(NOISE, na=False)].sort_values("published")
+        if hit.empty:
+            continue
+        new = hit["published"].diff() > GAP
+        new.iloc[0] = True
+        last = None
+        for _, c in hit.groupby(new.cumsum()):
+            roi = c[c["type_code"] == "ROI"]
+            d = (roi if len(roi) else c)["published"].iloc[0]
+            wk = friday(d)
+            if wk < FIRST or wk > LAST or (last is not None and d - last < pd.Timedelta(days=56)):
+                continue
+            last = d
+            end = wk + pd.Timedelta(days=70)
+            after = f[(f["published"] > wk) & (f["published"] <= end)]["headline"]
+            offer = after.str.contains(TAKEOVER, na=False) | after.str.contains(
+                OFFER_PERIOD, na=False
+            )
+            bad = after.str.contains(INSOLVENT, na=False) | after.str.contains(SUSPENDED, na=False)
+            if x.how == "takeover" and offer.any() and pd.notna(x.offer_pence):
+                out.append(1.0)
+            elif x.how in ("administration", "suspension") and (
+                bad.any() or pd.Timestamp(x.cancelled, tz="UTC") <= end
+            ):
+                out.append(0.0)
+            else:
+                out.append(math.nan)
+    ends = pd.Series(out, dtype=float)
+    print(f"leaver raises: {len(ends)}; known ends: {int(ends.notna().sum())}")
+    for name, fill in (("low", 0.0), ("high", 1.0)):
+        res = ends.fillna(fill) - base
+        print(f"E0 with leavers ({name}): {(e0 * n0 + res.sum()) / (n0 + len(ends)):+.3f}")
+
+
 if __name__ == "__main__":
     step, panel = sys.argv[1], Path(sys.argv[2])
-    {"count": count, "sample": sample, "run": run}[step](panel)
+    {"count": count, "sample": sample, "run": run, "bound": bound}[step](panel)

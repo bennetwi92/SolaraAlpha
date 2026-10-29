@@ -161,3 +161,65 @@ compared. Labels: `docs/research/0013-labels.csv`.
   failed splits had an MDE of about 26 pp, too weak to justify another round of rules and labels.
   The Bonferroni count stays at 5 (the conservative side), with 3 tests run: E0, E4 and the
   directors split.
+
+## Results (2026-10-29): no test passes
+
+Run with `r11_placings.py run` on the research panel. 34,104 stock-weeks past the £10k floor
+(324 stocks, 139 in-sample Fridays). 572 raises remained after the one-per-8-weeks rule, and 247
+of them fall on a tested stock-week (past the floor, with price history). Residual = `burst_3` −
+null 1. Intervals are 98% (Bonferroni 5).
+
+| test | events | estimate (pp) | 98% interval | half-years same sign | without the best 3 | pass |
+|---|---|---|---|---|---|---|
+| **E0**: buy the Monday after the raise | 247 | **−7.8** | −15.8 to +1.6 | 5 of 6 | −5.5 (−13.8 to +4.4) | no |
+| **E4**: buy 4 weeks later | 247 | +2.2 | −5.4 to +6.8 | 4 of 6 | +0.3 (−8.5 to +5.4) | no |
+| **Directors in vs not** (at E0) | 126 vs 121 | +5.1 | −10.3 to +14.5 | 3 of 6 | +1.2 (−16.1 to +11.4) | no |
+
+Alongside (not tested):
+
+- **2 and 4 ATR:** E0 is −5.1 and −8.9 pp, E4 +4.4 and +1.5 pp. Every interval includes zero.
+- **Burst rates:** after E0, 48.2% of raises burst, against 55.9% that null 1 expects for stocks
+  this volatile and liquid. After E4, 55.5% against 53.3%. Other stock-weeks: 41.9%.
+- **`ret_8w`:** after E0 the median is −4.6% (others −2.0%), after E4 −4.0%. The means are
+  positive (+2.7%, +5.5%), pulled up by a few large winners.
+- **By size (descriptive):**
+
+  | entry | aim100 | rest | micro |
+  |---|---|---|---|
+  | E0 (pp) | −6.1 (n 45) | −8.4 (38) | −8.8 (164; interval −16.4 to +0.8) |
+  | E4 (pp) | −1.8 | +5.4 | +1.9 |
+
+**Survivorship bound (research 0012).** 113 raises by companies that later left AIM (other
+than to the Main Market) fall in the window: 38 by companies that later cancelled, 33 that went
+into administration, 31 later taken over, 6 suspended and 5 other. That is a third as many again
+as the 247 tested. Only 8 have a known end inside the 10 weeks (4 bursts from a takeover, 4
+failures). Filled in at their known ends, with every unknown set to 0 and then to 1, the E0
+estimate moves from **−21.8 pp to +7.4 pp**. This is an approximation: the leavers' null-1
+probability is taken as the E0 average. The missing names cannot turn the fail into a pass, but
+they could make the negative reading much stronger (`r11_placings.py bound`). Raises are where the survivor bias is
+largest, because many raises are a last attempt to stay afloat.
+
+### What it says
+
+- **No edge was shown.** None of the three tests clears the bar, so the note's verdict is "not
+  shown above the MDE" (13 pp for the entries, 26 pp for the split).
+- **E0 leans the way the post-issue literature says, not the liquidity-supply story.** Buying
+  right after a raise bursts less often than the stock's volatility predicts, in 5 of 6
+  half-years. Dropping the best 3 names barely changes it, and the leavers can only make it
+  worse. It does not clear the interval, so it is not a rule.
+- **Waiting 4 weeks (E4) shows nothing either way.** There is no sign that the overhang clears
+  into a burst.
+- **Directors taking part tells nothing measurable.**
+
+## Recommendation (to the PM and the owner)
+
+- **No new situation route** from placings. The edge-E1 idea (paid for supplying liquidity after
+  a raise) is not supported in-sample.
+- **Raises stay as context and as a caution.** The financing card already shows the last raise.
+  The research and PM agents should treat "raised in the last few weeks" as a reason for a
+  stricter entry, not a reason to buy, which is how the E0 estimate leans. That is advice, not a
+  rule.
+- **The holdout stays locked.** No test passed, so ADR 0029 does not open it.
+- If the owner wants the negative E0 tested as an exclusion, it has to be pre-registered as such
+  in #287, with this note named as where the idea came from. A test of the same in-sample weeks
+  cannot count as independent evidence; only the holdout or the live record can confirm it.
