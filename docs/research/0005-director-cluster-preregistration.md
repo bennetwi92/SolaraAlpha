@@ -272,9 +272,9 @@ Whether to try again is the owner's call, because any path changes what 0005 pre
    (bracketed marks, label variants, an over-broad opening-text rule), so v3 would probably pass
    the buy check. Two misses are not mechanical: who the buyer is (an EBT, an off-market seller)
    is not in the nature field. Cost: about a day. Risk: tuning rules on samples until one passes.
-2. **Hand-label every notice that the rules call a buy** (roughly 1,000 of the 4,151), and keep
+2. **Hand-label every notice that the rules call a buy** (1,582 of the 4,151 under v2), and keep
    rules v2 only to drop the clear non-buys (options, SIP, grants, sales). Fixed in advance, it
-   would meet the bar by construction. Cost: several days of reading.
+   would meet the bar by construction. Cost: about a week of reading.
 3. **Leave E4 for now** and move to the placings study (#285). Placings are announced in
    standard, structured RNS headlines, so the parse risk is lower.
 
