@@ -182,3 +182,55 @@ events for most of its size, could move a lot if the leavers were in.
    is the owner's call; it is a small change.
 4. **Do not promote `new_high` to anything stronger.** Its partial correlation leans the wrong
    way.
+
+## Amendment 2026-10-29: the owner takes V3 to the holdout
+
+*Written before any holdout week was read.*
+
+V3 did not pass the in-sample bar. It failed one condition: the same sign in 4 of 6 half-years,
+not 5. The owner signed it off as a candidate anyway (2026-10-29), so ADR 0029's holdout gate
+applies to V3, and to V3 only. V1 and V2 stay closed.
+
+- **Weeks:** holdout signal Fridays from 2025-10-24 to **2026-08-14**. Later holdout Fridays
+  are left out, because their 50-session `burst_10w` window had not ended by the last price
+  (2026-10-28).
+- **Same everything else:** the research panel, stock-weeks past the £10k floor, V3 as defined
+  above (`nearness` ≥ 0.95 and good news that week), `burst_3` from Monday's open, null 1 refitted
+  on the holdout stock-weeks, and the V3 statistic.
+- **Gate (ADR 0029):** the holdout estimate has the **same sign as in-sample and at least half its
+  size**, so ≥ **+4.45 pp**. The 96.7% interval, the raw burst rates and the event count are
+  reported but are not part of the gate.
+- **One look.** This spends the holdout for V3. If V3 clears the gate, it goes to the agents as
+  catalyst context (not a rank weight, ADR 0022). If not, it is recorded forward only. Either
+  way the result is final for this signal on these weeks.
+
+## Holdout result (2026-10-29): V3 fails the gate
+
+`r12_anchor_overhang.py holdout`: 13,071 stock-weeks past the £10k floor, 43 holdout Fridays
+(2025-10-24 to 2026-08-14), **41 events**.
+
+| | in-sample | holdout | gate |
+|---|---|---|---|
+| V3 estimate (pp, residual vs null 1) | +8.9 | **+1.3** (96.7% interval −21.7 to +23.3) | ≥ +4.45: **fail** |
+| raw burst rate, events vs other weeks | 42.1% vs 42.0% | **39.0% vs 45.6%** | — |
+
+By size: AIM 100 −14.9 pp (17 events), rest +7.8 pp (15), micro caps +26.6 pp (9). The micro-cap
+lean from in-sample shows again, on 9 events.
+
+**V3 is not a signal.** It keeps the in-sample sign but at less than a sixth of the size, and its
+raw hit rate was lower than other weeks'. As fixed in the amendment, the holdout is now spent for
+V3 and the result is final on these weeks. V3 goes to forward recording only, never shown to the
+agents as a reason to buy. The live record from 2026-10-20 is the only test left. The micro-cap
+lean (20 events in-sample, 9 in the holdout) is too thin to be its own claim. Any future test of
+it would have to be pre-registered on the live record alone.
+
+**How V3 is recorded forward (fixed now, before any of these weeks is known).** No pipeline
+change is needed: `nearness` and `good_news` come from prices, volumes and NSM filing dates,
+which can be rebuilt at any time (`build_panel.py` then `r12_anchor_overhang.py build`). The
+forward test uses signal Fridays from **2026-10-23** on, the same V3 definition and statistic,
+null 1 refitted on those weeks. It is read **once**, when there are at least 100 events with a
+complete 50-session window, or on 2027-10-29, whichever comes first. The gate is the in-sample
+estimate's sign with at least half its size (≥ +4.45 pp), and the raw burst rate of events must
+also beat other weeks'. One caveat to watch: a company that leaves AIM before the test is run
+loses its Yahoo prices, so the ledger (`scripts/leavers.py`) should be refreshed at the same time
+to report the bias bound.

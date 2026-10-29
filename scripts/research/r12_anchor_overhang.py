@@ -4,13 +4,14 @@ uv run python scripts/research/r12_anchor_overhang.py build PANEL_DIR   # featur
 uv run python scripts/research/r12_anchor_overhang.py count PANEL_DIR   # power, no outcomes
 uv run python scripts/research/r12_anchor_overhang.py run PANEL_DIR     # the pre-registered test
 uv run python scripts/research/r12_anchor_overhang.py leavers PANEL_DIR # the survivorship share
+uv run python scripts/research/r12_anchor_overhang.py holdout PANEL_DIR # V3 only, owner's sign-off
 
 PANEL_DIR is a research-universe panel (``build_panel.py PANEL_DIR research``; its daily bars in
 PANEL_DIR/raw/<ticker>.daily.parquet, filings ``<ticker>.ann.parquet``, fundamentals
 ``<ticker>.fund.parquet``). ``build`` writes PANEL_DIR/r12_features.parquet: per stock and Friday
 ``nearness``, ``cgo``, ``new_high`` and ``good_news``, from prices, volumes and filing dates up to
 that Friday only. Signal Fridays after 2025-08-08 are dropped on load and never read (ADR 0029
-holdout). Everything follows research 0014 as pre-registered. Research only.
+holdout), except by ``holdout``: V3 only, after the owner's sign-off (amendment 2026-10-29). Everything follows research 0014 as pre-registered. Research only.
 """
 
 from __future__ import annotations
@@ -413,6 +414,57 @@ def leavers_share(panel: Path) -> None:
     )
 
 
+def holdout(panel: Path) -> None:
+    """The V3 holdout gate (amendment 2026-10-29): holdout Fridays to 2026-08-14 only."""
+    f = pd.read_parquet(panel / "r12_features.parquet")
+    frames = [
+        pd.read_parquet(p)
+        for p in sorted(panel.glob("*.L.parquet"))
+        if "ticker" in pq.read_schema(p).names
+    ]
+    df = pd.concat(frames, ignore_index=True).merge(f, on=["ticker", "week"], how="inner")
+    lo_, hi_ = pd.Timestamp("2025-10-24", tz="UTC"), pd.Timestamp("2026-08-14", tz="UTC")
+    df = df[(df["week"] >= lo_) & (df["week"] <= hi_)]
+    df = df[df["ticker"].isin(research_tickers()) & df["floor"].astype(bool)]
+    df = df.dropna(subset=["burst_3", "nearness", "cgo"]).copy()
+    df["r_atr"] = df.groupby("week")["atr_pct"].rank(pct=True)
+    df["r_adv"] = df.groupby("week")["adv"].transform(lambda s: np.log(s).rank(pct=True))
+    df = df.dropna(subset=["r_atr", "r_adv"]).reset_index(drop=True)
+    df["res"] = df["burst_3"] - null1(df, "burst_3")
+    ev = (df["nearness"] >= NEAR) & df["good_news"]
+    w = ev_weekly(df, ev)
+    a = w.to_numpy(float)
+    rng = np.random.default_rng(SEED)
+    k = math.ceil(len(a) / BLOCK)
+    draws = []
+    for _ in range(REPS):
+        idx = np.concatenate(
+            [np.arange(s, s + BLOCK) for s in rng.integers(0, len(a) - BLOCK + 1, k)]
+        )[: len(a)]
+        t = a[idx].sum(axis=0)
+        if t[1] and t[3]:
+            draws.append(t[0] / t[1] - t[2] / t[3])
+    q = 100 * 0.1 / TESTS / 2
+    lo, hi = np.percentile(draws, [q, 100 - q])
+    est = ev_stat(w)
+    print(
+        f"holdout: {len(df):,} stock-weeks, {df['week'].nunique()} Fridays, {int(ev.sum())} events"
+    )
+    print(
+        f"V3 estimate {est:+.3f} (96.7% interval {lo:+.3f} to {hi:+.3f}); gate >= +0.0445: "
+        f"{'PASS' if est >= 0.0445 else 'FAIL'}"
+    )
+    print(
+        f"burst_3 raw: events {df.loc[ev, 'burst_3'].mean():.3f}, others "
+        f"{df.loc[~ev, 'burst_3'].mean():.3f}"
+    )
+    for s in SIZES:
+        m = df["size"] == s
+        print(f"  {s}: events {int(ev[m].sum())}, estimate {ev_stat(ev_weekly(df[m], ev[m])):+.3f}")
+
+
 if __name__ == "__main__":
     step, panel = sys.argv[1], Path(sys.argv[2])
-    {"build": build, "count": count, "run": run, "leavers": leavers_share}[step](panel)
+    {"build": build, "count": count, "run": run, "leavers": leavers_share, "holdout": holdout}[
+        step
+    ](panel)
