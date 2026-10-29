@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from solaraalpha.data.announcements import GLEIF_URL, lei_by_name
+from solaraalpha.data.announcements import GLEIF_URL, fetch_announcements, lei_by_name
 from solaraalpha.data.http import get_json
 from solaraalpha.data.official_list import aim_lines, fetch_official_list, listed_isins
 from solaraalpha.data.prices import fetch_daily
@@ -39,8 +39,9 @@ HEADER = """\
 # The AIM research universe (issue #290; owner's decision on #288, 2026-10-28): every AIM company
 # Trading212 offers in pence, built by scripts/research_universe.py from free sources: Trading212's
 # instruments (London share lines in GBX) minus every ISIN on the FCA Official List (AIM shares are
-# not on it), minus preference lines and funds, minus lines with no Yahoo bar in the last {stale}
-# days. `lei` from GLEIF by ISIN, else the NSM filer of the same name ("" = none found). No liquidity cut here: studies apply the £10k
+# not on it), minus preference lines and funds, minus the hand-checked non-AIM lines
+# (`official_list.NOT_AIM`), minus lines with no Yahoo bar in the last {stale} days. `lei` from GLEIF by ISIN when the NSM has filings under it, else the NSM filer of the same
+# name ("" = none found). No liquidity cut here: studies apply the £10k
 # research floor point-in-time. Research only, not the live watchlist; today's companies only
 # (survivor snapshot: see the leavers ledger, #291). Refresh by hand:
 # `uv run python scripts/research_universe.py --write`.
@@ -65,17 +66,21 @@ def check_prices(ticker: str, day: date) -> tuple[str, float]:
     return "", float(value.median())
 
 
-def lei_for(isin: str, name: str) -> str:
-    """The LEI GLEIF holds for an ISIN, else the NSM filer named ``name``, or "" when neither."""
+def lei_for(isin: str, name: str, day: date) -> str:
+    """The LEI GLEIF holds for an ISIN when the NSM has filings under it in the last two years,
+    else the NSM filer named ``name`` (GLEIF can hold a different entity's LEI: hVIVO, Invinity),
+    else GLEIF's, or "" when neither."""
     try:
         data = get_json(GLEIF_URL, **{"filter[isin]": isin})
         assert isinstance(data, dict)
-        if data["data"]:
-            return str(data["data"][0]["attributes"]["lei"])
+        gleif = str(data["data"][0]["attributes"]["lei"]) if data["data"] else ""
+        since = (day - timedelta(days=730)).isoformat()
+        if gleif and not fetch_announcements(gleif, start=since).empty:
+            return gleif
         found = lei_by_name(name)
     except Exception:
         return ""
-    return found[1] if found else ""
+    return found[1] if found else gleif
 
 
 def toml_str(s: str) -> str:
@@ -107,7 +112,7 @@ def main(argv: list[str] | None = None) -> None:
     lines["why"], lines["adv60"] = reasons, adv
     dropped = lines[lines["why"] != ""]
     kept = lines[lines["why"] == ""].copy()
-    kept["lei"] = [lei_for(i, n) for i, n in zip(kept["isin"], kept["name"], strict=True)]
+    kept["lei"] = [lei_for(i, n, day) for i, n in zip(kept["isin"], kept["name"], strict=True)]
 
     for r in dropped.itertuples():
         print(f"excluded {r.ticker} ({r.name}): {r.why}", file=sys.stderr)

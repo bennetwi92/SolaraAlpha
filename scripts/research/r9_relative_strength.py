@@ -1,7 +1,11 @@
 """Research 0009: the evidence behind the relative-strength toolkit, under ADR 0029.
 
-uv run python scripts/research/r9_relative_strength.py build PANEL_DIR   # one fetch per ticker
-uv run python scripts/research/r9_relative_strength.py report PANEL_DIR  # the note's tables
+uv run python scripts/research/r9_relative_strength.py build PANEL_DIR [research]   # per ticker
+uv run python scripts/research/r9_relative_strength.py report PANEL_DIR [research]  # the tables
+
+``research`` builds the AIM research universe (#290) instead of the watchlist, adds ``floor`` /
+``mcap`` / ``size`` per Friday (``analysis.universe``) and reports at the £10k research floor
+instead of the screen's £25k.
 
 ``build`` writes one parquet per watchlist stock to PANEL_DIR (keep it out of data/): per Friday
 the toolkit's own outputs (``rs``, market / industry / peers scores, market z per horizon, the
@@ -33,9 +37,10 @@ from solaraalpha.analysis.relative_strength import (
     comparisons,
 )
 from solaraalpha.analysis.technical import atr, scores
+from solaraalpha.analysis.universe import RESEARCH_FLOOR_GBP, panel_tickers, with_universe
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
+from solaraalpha.data.fundamentals import fetch_fundamentals
 from solaraalpha.data.prices import fetch_daily
-from solaraalpha.pipeline import watchlist
 
 START = "2021-10-20"
 SESSIONS = 50
@@ -107,15 +112,19 @@ def one(t: str, out: Path) -> str:
         df["adv"], df["atr_pct"], df["burst_3"] = adv, atr_pct, b3
         df = df.drop(columns="rs_high").rename_axis("week").reset_index()
         df.insert(0, "ticker", t)
-        df.to_parquet(out / f"{t}.parquet")
+        try:
+            fund = fetch_fundamentals(t)
+        except Exception:
+            fund = None
+        with_universe(df, daily, fund, t).to_parquet(out / f"{t}.parquet")
         return f"{t}: {len(df)} weeks ({c.used})"
     except Exception:
         return f"{t}: FAILED {traceback.format_exc(limit=2)}"
 
 
-def build(out: Path) -> None:
+def build(out: Path, universe: str = "watchlist") -> None:
     out.mkdir(parents=True, exist_ok=True)
-    ticks = [t for t in watchlist() if not (out / f"{t}.parquet").exists()]
+    ticks = [t for t in panel_tickers(universe) if not (out / f"{t}.parquet").exists()]
     with Pool(6) as p:
         for msg in p.starmap(one, [(t, out) for t in ticks]):
             print(msg, flush=True)
@@ -124,9 +133,9 @@ def build(out: Path) -> None:
 # --- report -------------------------------------------------------------------------------
 
 
-def load(panel: Path) -> pd.DataFrame:
+def load(panel: Path, floor: float = MIN_ADV) -> pd.DataFrame:
     df = pd.concat([pd.read_parquet(p) for p in sorted(panel.glob("*.parquet"))])
-    df = df[(df["week"] <= LAST_8W) & (df["adv"] >= MIN_ADV)].copy()
+    df = df[(df["week"] <= LAST_8W) & (df["adv"] >= floor)].copy()
     df.loc[df["week"] > LAST_BURST, "burst_3"] = np.nan
     df["xs_8w"] = df["ret_8w"] - df.groupby("week")["ret_8w"].transform("mean")
     # vol + ADV null for burst (ADR 0029): logistic on the weekly ranks of ATR % and log ADV
@@ -222,8 +231,8 @@ def without_best(df: pd.DataFrame, flag: str) -> float:
     return float(d.loc[d[flag] == 1, "xs_8w"].mean() - d.loc[d[flag] == 0, "xs_8w"].mean())
 
 
-def report(panel: Path) -> None:
-    df = load(panel)
+def report(panel: Path, universe: str = "watchlist") -> None:
+    df = load(panel, RESEARCH_FLOOR_GBP if universe == "research" else MIN_ADV)
     wk = df["week"]
     print(
         f"panel: {len(df):,} stock-weeks, {df['ticker'].nunique()} stocks, "
@@ -316,4 +325,4 @@ def report(panel: Path) -> None:
 
 
 if __name__ == "__main__":
-    {"build": build, "report": report}[sys.argv[1]](Path(sys.argv[2]))
+    {"build": build, "report": report}[sys.argv[1]](Path(sys.argv[2]), *sys.argv[3:4])

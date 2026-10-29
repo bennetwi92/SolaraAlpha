@@ -2,9 +2,11 @@
 # Trading212 offers in pence, built by scripts/research_universe.py from free sources: Trading212's
 # instruments (London share lines in GBX) minus every ISIN on the FCA Official List (AIM shares are
 # not on it), minus preference lines and funds, minus lines with no Yahoo bar in the last 10
-# days. `lei` from GLEIF by ISIN ("" = none found). No liquidity cut here: studies apply the £10k
+# days. `lei` from GLEIF by ISIN when the NSM has filings under it, else the NSM filer of the same
+# name ("" = none found; 7 set by hand 2026-10-29, #290). No liquidity cut here: studies apply the £10k
 # research floor point-in-time. Research only, not the live watchlist; today's companies only
-# (survivor snapshot: see the leavers ledger, #291). Refresh by hand:
+# (survivor snapshot: see the leavers ledger, #291). 20 non-AIM lines removed 2026-10-29
+# (`official_list.NOT_AIM`, #290). Refresh by hand:
 # `uv run python scripts/research_universe.py --write`.
 snapshot = 2026-10-28
 
@@ -62,7 +64,6 @@ snapshot = 2026-10-28
 "AYM.L" = { name = "Anglesey Mining", isin = "GB00BVMZHW05", lei = "213800X8BO8EK2B4HQ71", t212 = "AYMl_EQ" }
 "B90.L" = { name = "B90 Holdings", isin = "IM00BYT32K14", lei = "2138007KWLZHV5I1A979", t212 = "B90l_EQ" }
 "BANK.L" = { name = "FIINU", isin = "GB0033881904", lei = "213800XSRH9SNN1EXX92", t212 = "BANKl_EQ" }
-"BAY.L" = { name = "BAY Capital", isin = "JE00BKVHVW88", lei = "213800F59868OZQU6E56", t212 = "BAYl_EQ" }
 "BBSN.L" = { name = "Brave Bison", isin = "GB00BSLKLP68", lei = "213800BEII7EWIN8X308", t212 = "BBSNl_EQ" }
 "BCE.L" = { name = "Beacon Energy", isin = "IM00BW9JFW84", lei = "213800TZWOYU7UFZ5V63", t212 = "ADVl_EQ" }
 "BEM.L" = { name = "Beowulf Mining", isin = "GB00BQ1LGQ19", lei = "213800MV3XGAOASPT433", t212 = "BEMl_EQ" }
@@ -97,7 +98,6 @@ snapshot = 2026-10-28
 "CEPS.L" = { name = "CEPS", isin = "GB00B86TNX04", lei = "213800OL8W8NIPSMFN59", t212 = "CEPSl_EQ" }
 "CER.L" = { name = "Cerillion", isin = "GB00BYYX6C66", lei = "213800ISIZMUC3P46850", t212 = "CERl_EQ" }
 "CFX.L" = { name = "Colefax", isin = "GB0002090453", lei = "213800MQYDGZB7DABZ12", t212 = "CFXl_EQ" }
-"CGL.L" = { name = "Castelnau", isin = "GG00BMWWJM28", lei = "213800PED8RFUBMK1T64", t212 = "CGLl_EQ" }
 "CGNR.L" = { name = "Conroy Gold and Natural Resources", isin = "IE00BZ4BTZ13", lei = "635400YIAKIIDS7JKF64", t212 = "CGNRl_EQ" }
 "CHAR.L" = { name = "Chariot", isin = "GG00B2R9PM06", lei = "21380046DOGKITYU6X54", t212 = "CHARl_EQ" }
 "CHL.L" = { name = "Cloudified Holdings", isin = "VGG3338A1158", lei = "213800YO4F9CUQLALV19", t212 = "FLXl_EQ" }
@@ -137,7 +137,7 @@ snapshot = 2026-10-28
 "CTAI.L" = { name = "Catenai", isin = "GB00BN7DVG54", lei = "2138007I2D8YWPMSP544", t212 = "CTAIl_EQ" }
 "CTG.L" = { name = "Christie", isin = "GB0001953156", lei = "391200L0BRXFGDEUVI96", t212 = "CTGl_EQ" }
 "CTL.L" = { name = "Cleantech Lithium", isin = "JE00BTJ01443", lei = "213800Y3TN5JQCDA9U59", t212 = "CTLl_EQ" }
-"DBOX.L" = { name = "Digitalbox", isin = "GB00BJK9H642", lei = "213800SZMUM1M5ROGI69", t212 = "DBOXl_EQ" }
+"DBOX.L" = { name = "Digitalbox", isin = "GB00BJK9H642", lei = "2138005AIIUYSRP5O254", t212 = "DBOXl_EQ" }
 "DCI.L" = { name = "DCI Advisors", isin = "GG00BSWT8V72", lei = "549300WM2017AHZKQ598", t212 = "DCIl_EQ" }
 "DEBS.L" = { name = "boohoo", isin = "JE00BG6L7297", lei = "213800SZF3KFCECWY243", t212 = "BOOHl_EQ" }
 "DFCH.L" = { name = "Distribution Finance Capital", isin = "GB00BJ7HMR72", lei = "2138004TJJJSFYYCWP10", t212 = "DFCHl_EQ" }
@@ -161,7 +161,6 @@ snapshot = 2026-10-28
 "EDX.L" = { name = "EDX Medical Group", isin = "GB00BNDMJS47", lei = "213800BZVJZTMCZ6DJ63", t212 = "EDXl_EQ" }
 "EEE.L" = { name = "Empire Metals", isin = "VGG3036T1012", lei = "2138002IOR7OCZZPB279", t212 = "EEEl_EQ" }
 "EGT.L" = { name = "European Green Transition", isin = "GB00BPVG5407", lei = "9845000450IAF4808661", t212 = "EGTl_EQ" }
-"EJFI.L" = { name = "EJF Investments", isin = "JE00BF0D1M25", lei = "549300XZYEQCLA1ZAT25", t212 = "EJFIl_EQ" }
 "EKF.L" = { name = "EKF Diagnostics", isin = "GB0031509804", lei = "213800DXTF3EAUK1AR05", t212 = "EKFl_EQ" }
 "ELCO.L" = { name = "Eleco", isin = "GB0003081246", lei = "21380016GT9Z6ZQX4T37", t212 = "ELCOl1_EQ" }
 "ELEG.L" = { name = "Electric Guitar", isin = "GB00BN11T727", lei = "894500943SA9KY5T9V86", t212 = "ELEGl_EQ" }
@@ -179,7 +178,7 @@ snapshot = 2026-10-28
 "ESO.L" = { name = "EPE Special Opportunities", isin = "BMG3163K1053", lei = "213800BQKN9C23A7LK98", t212 = "ESOl_EQ" }
 "EUA.L" = { name = "Eurasia Mining", isin = "GB0003230421", lei = "213800VWNISV35PTI539", t212 = "EUAl_EQ" }
 "EVPL.L" = { name = "Everplay Group", isin = "GB00BYVX2X20", lei = "2138006EUUCCL4ZI5E51", t212 = "TM17l_EQ" }
-"EXR.L" = { name = "Engage XR", isin = "IE00BG0HDR01", lei = "", t212 = "VREl_EQ" }
+"EXR.L" = { name = "Engage XR", isin = "IE00BG0HDR01", lei = "213800ESSTWEXIN22767", t212 = "VREl_EQ" }
 "EYE.L" = { name = "Eagle Eye Solutions", isin = "GB00BKF1YD83", lei = "2138002S1AIBVVMZ7A21", t212 = "EYEl_EQ" }
 "FAB.L" = { name = "Fusion Antibodies", isin = "GB00BDQZGK16", lei = "213800KBAYRC9VOQ9V39", t212 = "FABl_EQ" }
 "FADL.L" = { name = "Fadel Partners", isin = "USU3033R1024", lei = "2138006CF39FSLKDRZ65", t212 = "FADLl_EQ" }
@@ -209,7 +208,6 @@ snapshot = 2026-10-28
 "G4M.L" = { name = "Gear4Music", isin = "GB00BW9PJQ87", lei = "2138005H4W74HDGSFC49", t212 = "G4Ml_EQ" }
 "GAL.L" = { name = "Galantas Gold Corp", isin = "CA36315W3012", lei = "213800JKVPLLKO4KVB93", t212 = "GALl_EQ" }
 "GATC.L" = { name = "Gattaca", isin = "GB00B1FMDQ43", lei = "213800LM81ZQ9V9G6866", t212 = "GATCl_EQ" }
-"GCG.L" = { name = "Golden Rock Global", isin = "JE00BYZT0R68", lei = "213800LQDN7P5PV83Q46", t212 = "GCGl_EQ" }
 "GCM.L" = { name = "GCM Resources", isin = "GB00B00KV284", lei = "213800MXX5QHZNHCDU55", t212 = "GCMl_EQ" }
 "GDP.L" = { name = "Goldplat", isin = "GB00B0HCWM45", lei = "213800WJG4PAPXBRG516", t212 = "GDPl_EQ" }
 "GDR.L" = { name = "Genedrive", isin = "GB00B1VKB244", lei = "213800ZYODIRZ87Y4K14", t212 = "GDRl_EQ" }
@@ -233,11 +231,9 @@ snapshot = 2026-10-28
 "GUN.L" = { name = "Gunsynd", isin = "GB00BMD6PM55", lei = "21380068N2D57QUG1L78", t212 = "GUNl1_EQ" }
 "GWMO.L" = { name = "Great Western Mining Corp", isin = "IE000T78CHJ8", lei = "635400NZ1RTHSGDVNQ43", t212 = "GWMOl_EQ" }
 "HAYD.L" = { name = "Haydale", isin = "GB00BKWQ1135", lei = "213800KNULBQFF25IE72", t212 = "HAYDl_EQ" }
-"HCM.L" = { name = "HUTCHMED China", isin = "KYG4672N1198", lei = "", t212 = "HCMl_EQ" }
+"HCM.L" = { name = "HUTCHMED China", isin = "KYG4672N1198", lei = "2138006X34YDQ6OBYE79", t212 = "HCMl_EQ" }
 "HDD.L" = { name = "Hardide", isin = "GB00BJJPX768", lei = "213800HLAUIIFKMU5G89", t212 = "HDDl_EQ" }
 "HE1.L" = { name = "Helium One Global", isin = "VGG4392T1075", lei = "213800J96OENDQKNQZ60", t212 = "HE1l_EQ" }
-"HEAD.L" = { name = "Headlam", isin = "GB0004170089", lei = "213800I4AZZUJEYX9O90", t212 = "HEADl_EQ" }
-"HELD.L" = { name = "Hellenic Dynamics", isin = "GB00BRXCFB77", lei = "213800IM978BOB5QZA69", t212 = "MOGPl_EQ" }
 "HERC.L" = { name = "Hercules", isin = "GB00BPVBVZ82", lei = "213800P7Z6MXNSM4OQ50", t212 = "HERCl_EQ" }
 "HEX.L" = { name = "Helix Exploration", isin = "GB00BPK66X70", lei = "213800WGIUCDVNLJ9G76", t212 = "HEXl_EQ" }
 "HMI.L" = { name = "Harvest Minerals", isin = "AU000XINEAB4", lei = "", t212 = "HMIl_EQ" }
@@ -246,9 +242,9 @@ snapshot = 2026-10-28
 "HSP.L" = { name = "Hargreaves Services", isin = "GB00B0MTC970", lei = "213800O17BER1SHMH466", t212 = "HSPl_EQ" }
 "HUD.L" = { name = "Huddled Group", isin = "GB00BD5JRP64", lei = "894500TW3TTWSJ7DYP93", t212 = "IMMOl_EQ" }
 "HUW.L" = { name = "Helios Underwriting", isin = "GB00B23XLS45", lei = "213800FX86DJW5TCM864", t212 = "HUWl_EQ" }
-"HVO.L" = { name = "hVIVO", isin = "GB00B9275X97", lei = "2138003PFXHA22YPN676", t212 = "ORPHl_EQ" }
+"HVO.L" = { name = "hVIVO", isin = "GB00B9275X97", lei = "213800VT5KBM7JLIV118", t212 = "ORPHl_EQ" }
 "HVTA.L" = { name = "Heavitree Brewery", isin = "GB0004182720", lei = "213800QTV2PESCM42853", t212 = "HVTAl_EQ" }
-"IES.L" = { name = "Invinity Energy Systems", isin = "GB00BS9F9D74", lei = "213800N2NKOTYUNRCU14", t212 = "IESl_EQ" }
+"IES.L" = { name = "Invinity Energy Systems", isin = "GB00BS9F9D74", lei = "213800XX6UAMF51CYM12", t212 = "IESl_EQ" }
 "IGE.L" = { name = "Image Scan Holdings", isin = "GB0031410581", lei = "213800DOY65DJDUDJP88", t212 = "IGEl_EQ" }
 "IGP.L" = { name = "Intercede", isin = "GB0003287249", lei = "2138001HHZHVUMKZ8968", t212 = "IGPl_EQ" }
 "IGR.L" = { name = "IG Design", isin = "GB0004526900", lei = "213800J8I5XDZ3JU8496", t212 = "IGRl_EQ" }
@@ -274,7 +270,6 @@ snapshot = 2026-10-28
 "JNEO.L" = { name = "Journeo", isin = "GB00BKP51V79", lei = "213800TKF7L4IEV9W867", t212 = "JNEOl1_EQ" }
 "JOG.L" = { name = "Jersey Oil & Gas", isin = "GB00BYN5YK77", lei = "213800RIR1SZC1734G32", t212 = "JOGl_EQ" }
 "JSE.L" = { name = "Jadestone Energy", isin = "GB00BLR71299", lei = "21380076GWJ8XDYKVQ37", t212 = "JSEl_EQ" }
-"JZCP.L" = { name = "JZ Capital Partners", isin = "GG00BPNZ7G17", lei = "549300TZCK08Q16HHU44", t212 = "JZCPl_EQ" }
 "KCR.L" = { name = "KCR Residential Reit", isin = "GB00BYWK1Q82", lei = "213800NTHWVFLSB9CX32", t212 = "KCRl_EQ" }
 "KDNC.L" = { name = "Cadence Minerals", isin = "GB00BJP0B151", lei = "213800TUZWG9C2GRNO58", t212 = "KDNCl_EQ" }
 "KEFI.L" = { name = "Kefi Gold and Copper", isin = "GB00BD8GP619", lei = "213800OO6ETVDGE3QY15", t212 = "KEFIl_EQ" }
@@ -283,7 +278,6 @@ snapshot = 2026-10-28
 "KGH.L" = { name = "Knights", isin = "GB00BFYF6298", lei = "213800URB59EOGJKT919", t212 = "KGHl_EQ" }
 "KIST.L" = { name = "Kistos Holdings", isin = "GB00BP7NQJ77", lei = "213800L2ET5KEP3OMV07", t212 = "KISTl_EQ" }
 "KMK.L" = { name = "Kromek", isin = "GB00BD7V5D43", lei = "213800VLHYXGHEX5VQ48", t212 = "KMKl_EQ" }
-"KNB.L" = { name = "Kanabo", isin = "GB00BYQCS703", lei = "213800XPJFSNWJIYKN52", t212 = "KNBl_EQ" }
 "KOD.L" = { name = "Kodal Minerals", isin = "GB00BH3X7Y70", lei = "213800VKFS7TS32EGI81", t212 = "KODl_EQ" }
 "KOO.L" = { name = "Kooth", isin = "GB00BMCZLK30", lei = "2138001YLGO1L8UYOM90", t212 = "KOOl_EQ" }
 "KP2.L" = { name = "Kore Potash", isin = "GB00BYP2QJ94", lei = "213800NWX7EHG4UVC107", t212 = "KP2l_EQ" }
@@ -344,7 +338,6 @@ snapshot = 2026-10-28
 "NET.L" = { name = "Netcall", isin = "GB0000060532", lei = "213800GZHEAA98QBJY98", t212 = "NETl_EQ" }
 "NEXS.L" = { name = "Nexus Infrastructure", isin = "GB00BZ77SW60", lei = "213800PUGVLUONLG9Y20", t212 = "NEXSl_EQ" }
 "NFG.L" = { name = "Next 15 Group", isin = "GB0030026057", lei = "213800BK9MBUZUUPMZ63", t212 = "NFCl_EQ" }
-"NFM.L" = { name = "New Frontier Minerals", isin = "AU0000368748", lei = "213800AG47SZ4DGATD33", t212 = "CCZl_EQ" }
 "NICL.L" = { name = "Nichols", isin = "GB0006389398", lei = "213800EF5CMR3K8PND54", t212 = "NICLl_EQ" }
 "NIOX.L" = { name = "Niox", isin = "GB00BJVD3B28", lei = "2138006YAT138TOGA556", t212 = "CIRl_EQ" }
 "NTBR.L" = { name = "Northern Bear", isin = "GB00B19FLM15", lei = "21380039N5EBUGAE7T76", t212 = "NTBRl_EQ" }
@@ -379,7 +372,6 @@ snapshot = 2026-10-28
 "PET.L" = { name = "Petrel Resources", isin = "IE0001340177", lei = "213800WYDLD78V7N1563", t212 = "PETl_EQ" }
 "PGH.L" = { name = "Personal Group", isin = "GB0002760279", lei = "213800TN8BH2YYWAH345", t212 = "PGHl_EQ" }
 "PHE.L" = { name = "Powerhouse Energy", isin = "GB00B4WQVY43", lei = "213800MY7XIYS2B5C163", t212 = "PHEl_EQ" }
-"PINE.L" = { name = "Pinewood Technologies Group", isin = "GB00BSB7BS06", lei = "213800VRSPZFOGMMIS18", t212 = "PDGl_EQ" }
 "PLSR.L" = { name = "Pulsar Helium", isin = "CA7459321039", lei = "254900ZCNH1VXNBQY881", t212 = "PLSRl_EQ" }
 "PMG.L" = { name = "Parkmead", isin = "GB00BGCYZL73", lei = "2138008XIGZDTG7FPA33", t212 = "PMGl_EQ" }
 "PMI.L" = { name = "Premier Miton", isin = "GB00BZB2KR63", lei = "213800LK2M4CLJ4H2V85", t212 = "PMIl_EQ" }
@@ -390,11 +382,9 @@ snapshot = 2026-10-28
 "POS.L" = { name = "Plexus", isin = "GB00B0MDF233", lei = "213800EP3LC8K5TKDU87", t212 = "POSl_EQ" }
 "POW.L" = { name = "Power Metal Resources", isin = "GB00BMFSSJ73", lei = "213800VNXOUPHTX53686", t212 = "POWl_EQ" }
 "PPHC.L" = { name = "Public Policy Holding", isin = "US7444302084", lei = "2138008Z7B1IXVVJAZ79", t212 = "PPHCl_EQ" }
-"PPP.L" = { name = "Pennpetro Energy", isin = "GB00BF2K5076", lei = "213800BNN7UN97NVP509", t212 = "PPPl_EQ" }
 "PR1.L" = { name = "Pri0r1ty Intelligence", isin = "GB00BPVD4J91", lei = "213800TWNMR86AHZ8G84", t212 = "PR1l_EQ" }
 "PREM.L" = { name = "Premier African Minerals", isin = "VGG7223M1187", lei = "213800WDKYXYJZE5DZ61", t212 = "PREMl_EQ" }
 "PRIM.L" = { name = "PRIMORUS Investments", isin = "GB00BKTCLJ25", lei = "213800XCLCY5I8O3PP36", t212 = "PRIMl_EQ" }
-"PRIS.L" = { name = "Pristine Capital", isin = "GB00BMWKKM32", lei = "213800UCZMSGWTYROR59", t212 = "TMORl_EQ" }
 "PRM.L" = { name = "Proteome Sciences", isin = "GB0003104196", lei = "213800Q62ICXANKU2986", t212 = "PRMl_EQ" }
 "PRO.L" = { name = "ProService Building Services Marketplace", isin = "GB00BVFD4645", lei = "2138004DGL1J6VQO6S92", t212 = "HSSl_EQ" }
 "PTAL.L" = { name = "PetroTal", isin = "CA71677J1012", lei = "21380047ER33PRH4XH56", t212 = "PTALl_EQ" }
@@ -403,7 +393,6 @@ snapshot = 2026-10-28
 "PXC.L" = { name = "Phoenix Copper", isin = "VGG7060R1139", lei = "2138006UWPZAB1A75680", t212 = "PXCl_EQ" }
 "PXEN.L" = { name = "Prospex Energy", isin = "GB00BMFZVZ53", lei = "213800NY9RH8O1B72D27", t212 = "PXENl_EQ" }
 "PXS.L" = { name = "Provexis", isin = "GB00B0923P27", lei = "21380042E3Y3N9VZ6N48", t212 = "PXSl_EQ" }
-"PYX.L" = { name = "PYX Resources", isin = "AU0000078487", lei = "529900A5IPGY4VFL4E45", t212 = "PYXl_EQ" }
 "QBT.L" = { name = "Quantum Blockchain Technologies", isin = "GB00B50P5B53", lei = "213800FC5DEC582CRZ89", t212 = "QBTl_EQ" }
 "QED.L" = { name = "Quadrise", isin = "GB00B11DDB67", lei = "213800HN2ETG5476U328", t212 = "QFIl_EQ" }
 "QHE.L" = { name = "Quantum Helium", isin = "AU0000473282", lei = "213800PWZID9URNNGZ54", t212 = "MSMNl_EQ" }
@@ -454,7 +443,6 @@ snapshot = 2026-10-28
 "SLP.L" = { name = "Sylvania Platinum", isin = "BMG864081044", lei = "2138005DSKINAZ4OA492", t212 = "SLPLl_EQ" }
 "SML.L" = { name = "Strategic Minerals", isin = "GB00B4W8PD74", lei = "213800DICA5NPVOJT776", t212 = "SMLPl_EQ" }
 "SNDA.L" = { name = "Sunda Energy", isin = "GB00BSHSGY88", lei = "213800MBSOS9UZ5SW712", t212 = "BOILl_EQ" }
-"SNR.L" = { name = "Senior", isin = "GB0007958233", lei = "5493002HQHWN5JQHKQ51", t212 = "SNRl_EQ" }
 "SNT.L" = { name = "Sabien Technology", isin = "GB00BN6JG812", lei = "213800S5QG1SMGHFHY68", t212 = "SNTl_EQ" }
 "SNX.L" = { name = "Synectics", isin = "GB0007156838", lei = "213800C1F7YZH96U2Z49", t212 = "SNXl_EQ" }
 "SOLI.L" = { name = "Solid State", isin = "GB0008237132", lei = "213800QUHS9QTN5T1P62", t212 = "SOLIl1_EQ" }
@@ -476,17 +464,15 @@ snapshot = 2026-10-28
 "STAF.L" = { name = "Staffline", isin = "GB00B040L800", lei = "213800BVLF1BCOJUH828", t212 = "STAFl_EQ" }
 "STAR.L" = { name = "Star Energy Group PLC", isin = "GB00BZ042C28", lei = "213800S8WP2L294NR559", t212 = "IGASl_EQ" }
 "STCM.L" = { name = "Steppe Cement", isin = "MYA004433001", lei = "2138006TDVGH5T3U4Z46", t212 = "STCMl_EQ" }
-"STG.L" = { name = "Strip Tinning", isin = "GB00BMHN9M05", lei = "894500XQ84P4CB4WWD02", t212 = "STGl_EQ" }
+"STG.L" = { name = "Strip Tinning", isin = "GB00BMHN9M05", lei = "894500GS6N5D41R6H966", t212 = "STGl_EQ" }
 "STX.L" = { name = "Shield Therapeutics", isin = "GB00BYV81293", lei = "213800G74QWY15FC3W71", t212 = "STXl_EQ" }
 "SUH.L" = { name = "Sutton Harbour", isin = "GB0008659202", lei = "213800WWTAPQMDKCM486", t212 = "SUHl_EQ" }
 "SUN.L" = { name = "Surgical Innovations", isin = "GB0004016704", lei = "2138004GHGUH3HUZE156", t212 = "SUNl_EQ" }
 "SUP.L" = { name = "Supreme", isin = "GB00BDT89C08", lei = "213800DBHCI5WQWECL16", t212 = "SUPl_EQ" }
-"SURE.L" = { name = "Sure Ventures", isin = "GB00BYWYZ460", lei = "213800XBJJW1WWTR3C43", t212 = "SUREl_EQ" }
 "SVML.L" = { name = "Sovereign Metals", isin = "AU000000SVM6", lei = "213800NSPXSASTENFQ34", t212 = "SVMLl_EQ" }
 "SWG.L" = { name = "Shearwater", isin = "GB00BKT6VH21", lei = "213800ZRUKUYDJLKD504", t212 = "SWGl_EQ" }
 "SWT.L" = { name = "Switch Metals", isin = "GB00BNRR5980", lei = "984500640D645EE3EC94", t212 = "SWTl_EQ" }
 "SYM.L" = { name = "Symphony Environmental Technologies", isin = "GB0009589168", lei = "2138001WEI2WG26TMH90", t212 = "SYMl_EQ" }
-"SYME.L" = { name = "Supply@Me Capital", isin = "GB00BFMDJC60", lei = "213800ZY2C2TI2C5WQ61", t212 = "SYMEl_EQ" }
 "SYN.L" = { name = "Synergia Energy", isin = "AU0000233538", lei = "213800S292RJZ97HRR83", t212 = "SYNl_EQ" }
 "SYS.L" = { name = "SysGroup", isin = "GB00BYT18182", lei = "213800D18GPZZJR9SH55", t212 = "SYSl_EQ" }
 "SYS1.L" = { name = "System1", isin = "GB00B1GVQH21", lei = "213800TDLR42C3Q9ZB74", t212 = "SYS1l_EQ" }
@@ -503,7 +489,6 @@ snapshot = 2026-10-28
 "TEK4.L" = { name = "TEK4 Group", isin = "GB00C089J669", lei = "21380091UTZIDT865X63", t212 = "TEK4l_EQ" }
 "TENG.L" = { name = "Ten Technologies Group", isin = "GB00BF188X60", lei = "213800YK94ZUOJUMN686", t212 = "TENGl_EQ" }
 "TERN.L" = { name = "Tern", isin = "GB00BFPMV798", lei = "2138005F87SODHL9CQ36", t212 = "TERNl_EQ" }
-"TFGS.L" = { name = "Tetragon", isin = "GG00B1RMC548", lei = "14URO7KANNWKTLQY7F55", t212 = "TFGSl_EQ" }
 "TFW.L" = { name = "FW Thorpe", isin = "GB00BC9ZLX92", lei = "2138007NXVPPRAXXHT76", t212 = "TFWl_EQ" }
 "TGP.L" = { name = "Tekmar", isin = "GB00BDFGGK53", lei = "213800839UQKQTV33E71", t212 = "TGPl_EQ" }
 "THAT.L" = { name = "Thalia Therapeutics", isin = "GB00BYW8QM32", lei = "213800I841D2RKMFK955", t212 = "N4Pl_EQ" }
@@ -514,7 +499,7 @@ snapshot = 2026-10-28
 "TIDE.L" = { name = "Crimson Tide", isin = "GB00BRJRV969", lei = "213800YUNLNBVYR3G129", t212 = "TIDEl_EQ" }
 "TIG.L" = { name = "Team Internet Group", isin = "GB00BCCW4X83", lei = "213800M4IINBWMXEKV82", t212 = "CNICl_EQ" }
 "TIME.L" = { name = "Time Finance", isin = "GB00BCDBXK43", lei = "213800VG3QJGBP2MKR86", t212 = "TIMEl_EQ" }
-"TIN.L" = { name = "Cornish Metals", isin = "GB00BSLNG492", lei = "213800VU7WVFF4BJFY96", t212 = "CUSNl_EQ" }
+"TIN.L" = { name = "Cornish Metals", isin = "GB00BSLNG492", lei = "8945007GJ5APA9YDN221", t212 = "CUSNl_EQ" }
 "TLM.L" = { name = "Talisman Metals", isin = "IE000XRZAWV1", lei = "", t212 = "OVBl_EQ" }
 "TMG.L" = { name = "Mission", isin = "GB00B11FD453", lei = "213800L567CF3Z6GPZ03", t212 = "TMGl_EQ" }
 "TMO.L" = { name = "Time out Group", isin = "GB00BYYV0629", lei = "213800BWH4OF8S4R8K10", t212 = "TMOl_EQ" }
@@ -545,7 +530,6 @@ snapshot = 2026-10-28
 "UOG.L" = { name = "United Oil & Gas", isin = "GB00BYX0MB92", lei = "213800WZWERBFYBQ9J17", t212 = "UOGl_EQ" }
 "UPR.L" = { name = "Uniphar", isin = "IE00BJ5FQX74", lei = "21380028LJSQGRUAX965", t212 = "UPR1l_EQ" }
 "URU.L" = { name = "URU Metals", isin = "VGG930042012", lei = "213800ZPHWT9VE1H1Q84", t212 = "URUl_EQ" }
-"UTL.L" = { name = "UIL", isin = "BMG917071026", lei = "213800CTZ7TEIE7YM468", t212 = "UTLl_EQ" }
 "VAL.L" = { name = "ValiRx", isin = "GB00BLH13C52", lei = "213800VQKB9SJCQDET40", t212 = "VALl_EQ" }
 "VAST.L" = { name = "Vast Resources", isin = "GB00BXNRYG27", lei = "213800QXLO766CMGCQ60", t212 = "VASTl_EQ" }
 "VCP.L" = { name = "Victoria", isin = "GB00BZC0LC10", lei = "2138002K6ECECHVCQN25", t212 = "VCPl_EQ" }
@@ -557,7 +541,6 @@ snapshot = 2026-10-28
 "VNET.L" = { name = "Vianet", isin = "GB00B13YVN56", lei = "2138007KAM1HB8E7E134", t212 = "VNETl_EQ" }
 "VRCI.L" = { name = "Verici Dx", isin = "GB00BM8HZD43", lei = "213800FI5WE4FVQ3G645", t212 = "VRCIl_EQ" }
 "VTU.L" = { name = "Vertu Motors", isin = "GB00B1GK4645", lei = "213800GIKJEIUIGMI575", t212 = "VTUl_EQ" }
-"VZLA.L" = { name = "Apertura Energy", isin = "JE00BLB56J12", lei = "213800O4A398G6GL7270", t212 = "REDCl_EQ" }
 "W7L.L" = { name = "Warpaint London", isin = "GB00BYMF3676", lei = "213800EBJ2CN6KIDCO78", t212 = "W7Ll_EQ" }
 "WATR.L" = { name = "Water Intelligence", isin = "GB00BZ973D04", lei = "213800AL3BNXJ1HQLP10", t212 = "WATRl_EQ" }
 "WINE.L" = { name = "Naked Wines", isin = "GB00B021F836", lei = "213800IYPFIRRQQE9R62", t212 = "WINEl_EQ" }
@@ -578,7 +561,6 @@ snapshot = 2026-10-28
 "YCA.L" = { name = "Yellow Cake", isin = "JE00BF50RG45", lei = "213800CVMYUGOA9EZY95", t212 = "YCAl_EQ" }
 "YOU.L" = { name = "YouGov", isin = "GB00B1VQ6H25", lei = "213800MZGBGCJIPOBB41", t212 = "YOUl_EQ" }
 "YU.L" = { name = "Yu Group", isin = "GB00BYQDPD80", lei = "213800ACO9GDDBM7DS35", t212 = "YUl_EQ" }
-"ZAIM.L" = { name = "Adalan Ventures", isin = "GB00BMXTZ463", lei = "213800Z4MI9KSZA2VW72", t212 = "ZAIMl_EQ" }
 "ZAM.L" = { name = "Zambeef Products", isin = "ZM0000000201", lei = "213800U7PEKOUE14NP20", t212 = "ZAMl_EQ" }
 "ZED.L" = { name = "Zenova", isin = "GB00BNVVH568", lei = "213800QXC9WBOBNBQS55", t212 = "ZEDl_EQ" }
 "ZIN.L" = { name = "Zinc Media", isin = "GB00BJVLR251", lei = "21380038V6N4I4P38D74", t212 = "ZINl_EQ" }
