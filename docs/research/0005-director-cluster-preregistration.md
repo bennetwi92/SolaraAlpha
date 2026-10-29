@@ -184,3 +184,46 @@ Bonferroni 2, z = 2.24):
 
 So the wide universe roughly halves the MDE (from 16–24 pp to about 9–13 pp). It still cannot
 see a 5 pp effect.
+
+## Pre-step, rules v1: failed (2026-10-29)
+
+The 40 notices (seed 223, wide universe) were labelled by hand from their text (15 open-market
+buys, 25 not), then read by rules v1. Labels: `docs/research/0005-labels-v1.csv`.
+
+| check | result | bar |
+|---|---|---|
+| buy / not-buy correct | **33 of 40 (82.5%)** | 90% |
+| value within 10%, true buys | **9 of 15 (60%)** | 90% |
+
+Where v1 went wrong:
+
+- **Not buys read as buys (5).** In each, the nature field says "purchase" or "acquisition", but
+  the notice's own text says it was a dividend reinvestment (2), shares in lieu of fees, a
+  placing subscription, or a bed-and-SIPP (bought and sold the same day, no change in holding).
+- **Buys missed (2).** Notices with no MAR table: one has the buy only in its narrative, the other
+  is an ASX Appendix 3Y.
+- **Values wrong (6).** A "volumes(s)" typo in the label, "£0. 349" with a space, numbered lists
+  ("1. £1.31835 2. £1.31835"), price columns listed before volume columns, and a same-day sale
+  and repurchase counted as new buying.
+
+The drift test did not run.
+
+## Rules v2 (2026-10-29, the one fix 0005 allows)
+
+Written after the v1 failure and before the fresh sample was drawn (`data.dealings`):
+
+1. Every "Nature of the transaction" in a PDMR block is its own dealing, with its own price field.
+2. A notice whose opening text (before the first MAR block, or its first 1,500 characters if it
+   has none) names a dividend reinvestment, shares in lieu of fees, a subscription, placing or
+   fundraise, a SIPP transfer or "bed and", or a scrip issue is not a buy.
+3. A PDMR's value is their buys minus their sales in the notice. Zero or less is not a buy, and
+   nor is a buy at a nil price.
+4. Prices and volumes are told apart by their marks (£, p, pence, GBX, $, A$, €): k marked
+   prices with k unmarked numbers pair in order. Otherwise the numbers pair in sequence. List
+   marks and the space in "£0. 349" are removed first. The label match allows "volumes(s)".
+5. A notice with no MAR block falls back to its narrative: "(purchased | bought | acquired)
+   N … shares … at (an average price of) P".
+
+**Fresh sample:** 40 notices drawn with seed 2232 from the same population, leaving out the
+first 40. The bar is unchanged. If v2 fails too, the drift test does not run (0005 allows one
+fix only).
