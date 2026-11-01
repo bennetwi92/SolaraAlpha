@@ -103,6 +103,16 @@ kind `web` or `news`, the section it informs, a one-line summary, your impact vi
 Corroborate anything material from a headline against a primary source before scoring it; an
 uncorroborated item may be listed as "unverified" but must not move a score.
 
+**Check the company before you use a source.** A page counts only if it names this company
+(its legal name from the pack, or its own ticker on its own exchange: `LON:AAZ`, not
+`TSXV:AAZ`). Bidders, acquirers, peers and namesakes are other companies: their mines,
+products and guidance are never this company's facts. When this week's sources contradict
+your prior notes about what the company *is* (its assets, country, products), do not
+downgrade on it: check the company's own NSM filings (the pack, or `announcement.py` on
+one of its filings) first, and say which description the filings support. (AAZ.L, run 26:
+ACG Metals' Gediktepe headline, a company that once weighed a bid for Anglo Asian, was read
+as Anglo Asian's own news — #309.) The desk thread can be wrong about a name too.
+
 ## Step 3b: The stock's value model, if it has one
 
 Look the ticker up in `config/value_models.toml` (one table per ticker: `skill`, `script`).

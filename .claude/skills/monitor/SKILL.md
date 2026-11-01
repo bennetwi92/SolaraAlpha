@@ -51,7 +51,9 @@ position, under the latest daily run).
 
 Everything else is **noise**: no new information (a director's scheme award, a TR-1 with no
 message), a move inside the plan's risk, a headline about another company. Noise → `hold`
-with reason "no change", label `PASS`.
+with reason "no change", label `PASS`. A headline counts only if it names this company (legal
+name or its own ticker); a bidder's, peer's or namesake's news is another company's, even when
+it mentions this one (AAZ.L: ACG Metals' Gediktepe ramp is not Anglo Asian's, #309).
 
 ## The stop (you set it on Friday; the rules are context)
 
