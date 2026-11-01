@@ -202,3 +202,15 @@ but the WATCH clause `eps_revision > 0` failed on NaN, so a stock that missed AC
 fell straight to PASS for want of data (Jet2, run of 2026-10-16). The WATCH clause is now
 `eps_revision > 0 or eps_revision is nan`: missing data is neutral in both bands. A revision of
 exactly 0 still fails WATCH, as before.
+
+## Amendment (owner 2026-11-01): six catalyst slots, filings only; eight positions
+
+Scan run 26 (the first on the wide universe, ADR 0038) sent 15 names to the agents and research
+turned 9 of 13 down for "no fresh catalyst", while a contract-win filing (CNC.L) sat at rank 13.
+The owner widened the filing route: `shortlist_catalysts` 3 → **6**, and a catalyst slot now goes
+only to a stock with a fresh **tier-1 information filing** (`pipeline.SLOT_TIER`); a headline
+(tier 3) or a scheduled event (tier 2) alone no longer takes one — they stay as context in the
+reason. Slots go best rank first. `max_agent_tickers` 15 → 18 so the whole shortlist (12 + 6)
+is still validated and researched. The same day `max_positions` went 5 → 8 (`config/portfolio.toml`):
+the book was full at 5, so run 26 could fund 3 new names at most. `max_heat` stays 10%, so eight
+positions fit at about 1.25% risk each on average.

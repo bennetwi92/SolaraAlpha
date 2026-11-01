@@ -21,9 +21,10 @@ the shortlisted tickers; the others get ``skip`` steps::
 The **shortlist** (:func:`screen`): a minimal sanity floor (no screening toolkit ERROR, a
 liquidity card with ``adv_gbp_20 >= min_adv_gbp``, a combined score), then the tickers past it
 ranked by :func:`solaraalpha.portfolio.fit.rank_score` (:func:`rank_act`). The top
-``shortlist_size`` are shortlisted ("rank N"); tickers with a catalyst (``catalysts``: ticker ->
-one-line reason, tagged with its tier) join outside the top N, best tier then best rank, up to
-``shortlist_catalysts`` more ("catalyst: tier 1: <reason>"). Shortlisted tickers get the screen label ACT (the agents can only downgrade it);
+``shortlist_size`` are shortlisted ("rank N"); tickers with a fresh information filing
+(``catalysts``: ticker -> one-line reason, tagged with its tier; tier 1 only, :data:`SLOT_TIER`)
+join outside the top N, best rank first, up to ``shortlist_catalysts`` more ("catalyst: tier 1:
+<reason>"). Shortlisted tickers get the screen label ACT (the agents can only downgrade it);
 the others keep their band label capped at WATCH; floor failures are PASS. Volatility is never
 a gate. Running stage by stage (not stock by stock) puts each stage's results for all stocks
 side by side before the next starts.
@@ -72,6 +73,9 @@ ALL_LABELS = frozenset(LABELS)
 # a few weeks (ADR 0038); the toolkits need 14+ weeks for an ATR.
 MIN_WEEKS = 26
 THIN = "too little clean history"
+# Only a fresh information filing (catalysts tier 1) takes a catalyst slot: a headline or a
+# scheduled event alone does not (owner, 2026-11-01; #273).
+SLOT_TIER = 1
 
 SCREEN_TOOLKITS = ("technical", "levels", "relative_strength", "fundamentals")
 _OPS: dict[str, Callable[[Any, Any], bool]] = {
@@ -378,9 +382,9 @@ def screen(
 
     Tickers past the :func:`floor` are ranked by ``rank_score`` (:func:`rank_act`); the top
     ``size`` are shortlisted as ``rank N``. A ticker in ``catalysts`` (ticker -> one-line
-    reason) past the floor but outside the top ``size`` joins as ``catalyst: <reason>``,
-    best tier first (:func:`solaraalpha.catalysts.tier_of`: information, scheduled, discovery,
-    warnings only), then best-ranked, at most ``catalyst_cap`` of them; a top-N ticker with a catalyst carries
+    reason) past the floor but outside the top ``size`` joins as ``catalyst: <reason>`` when it
+    is a tier-1 information filing (:data:`SLOT_TIER`; a headline or a scheduled event alone takes
+    no slot), best-ranked first, at most ``catalyst_cap`` of them; a top-N ticker with a catalyst carries
     both reasons. Shortlisted -> ACT; past the floor but not shortlisted -> its band label
     (:func:`screen_label`) capped at WATCH; below the floor -> PASS; ERROR stays ERROR.
     ``None`` arguments default to ``config/portfolio.toml`` (``shortlist_size``,
@@ -409,7 +413,7 @@ def screen(
         why = f"catalyst: {catalysts[t]}"
         if t in picks:
             picks[t] += f"; {why}"
-        elif extra < catalyst_cap:
+        elif extra < catalyst_cap and tier_of(catalysts[t]) == SLOT_TIER:
             picks[t], extra = why, extra + 1
     out: dict[str, Screened] = {}
     for t in steps:

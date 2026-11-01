@@ -314,7 +314,7 @@ def test_weekly_message_lists_the_trades_as_steps(
         "Then tell me: `placed 1`; when it fills: `fill 1 --qty N --price P`",
         "### Your positions",
         "### Money",
-        "- Equity £10,000 (cash £10,000) · 0 of 5 positions",
+        "- Equity £10,000 (cash £10,000) · 0 of 8 positions",
     ):
         assert needle in text, needle
     assert text.rstrip().endswith(
