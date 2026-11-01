@@ -40,7 +40,8 @@ import math
 import operator
 import re
 import tomllib
-from collections.abc import Callable, Mapping
+from collections import Counter
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,7 @@ from typing import Any
 import pandas as pd
 
 from solaraalpha.config import REPO_ROOT
+from solaraalpha.data.clean import clean_prices, trim_cut
 from solaraalpha.log import get_logger
 from solaraalpha.toolkits import Cards, Inputs, get
 
@@ -432,7 +434,25 @@ def thin_history(x: Inputs) -> str | None:
         n = len(x.weekly)
     except Exception:
         return None
-    return f"{THIN}: {n} weekly bars < {MIN_WEEKS}" if n < MIN_WEEKS else None
+    if n >= MIN_WEEKS:
+        return None
+    why = f"{THIN}: {n} weekly bars < {MIN_WEEKS}"
+    cut = trim_cut(clean_prices(x.daily), x.issues)
+    return why + (f" (cut after {cut[1]} on {cut[0]:%Y-%m-%d})" if cut else "")
+
+
+def thin_summary(reasons: Iterable[str]) -> str | None:
+    """One line for the scan report: how many stocks were skipped for :data:`THIN` history,
+    by what cut it (``stale`` 80, ``gap`` 12, ...; ``short listing`` when nothing did) — #312."""
+    causes = Counter(
+        (m.group(1) if (m := re.search(r"cut after (\w+) on", r)) else "short listing")
+        for r in reasons
+        if r.startswith(THIN)
+    )
+    if not causes:
+        return None
+    by = ", ".join(f"{c} {n}" for c, n in causes.most_common())
+    return f"{sum(causes.values())} stocks skipped for {THIN} (< {MIN_WEEKS} weeks): {by}"
 
 
 def run_toolkit(

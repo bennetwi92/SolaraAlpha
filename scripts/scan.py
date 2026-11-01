@@ -47,6 +47,7 @@ from solaraalpha.pipeline import (
     run_toolkit,
     screen,
     stale_watchlist,
+    thin_summary,
     universe,
     watch_on,
     watchlist_snapshot,
@@ -122,6 +123,9 @@ def _report(
         if s.status == "error"
     ]
     lines += errors or ["- none"]
+    thin = thin_summary(s.reason for steps in results.values() for s in steps[:1])
+    if thin:
+        lines += ["", f"**Skipped:** {thin}. Their tickers are in the toolkit reasons below."]
     if reviewed is not None:
         lines += ["", review_report(reviewed)]
     lines += ["", "<details><summary>Every toolkit's reason</summary>", ""]
