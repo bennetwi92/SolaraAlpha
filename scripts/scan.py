@@ -32,7 +32,7 @@ from typing import Any
 import pandas as pd
 
 from solaraalpha import desk_chat, store
-from solaraalpha.catalysts import fresh_catalysts
+from solaraalpha.catalysts import fresh_catalysts, offer_periods
 from solaraalpha.data import trading212
 from solaraalpha.pipeline import (
     ALL_LABELS,
@@ -47,6 +47,7 @@ from solaraalpha.pipeline import (
     run_toolkit,
     screen,
     stale_watchlist,
+    thin_summary,
     universe,
     watch_on,
     watchlist_snapshot,
@@ -122,6 +123,9 @@ def _report(
         if s.status == "error"
     ]
     lines += errors or ["- none"]
+    thin = thin_summary(s.reason for steps in results.values() for s in steps[:1])
+    if thin:
+        lines += ["", f"**Skipped:** {thin}. Their tickers are in the toolkit reasons below."]
     if reviewed is not None:
         lines += ["", review_report(reviewed)]
     lines += ["", "<details><summary>Every toolkit's reason</summary>", ""]
@@ -212,7 +216,10 @@ def main(argv: list[str] | None = None) -> None:
         labels = {t: Screened(s[0].label, s[0].reason, ranks.get(t)) for t, s in results.items()}
     else:
         catalysts = fresh_catalysts([x.ticker for x in inputs])
-        untradable = not_offered([x.ticker for x in inputs])
+        # not offered by Trading212, or pinned to a takeover offer (#306)
+        untradable = offer_periods([x.ticker for x in inputs]) | not_offered(
+            [x.ticker for x in inputs]
+        )
         results = run_pipeline(inputs, catalysts=catalysts, untradable=untradable)
         labels = screen(results, catalysts=catalysts, untradable=untradable)
 

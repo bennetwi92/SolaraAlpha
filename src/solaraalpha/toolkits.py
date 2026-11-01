@@ -34,10 +34,10 @@ from solaraalpha.analysis.fundamentals import (
     with_publication,
 )
 from solaraalpha.analysis.levels import LevelsCard, levels_card
-from solaraalpha.analysis.liquidity import LiquidityCard, liquidity_card
+from solaraalpha.analysis.liquidity import GBP_QUOTES, LiquidityCard, liquidity_card
 from solaraalpha.analysis.relative_strength import RelativeStrength, compare, comparisons, rs_card
 from solaraalpha.analysis.technical import Position, Scorecard, assess_position, scorecard
-from solaraalpha.data.announcements import fetch_announcements, resolve_issuer
+from solaraalpha.data.announcements import filings, resolve_issuer
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.fundamentals import fetch_fundamentals
 from solaraalpha.data.prices import fetch_daily
@@ -78,8 +78,9 @@ class Inputs:
 
     @cached_property
     def announcements(self) -> pd.DataFrame:
-        """The issuer's NSM filings (``LOOKBACK_YEARS``), found by LEI."""
-        return fetch_announcements(resolve_issuer(self.ticker).lei)
+        """The issuer's NSM filings (``LOOKBACK_YEARS``), found by LEI; shared with the scan's
+        catalyst pass when it already fetched them (one NSM search per stock, #303)."""
+        return filings(resolve_issuer(self.ticker).lei)
 
     def other(self, ticker: str) -> pd.DataFrame:
         """Daily prices (as fetched) of another instrument this ticker is compared with."""
@@ -205,7 +206,15 @@ def _liquidity(x: Inputs) -> Cards:
     from solaraalpha.portfolio.rules import load_rules
 
     daily = trim_to_consistent(clean_prices(x.daily), x.issues)
-    return {"liquidity": liquidity_card(daily, load_rules().max_adv_pct, x.weekly.index[-1])}
+    as_of = x.weekly.index[-1]
+    currency = x.daily.attrs.get("currency") or "GBp"
+    rate = None
+    if currency not in GBP_QUOTES:  # e.g. EUR: GBP per unit, as of the card's week (#307)
+        fx = x.other(f"{currency}GBP=X")["close"].dropna()
+        fx = fx[fx.index <= as_of + pd.Timedelta(days=1)]
+        rate = float(fx.iloc[-1]) if len(fx) else None
+    card = liquidity_card(daily, load_rules().max_adv_pct, as_of, rate)
+    return {"liquidity": card}
 
 
 @dataclass(frozen=True)

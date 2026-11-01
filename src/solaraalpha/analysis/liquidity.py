@@ -28,13 +28,20 @@ class LiquidityCard:
     max_position_gbp: float  # max_adv_pct x adv_gbp_20: the most a position should be worth
 
 
-def traded_value(daily: pd.DataFrame, sessions: int) -> float:
+GBP_QUOTES = ("GBp", "GBX", "GBP")
+
+
+def traded_value(daily: pd.DataFrame, sessions: int, gbp_rate: float | None = None) -> float:
+    """Median daily close x volume over the last ``sessions``, in GBP. A line quoted in another
+    currency (GRP.L in EUR, #307) needs ``gbp_rate``: GBP per unit of its currency."""
     tail = daily.dropna(subset=["close", "volume"]).iloc[-sessions:]
     if tail.empty:
         return math.nan
-    return to_account(
-        float((tail["close"] * tail["volume"]).median()), daily.attrs.get("currency", "GBp")
-    )
+    value = float((tail["close"] * tail["volume"]).median())
+    currency = daily.attrs.get("currency", "GBp")
+    if currency not in GBP_QUOTES and gbp_rate is not None:
+        return value * gbp_rate
+    return to_account(value, currency)
 
 
 def corwin_schultz(daily: pd.DataFrame) -> pd.Series:
@@ -52,13 +59,17 @@ def corwin_schultz(daily: pd.DataFrame) -> pd.Series:
 
 
 def liquidity_card(
-    daily: pd.DataFrame, max_adv_pct: float, as_of: pd.Timestamp | None = None
+    daily: pd.DataFrame,
+    max_adv_pct: float,
+    as_of: pd.Timestamp | None = None,
+    gbp_rate: float | None = None,
 ) -> LiquidityCard:
-    """Liquidity as of ``as_of`` (default: the last session), using only sessions up to it."""
+    """Liquidity as of ``as_of`` (default: the last session), using only sessions up to it;
+    ``gbp_rate`` converts a line quoted outside GBP (:func:`traded_value`)."""
     d = daily if as_of is None else daily[daily.index <= as_of]
     if d.empty:
         raise ValueError("no sessions to measure liquidity on")
-    adv20, adv60 = traded_value(d, SHORT), traded_value(d, LONG)
+    adv20, adv60 = traded_value(d, SHORT, gbp_rate), traded_value(d, LONG, gbp_rate)
     last = d.iloc[-LONG:]
     zero = float((last["volume"].fillna(0) <= 0).mean()) if len(last) else math.nan
     spread = corwin_schultz(d).iloc[-LONG:].dropna()

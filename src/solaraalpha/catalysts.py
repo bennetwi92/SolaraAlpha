@@ -47,7 +47,7 @@ import pandas as pd
 
 from solaraalpha.analysis.events import _short_name, expected_events, material
 from solaraalpha.analysis.financing import RAISE
-from solaraalpha.data.announcements import fetch_announcements, resolve_issuer
+from solaraalpha.data.announcements import cached, fetch_announcements, remember, resolve_issuer
 from solaraalpha.data.news import fetch_news
 from solaraalpha.log import get_logger
 
@@ -63,6 +63,16 @@ SCHEDULED_WEEKS = (2, 6)  # an expected event this many weeks out is tier 2
 INFORMATION = frozenset(
     {"TST", "FR", "PRE", "IR", "ACS", "CNT", "REA", "AGR", "ACQ", "JVE", "DIS", "UPD", "DRL"}
 )
+# A headline that carries information whatever the NSM type it was filed under: companies file
+# contract wins and operational news as MSCL ("$7m Production Orders from US Defence Prime",
+# CNC.L, scan run 26 — #305). Admin results ("Result of AGM") are not.
+INFORMATION_HEADLINE = re.compile(
+    r"\b(?:contracts?|orders?|awards?|awarded|acquisition|acquires|disposal|agreement"
+    r"|partnership|licen[cs]e|approval|trading (?:update|statement)|results|production"
+    r"|drilling|resource|reserves?|operational update|quarterly (?:update|report))\b",
+    re.I,
+)
+ADMIN_HEADLINE = re.compile(r"^result of\b|court order|\bmeeting\b|form 8\.3", re.I)
 NEGATIVE_CODES = frozenset({"SUS"})  # suspension
 NEGATIVE = re.compile(
     r"nomad|nominated adviser|auditor|delay|postpone|suspen|going concern|profit warning"
@@ -72,13 +82,27 @@ NEGATIVE = re.compile(
 
 Part = tuple[int, str]  # (tier, text)
 
+# A firm offer or a scheme for the company (not a Rule 2.4 possible offer, which can still
+# burst): the price is pinned to the offer, so the stock is off the shortlist (#306).
+FIRM_OFFER = re.compile(
+    r"rule 2\.7|recommended (?:final )?(?:cash |share |all-share )?(?:offer|acquisition)"
+    r"|scheme (?:document|of arrangement)|court (?:meeting|sanction)|sanction of (?:the )?scheme"
+    r"|offer (?:document|unconditional|declared)",
+    re.I,
+)
+OFFER_ENDED = re.compile(r"laps|withdraw|terminat|will not proceed|no intention to make", re.I)
+OFFER_MONTHS = 9  # a firm offer older than this with no news is not treated as live
+
 
 def classify(type_code: str, headline: str) -> int:
     """Tier of one material filing: :data:`NEGATIVE_TIER` for a raise or a red flag, 1 for an
-    :data:`INFORMATION` type, else 3."""
+    :data:`INFORMATION` type or an :data:`INFORMATION_HEADLINE` (not an admin one), else 3."""
     if type_code in NEGATIVE_CODES or NEGATIVE.search(headline) or RAISE.search(headline):
         return NEGATIVE_TIER
-    return 1 if type_code in INFORMATION else 3
+    if type_code in INFORMATION:
+        return 1
+    news = INFORMATION_HEADLINE.search(headline) and not ADMIN_HEADLINE.search(headline)
+    return 1 if news else 3
 
 
 def tier_of(reason: str) -> int:
@@ -131,6 +155,8 @@ def catalyst_reason(
         issuer = resolve_issuer(ticker)
         name = _short_name(issuer.name)
         ann = fetch_announcements(issuer.lei, end=f"{now:%Y-%m-%dT%H:%M:%S}")
+        if abs(pd.Timestamp(datetime.now(UTC)) - now) < pd.Timedelta(hours=1):
+            remember(issuer.lei, ann)  # a current fetch: the events stage reuses it (#303)
         parts += filing_parts(ann, since, now) + event_parts(ann, now, horizon_weeks)
     except Exception as e:
         log.warning("%s: filings unavailable (%s: %s)", ticker, type(e).__name__, e)
@@ -142,6 +168,40 @@ def catalyst_reason(
         except Exception as e:
             log.warning("%s: news unavailable (%s: %s)", ticker, type(e).__name__, e)
     return join_parts(parts)
+
+
+def offer_period(ann: pd.DataFrame, now: pd.Timestamp) -> str | None:
+    """``"in an offer period: RNS <date>: <headline>"`` when the filings up to ``now`` hold a
+    firm offer / scheme (:data:`FIRM_OFFER`) in the last :data:`OFFER_MONTHS` with no later
+    lapse or withdrawal (:data:`OFFER_ENDED`), else None."""
+    if ann.empty:
+        return None
+    window = ann[
+        (ann["published"] > now - pd.DateOffset(months=OFFER_MONTHS)) & (ann["published"] <= now)
+    ]
+    firm = window[window["headline"].fillna("").str.contains(FIRM_OFFER)]
+    if firm.empty:
+        return None
+    last = firm.iloc[-1]
+    later = window[window["published"] > last["published"]]
+    if later["headline"].fillna("").str.contains(OFFER_ENDED).any():
+        return None
+    return f"in an offer period: RNS {last['published']:%Y-%m-%d}: {last['headline']}"
+
+
+def offer_periods(tickers: Iterable[str], now: pd.Timestamp | None = None) -> dict[str, str]:
+    """Ticker -> :func:`offer_period` reason, from the filings this process already fetched
+    (the catalyst pass): no NSM search of its own. Stocks without cached filings are left out."""
+    now = _utc(now) if now is not None else pd.Timestamp(datetime.now(UTC))
+    out: dict[str, str] = {}
+    for ticker in tickers:
+        try:
+            ann = cached(resolve_issuer(ticker).lei)
+        except Exception:
+            continue
+        if ann is not None and (why := offer_period(ann, now)):
+            out[ticker] = why
+    return out
 
 
 def join_parts(parts: list[Part]) -> str | None:

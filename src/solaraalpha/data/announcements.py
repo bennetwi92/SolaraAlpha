@@ -33,12 +33,23 @@ import pandas as pd
 from solaraalpha.config import REPO_ROOT
 from solaraalpha.data.http import DEFAULT_TIMEOUT, session
 from solaraalpha.data.prices import LOOKBACK_YEARS
+from solaraalpha.log import get_logger
+
+log = get_logger(__name__)
 
 NSM_SEARCH_URL = "https://api.data.fca.org.uk/search?index=nsm-search"
 # Seconds between NSM searches: an unpaced scan of the whole universe got the caller refused
 # (403) within minutes, 2026-10-29 (docs/decisions/0038).
 NSM_GAP = 1.0
 _last_search = 0.0
+# Seconds a process may spend waiting out NSM refusals (403 / 429) in all, doubling from
+# NSM_RETRY_WAIT: a refusal is retried while the budget lasts, then raised at once (#303).
+NSM_RETRY_BUDGET = 300.0
+NSM_RETRY_WAIT = 5.0
+_retry_left = NSM_RETRY_BUDGET
+# Each issuer's filings (the default LOOKBACK_YEARS window) fetched in this process, by LEI: the
+# weekly scan's catalyst pass and its events stage share one NSM search per stock (#303).
+_FILINGS: dict[str, pd.DataFrame] = {}
 NSM_DOC_BASE = "https://data.fca.org.uk/artefacts/"
 GLEIF_URL = "https://api.gleif.org/api/v1/lei-records"  # ISIN -> LEI (scripts/research_universe.py)
 ISSUERS = REPO_ROOT / "config" / "issuers.toml"
@@ -137,16 +148,42 @@ def fetch_announcements(lei: str, start: str | None = None, end: str | None = No
     return df
 
 
+def filings(lei: str) -> pd.DataFrame:
+    """:func:`fetch_announcements` for ``lei`` (default window), fetched once per process."""
+    if lei not in _FILINGS:
+        _FILINGS[lei] = fetch_announcements(lei)
+    return _FILINGS[lei]
+
+
+def cached(lei: str) -> pd.DataFrame | None:
+    """``lei``'s filings if this process already fetched them, else None (never fetches)."""
+    return _FILINGS.get(lei)
+
+
+def remember(lei: str, df: pd.DataFrame) -> None:
+    """Keep ``df`` (a current, default-window fetch) as ``lei``'s filings for :func:`filings`."""
+    _FILINGS[lei] = df
+
+
 def _search(body: dict) -> dict:
-    """One NSM search, at most one every :data:`NSM_GAP` seconds."""
-    global _last_search
-    time.sleep(max(0.0, _last_search + NSM_GAP - time.monotonic()))
-    try:
-        resp = session().post(NSM_SEARCH_URL, json=body, timeout=DEFAULT_TIMEOUT)
-    finally:
-        _last_search = time.monotonic()
-    resp.raise_for_status()
-    return dict(resp.json())
+    """One NSM search, at most one every :data:`NSM_GAP` seconds; a 403 / 429 refusal is waited
+    out (doubling waits) while the process's :data:`NSM_RETRY_BUDGET` lasts."""
+    global _last_search, _retry_left
+    wait = NSM_RETRY_WAIT
+    while True:
+        time.sleep(max(0.0, _last_search + NSM_GAP - time.monotonic()))
+        try:
+            resp = session().post(NSM_SEARCH_URL, json=body, timeout=DEFAULT_TIMEOUT)
+        finally:
+            _last_search = time.monotonic()
+        if resp.status_code in (403, 429) and _retry_left >= wait:
+            log.warning("NSM refused the search (%s): retrying in %.0fs", resp.status_code, wait)
+            _retry_left -= wait
+            time.sleep(wait)
+            wait *= 2
+            continue
+        resp.raise_for_status()
+        return dict(resp.json())
 
 
 def search_issuers(name: str, days: int = 365) -> list[tuple[str, str, int]]:

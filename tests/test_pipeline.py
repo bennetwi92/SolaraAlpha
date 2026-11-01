@@ -255,6 +255,23 @@ def test_thin_history_is_pass_without_running(fake: list[tuple[str, str]]) -> No
     assert screen_label([]) == ("ERROR", "no toolkit ran")
 
 
+def test_thin_summary_counts_by_what_cut_the_history() -> None:
+    from solaraalpha.pipeline import thin_summary
+
+    reasons = [
+        "too little clean history: 0 weekly bars < 26 (cut after stale on 2026-10-30)",
+        "too little clean history: 3 weekly bars < 26 (cut after stale on 2026-10-09)",
+        "too little clean history: 12 weekly bars < 26 (cut after gap on 2026-08-01)",
+        "too little clean history: 5 weekly bars < 26",
+        "technical ACT",
+    ]
+    assert thin_summary(reasons) == (
+        "4 stocks skipped for too little clean history (< 26 weeks):"
+        " stale 2, gap 1, short listing 1"
+    )
+    assert thin_summary(["technical ACT"]) is None
+
+
 def test_missing_verdict_field_is_an_error(
     fake: list[tuple[str, str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:

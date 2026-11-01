@@ -8,6 +8,7 @@ from solaraalpha.data.clean import (
     clean_prices,
     log_returns,
     to_weekly,
+    trim_cut,
     trim_to_consistent,
 )
 
@@ -106,6 +107,8 @@ def test_trim_to_consistent() -> None:
     df.loc[df.index[10], "close"] = 1000  # large move: not blocking
     out = trim_to_consistent(df, check_prices(df))
     assert out.index[0] == df.index[5]
+    assert trim_cut(df, check_prices(df)) == (df.index[4], "non_positive_price")
+    assert trim_cut(_daily(), check_prices(_daily())) is None
 
 
 def test_trim_to_consistent_no_blocking() -> None:

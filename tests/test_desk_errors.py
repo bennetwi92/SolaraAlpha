@@ -51,6 +51,40 @@ def test_scan_errors_split_pipeline_and_agents(db_backend: Path | None) -> None:
     assert head == ["the PM did not decide"]
 
 
+def test_step_errors_without_an_error_label_are_reported(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    nsm = "HTTPError: 403 Client Error: Forbidden"
+    with conn:
+        run = store.start_run("scan", {}, conn=conn)
+        for t in ("A.L", "B.L", "C.L"):  # the events stage down for the whole shortlist
+            conn.execute(
+                "INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?)",
+                (run, t, "events", "events", "error", nsm),
+            )
+        conn.execute(  # one stock's own failure stays its own line
+            "INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?)",
+            (run, "D.L", "events", "events", "error", "KeyError: lei"),
+        )
+        conn.execute(
+            "INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?)",
+            (run, "E.L", "events", "events", "skip", "not shortlisted"),
+        )
+        conn.execute(  # an ERROR label already reports its stock
+            "INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?)",
+            (run, "F.L", "screen", "liquidity", "error", "FX"),
+        )
+        store.save_label(run, "F.L", "screen", "ERROR", "liquidity ERROR: FX", conn=conn)
+    pipe = notify.desk_errors(conn, run, "pipeline")
+    inbox = notify.errors(conn, run)
+    conn.close()
+    assert pipe is not None
+    assert f"**3 of 4 stocks (A.L, B.L, C.L)** `events` failed: {nsm}" in pipe
+    assert "`uv run python scripts/scan.py A.L B.L C.L`" in pipe
+    assert "**D.L** `events` failed: KeyError: lei" in pipe
+    assert "`liquidity`" not in pipe and "E.L" not in pipe
+    assert f"- 3 of 4 stocks (A.L, B.L, C.L) `events`: {nsm}" in inbox
+
+
 def test_unreviewed_position_once_monitors_ran(db_backend: Path | None) -> None:
     conn = book.connect(db_backend)
     with conn:

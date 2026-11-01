@@ -101,12 +101,23 @@ def trim_to_consistent(
     Issues on rows no longer in ``df`` (e.g. a no-trade bar with no close, dropped by
     :func:`clean_prices`) don't cut: they aren't in the data being used, nor do
     :data:`LATEST_BAR_OK` issues on the newest bar."""
+    cut = trim_cut(df, issues, blocking)
+    return df if cut is None else df[df.index > cut[0]]
+
+
+def trim_cut(
+    df: pd.DataFrame, issues: pd.DataFrame, blocking: frozenset[str] = BLOCKING
+) -> tuple[pd.Timestamp, str] | None:
+    """Where :func:`trim_to_consistent` cuts ``df``: ``(date, check)`` of the last blocking
+    issue it keeps the data after, or None when it keeps everything."""
     block = issues[issues["check"].isin(blocking)].dropna(subset=["date"])
     if not df.empty:
         block = block[~((block["date"] == df.index.max()) & block["check"].isin(LATEST_BAR_OK))]
-    dates = block["date"]
-    dates = dates[dates.isin(df.index)]
-    return df if dates.empty else df[df.index > dates.max()]
+    block = block[block["date"].isin(df.index)]
+    if block.empty:
+        return None
+    last = block.loc[block["date"] == block["date"].max()].iloc[-1]
+    return pd.Timestamp(last["date"]), str(last["check"])
 
 
 def to_weekly(df: pd.DataFrame, as_of: pd.Timestamp | None = None) -> pd.DataFrame:

@@ -126,6 +126,15 @@ def _growth(new: float, old: float) -> float:
     return (new - old) / abs(old) if old else np.nan
 
 
+def _profit_only(growth: float, latest: float) -> float:
+    """``growth``, but never positive while ``latest`` (the later earnings) is a loss: a loss
+    narrowing is not growth (POLB.L, zero revenue, EPS -0.0094 -> -0.0079 scored growth 0.79 in
+    scan run 26 — #308). A loss widening still counts against."""
+    if np.isnan(growth) or np.isnan(latest) or latest > 0:
+        return growth
+    return min(growth, 0.0)
+
+
 def yoy(s: pd.Series, i: int = -1) -> float:
     """Growth of ``s`` at position ``i`` over the value about a year earlier (NaN if none)."""
     if len(s) < 2:
@@ -139,6 +148,20 @@ def yoy(s: pd.Series, i: int = -1) -> float:
 def _last(fund: pd.DataFrame, field: str) -> float:
     s = series(fund, field)
     return float(s.iloc[-1]) if len(s) else np.nan
+
+
+def shares_out(fund: pd.DataFrame) -> float:
+    """The latest share count: the fiscal-year ``annualOrdinarySharesNumber`` or, when it is
+    more recent, the ``trailingDilutedAverageShares`` of an interim period. A stock that keeps
+    issuing shares (GWMO.L: 232m at the year end, 436m by the half year) is otherwise valued
+    at half its size (#307)."""
+    both = pd.concat(
+        [series(fund, "trailingDilutedAverageShares"), series(fund, "annualOrdinarySharesNumber")]
+    ).dropna()
+    if both.empty:
+        return np.nan
+    latest = both[both.index == both.index.max()]
+    return float(latest.iloc[-1])  # on the same date the year-end count (listed last) wins
 
 
 def eps_ttm(fund: pd.DataFrame) -> pd.Series:
@@ -229,8 +252,9 @@ def metrics(
 
     eps = eps_ttm(fund)
     m["eps_ttm"] = float(eps.iloc[-1]) if len(eps) else np.nan
-    m["eps_growth"] = yoy(eps)
-    m["eps_accel"] = m["eps_growth"] - yoy(eps, -2) if len(eps) > 2 else np.nan
+    m["eps_growth"] = _profit_only(yoy(eps), m["eps_ttm"])
+    accel = m["eps_growth"] - yoy(eps, -2) if len(eps) > 2 else np.nan
+    m["eps_accel"] = _profit_only(accel, m["eps_ttm"])
     m["rev_growth"] = yoy(series(fund, "annualTotalRevenue"))
 
     ratios = pd.concat(
@@ -240,10 +264,11 @@ def metrics(
     both = ratios.dropna(subset=["pe", "fwd_pe"])
     fresh = len(both) > 0 and as_of - both.index[-1] <= pd.Timedelta(weeks=FRESH_WEEKS)
     # pe / fwd_pe = forward EPS / TTM EPS; over |TTM| (as _growth does) so a loss turning to a
-    # profit, or shrinking, counts as growth: the sign of the TTM EPS is the sign of the P/E
+    # profit counts as growth: the sign of the TTM EPS is the sign of the P/E; a forward loss
+    # (fwd_pe <= 0) shrinking does not (_profit_only)
     if fresh:
         pe_t, pe_f = float(both["pe"].iloc[-1]), float(both["fwd_pe"].iloc[-1])
-        m["fwd_eps_growth"] = (pe_t / pe_f - 1) * float(np.sign(pe_t))
+        m["fwd_eps_growth"] = _profit_only((pe_t / pe_f - 1) * float(np.sign(pe_t)), pe_f)
     else:
         m["fwd_eps_growth"] = np.nan
     m["eps_revision"] = np.nan
@@ -252,7 +277,9 @@ def metrics(
         lo, hi = (fwd.index[-1] - pd.Timedelta(weeks=w) for w in REVISION_WEEKS[::-1])
         base = fwd[(fwd.index >= lo) & (fwd.index <= hi)]
         if len(base):
-            m["eps_revision"] = _growth(float(fwd.iloc[-1]), float(base.iloc[0]))
+            m["eps_revision"] = _profit_only(
+                _growth(float(fwd.iloc[-1]), float(base.iloc[0])), float(fwd.iloc[-1])
+            )
 
     price = price_in(
         reporting_currency(fund),
@@ -269,7 +296,7 @@ def metrics(
         float((hist < m["earnings_yield"]).mean()) if len(hist) >= MIN_HISTORY else np.nan
     )
     fcf, ni = _last(fund, "annualFreeCashFlow"), _last(fund, "annualNetIncome")
-    m["market_cap"] = price * _last(fund, "annualOrdinarySharesNumber")
+    m["market_cap"] = price * shares_out(fund)
     m["fcf_yield"] = _div(fcf, m["market_cap"])
 
     ebitda = _last(fund, "annualEBITDA")

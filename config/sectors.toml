@@ -1,0 +1,9 @@
+# ICB sector of each universe stock that config/benchmarks.toml has no `sector` for (#310):
+# the research-universe stocks the weekly scan runs since ADR 0038. Read by
+# portfolio.risk.sector_of after benchmarks.toml (which wins). Same source and names as there:
+# the LSE's own classification, the 6-digit ICB `sectorcode` of
+# api.londonstockexchange.com/api/gw/lse/instruments/alldata/<TIDM>, named per FTSE Russell ICB
+# (ICB_SECTORS in scripts/universe.py). Written by `uv run python scripts/sectors.py --write`,
+# by hand, never in CI (the LSE endpoint answers 403 to cloud runners). Not point-in-time.
+
+[sectors]
