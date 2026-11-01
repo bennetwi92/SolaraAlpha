@@ -325,3 +325,20 @@ def test_weekly_message_lists_the_trades_as_steps(
     with pytest.raises(SystemExit) as e:
         notify_cli.main(["--mode", "weekly", "--run", "99", "--db", str(db)])
     assert e.value.code == 3
+
+
+def test_footer_hint_only_while_the_owner_places_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(notify, "by_system", lambda: True)
+    assert notify.HOW_TO_REPLY not in notify._footer([])
+    monkeypatch.setattr(notify, "by_system", lambda: False)
+    assert notify.HOW_TO_REPLY in notify._footer([])
+
+
+def test_a_missing_next_event_is_none_known() -> None:
+    import math
+
+    import pandas as pd
+
+    assert not notify._known(math.nan) and not notify._known(None) and not notify._known("")
+    assert not notify._known(pd.NaT)
+    assert notify._known("2027-01-08")

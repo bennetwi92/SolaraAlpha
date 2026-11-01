@@ -625,7 +625,9 @@ def _section(title: str, items: list[str]) -> list[str]:
 
 
 def _footer(undo: list[str]) -> list[str]:
-    lines = ["---", "", HOW_TO_REPLY, ""]
+    """The reply hint (only while the owner places the orders: the execution job books its own,
+    #311) and the undo commands."""
+    lines = ["---", ""] + ([] if by_system() else [HOW_TO_REPLY, ""])
     if undo:
         lines += [
             "<details><summary>Undo an automatic change</summary>",
@@ -676,6 +678,11 @@ def daily_message(
         parts += _section("Errors", errs)
     parts += _footer(undo)
     return "\n".join(parts).rstrip() + "\n"
+
+
+def _known(v: object) -> bool:
+    """Not None, NaN / NaT or empty: a missing date reads "none known", never ``nan`` (#311)."""
+    return v is not None and str(v) != "" and not bool(pd.isna(v))  # type: ignore[call-overload]
 
 
 def _money(v: float) -> str:
@@ -732,8 +739,8 @@ def weekly_message(conn: Conn, run_id: int, summary_url: str | None = None) -> s
             f" · last {broker.price(row.get('last'), st.currency)} · {r_s}"
             f" · stop {broker.price(st.stop, st.currency)}"
         )
-        if row.get("next_event"):
-            line += f" · next event {str(row['next_event'])[:10]}"
+        nxt = row.get("next_event")
+        line += f" · next event {str(nxt)[:10] if _known(nxt) else 'none known'}"
         held.append(line)
     parts += _section("Your positions", held or ["none"])
 
