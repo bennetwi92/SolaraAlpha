@@ -20,6 +20,7 @@ import math
 import os
 import subprocess
 from collections.abc import Callable
+from typing import Any
 
 import pandas as pd
 
@@ -228,7 +229,54 @@ def errors(conn: Conn, run_id: int) -> list[str]:
         for r in cards.to_dict("records")
         if (r["ticker"], r["model"]) not in seen
     ]
-    return out
+    return out + [f"- {_who(r)} `{r['stage']}`: {r['reason']}" for r in step_errors(conn, run_id)]
+
+
+OUTAGE = 3  # this many stocks failing one toolkit the same way are one line (#304)
+
+
+def step_errors(conn: Conn, run_id: int) -> list[dict[str, Any]]:
+    """Toolkit steps that ERRORed in ``run_id`` on stocks whose label is not ERROR (a step that
+    is information, e.g. ``events``, leaves the label alone), as ``{ticker, stage, reason}``;
+    :data:`OUTAGE` or more stocks with the same toolkit and reason are one row with
+    ``tickers`` (all of them) and ``total`` (the stocks the toolkit ran on) — #304."""
+    steps = query(
+        "SELECT ticker, toolkit, status, reason FROM steps WHERE run_id = ?", conn, [run_id]
+    )
+    if steps.empty:
+        return []
+    bad = set(
+        query("SELECT ticker FROM labels WHERE run_id = ? AND label = 'ERROR'", conn, [run_id])[
+            "ticker"
+        ]
+    )
+    err = steps[(steps["status"] == "error") & ~steps["ticker"].isin(bad)]
+    rows: list[dict[str, Any]] = []
+    for (toolkit, reason), g in err.groupby(["toolkit", "reason"], sort=False):
+        tickers = sorted(str(t) for t in g["ticker"])
+        if len(tickers) >= OUTAGE:
+            ran = steps[(steps["toolkit"] == toolkit) & (steps["status"] != "skip")]
+            rows.append(
+                {
+                    "ticker": tickers[0],
+                    "stage": str(toolkit),
+                    "reason": str(reason),
+                    "tickers": tickers,
+                    "total": ran["ticker"].nunique(),
+                }
+            )
+        else:
+            rows += [{"ticker": t, "stage": str(toolkit), "reason": str(reason)} for t in tickers]
+    return rows
+
+
+def _who(r: dict[str, Any]) -> str:
+    """``AAA.L``, or ``15 of 15 stocks (AAA.L, BBB.L, …)`` for an outage row."""
+    if "tickers" not in r:
+        return str(r["ticker"])
+    t = r["tickers"]
+    names = ", ".join(t[:5]) + (", …" if len(t) > 5 else "")
+    return f"{len(t)} of {r['total']} stocks ({names})"
 
 
 AGENT_STAGES = (
@@ -286,7 +334,7 @@ def _rerun(stage: str, ticker: str, run_id: int, position_id: int | None = None)
     return f"`/{stage} {ticker} --run {run_id}` in Claude Code"
 
 
-def error_rows(conn: Conn, run_id: int, part: str) -> list[dict[str, str]]:
+def error_rows(conn: Conn, run_id: int, part: str) -> list[dict[str, Any]]:
     """The run's ERROR labels and agent ERROR cards as ``{ticker, stage, reason}``; ``part``
     ``pipeline`` (labels by the pipeline), ``agents`` (agents' labels and cards) or ``all``."""
     lab = query(
@@ -305,6 +353,8 @@ def error_rows(conn: Conn, run_id: int, part: str) -> list[dict[str, str]]:
             {"ticker": str(r["ticker"]), "stage": "daily", "reason": str(r["detail"]["reason"])}
             for r in (trig.to_dict("records") if len(trig) else [])
         ]
+    if part in ("pipeline", "all"):  # toolkit steps that failed without failing the label
+        rows += step_errors(conn, run_id)
     if part == "pipeline":
         return rows
     marks = ", ".join("?" * len(AGENT_STAGES))
@@ -405,9 +455,14 @@ def desk_errors(conn: Conn, run_id: int, part: str = "all") -> str | None:
         stage, ticker = r["stage"], r["ticker"]
         pid = last_pid.get(ticker) if stage in ("monitor", "postmortem") else None
         rep = f" **Repeat:** {stage} also failed in run {prev}." if stage in before else ""
+        rerun = (
+            f"`uv run python scripts/scan.py {' '.join(r['tickers'])}`"
+            if "tickers" in r
+            else _rerun(stage, ticker, run_id, pid)
+        )
         lines.append(
-            f"- **{ticker}** `{stage}` failed: {r['reason']}. Means: {MEANS.get(stage, 'see the reason')}."
-            f" Re-run: {_rerun(stage, ticker, run_id, pid)}.{rep}"
+            f"- **{_who(r)}** `{stage}` failed: {r['reason']}."
+            f" Means: {MEANS.get(stage, 'see the reason')}. Re-run: {rerun}.{rep}"
         )
     for pid, ticker in gone:
         lines.append(
