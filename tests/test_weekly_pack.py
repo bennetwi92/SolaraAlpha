@@ -52,7 +52,7 @@ def test_pack_before_and_after_planning(
     assert "- W.L: watch reason" in text
     assert "## Open positions\n\nnone" in text
     assert "- equity £10,000 = cash £10,000 + market value £0" in text
-    assert "- heat 0.0% of equity (max 10%); 0 of 5 positions" in text
+    assert "- heat 0.0% of equity (max 10%); 0 of 8 positions" in text
     assert "- E.L: technical ERROR: RuntimeError: no data" in text
 
     plan_cli.main(["--run", "1", "--db", str(scan_db)])
@@ -133,7 +133,7 @@ def test_open_position_with_review_card(scan_db: Path) -> None:
         in text
     )
     assert "exit signal: the daily monitor decides the exit" in text
-    assert "- equity £10,0" in text and "1 of 5 positions" in text
+    assert "- equity £10,0" in text and "1 of 8 positions" in text
 
 
 def test_market_regime_in_the_pack_and_plan_flags(scan_db: Path) -> None:

@@ -139,7 +139,7 @@ def test_pm_approves_a_waiting_draft_from_the_run(scan_db: Path) -> None:
 def test_rotation_exits_a_holding_and_frees_its_slot(scan_db: Path) -> None:
     conn = book.connect(scan_db)
     with conn:
-        held = [_open(conn, f"H{i}.L") for i in range(5)]  # every slot taken
+        held = [_open(conn, f"H{i}.L") for i in range(8)]  # every slot taken
     assert "no free slot" in plan_run(conn, 1, dry_run=True).report.rejected[0][1]
     out = agents.record_book(
         conn, _pm(rotations=[{"position_id": held[0], "reason": "dead money", "funds": "A.L"}])
@@ -176,7 +176,7 @@ def test_pm_pack_and_memo(
     assert cand["financing"] is None  # no financing card saved in this run
     assert cand["event_gap"]["n"] == 0 and cand["event_gap"]["in_first_half"]
     assert pack["rank_note"].startswith("The screen rank is unvalidated")  # #210
-    assert pack["money"]["slots_free"] == 5 and pack["limits"]["risk_per_trade_range"] == (
+    assert pack["money"]["slots_free"] == 8 and pack["limits"]["risk_per_trade_range"] == (
         0.01,
         0.03,
     )
@@ -255,7 +255,7 @@ def test_rotation_buy_waits_for_the_sale_then_fits_the_cash(scan_db: Path) -> No
     conn = book.connect(scan_db)
     rules = load_rules()
     with conn:
-        held = [_open(conn, f"H{i}.L") for i in range(5)]  # every slot taken
+        held = [_open(conn, f"H{i}.L") for i in range(8)]  # every slot taken
     agents.record_book(
         conn, _pm(rotations=[{"position_id": held[0], "reason": "dead money", "funds": "A.L"}])
     )

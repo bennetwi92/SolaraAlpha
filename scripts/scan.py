@@ -150,8 +150,9 @@ def _list() -> None:
     rules = load_rules()
     print(
         f"\nShortlist: past the floor (no ERROR, adv_gbp_20 >= {rules.min_adv_gbp:,.0f}), ranked by"
-        f" rank_score; top {rules.shortlist_size} + up to {rules.shortlist_catalysts} on a"
-        " catalyst -> screen ACT (to the agents); the rest keep their band label, capped at WATCH."
+        f" rank_score; top {rules.shortlist_size} + up to {rules.shortlist_catalysts} on a fresh"
+        " filing (tier 1) -> screen ACT (to the agents); the rest keep their band label, capped at"
+        " WATCH."
     )
     print(f"Band label = combine({', '.join(SCREEN_TOOLKITS)}); ERROR > PASS > WATCH > ACT.")
     print("\nToolkits (bands are information and placeholders, docs/decisions/0014):")

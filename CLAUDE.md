@@ -25,7 +25,7 @@ Current state:
 - **Trading frequency is weekly** unless the owner says otherwise. Weekly bars end Friday
   (`to_weekly`), and only completed weeks are used.
 - Working on **single-stock analysis**; first example is Jet2 (`JET2.L`, AIM-listed). The
-  pipeline universe is **every AIM stock Trading212 offers** (ADR 0038, ~578: `pipeline.universe()`
+  pipeline universe is **every AIM stock Trading212 offers** (ADR 0038, 557 on 2026-11-01: `pipeline.universe()`
   = the watchlist, then the research universe's other tickers). The watchlist is the **FTSE AIM
   100 plus the FTSE AIM UK 50** (104 stocks; snapshot in `config/watchlist.toml`, refreshed after
   each quarterly FTSE review with `scripts/universe.py --write`, run by hand, never in CI; not
@@ -70,10 +70,11 @@ Current state:
   `events` (the shortlist). **The screen is a ranked shortlist** (`pipeline.screen`, ADR 0014
   amendment #192): past a sanity floor (no ERROR, `min_adv_gbp`), stocks are ranked by
   `portfolio.fit.rank_score` (mean of technical `trend`, levels `compression`, fundamentals
-  `growth`); the top `shortlist_size` (12, owner 2026-10-27) plus up to `shortlist_catalysts` (3) with a fresh
-  catalyst (`solaraalpha.catalysts.fresh_catalysts`: new filings, headlines naming the company,
-  scheduled events, tiered information > scheduled > discovery > warnings only, slots by tier
-  then rank, #222)
+  `growth`); the top `shortlist_size` (12, owner 2026-10-27) plus up to `shortlist_catalysts` (6, owner 2026-11-01) with a
+  fresh **tier-1 information filing** (`solaraalpha.catalysts.fresh_catalysts`: new filings,
+  headlines naming the company, scheduled events, tiered information > scheduled > discovery >
+  warnings only, #222; only tier 1 takes a slot, `pipeline.SLOT_TIER`, best rank first; ADR 0014
+  amendment 2026-11-01)
   are ACT, the rest keep their band label capped at WATCH. Saved per stock in the `labels`
   table (`store.shortlist`) with `rank`, `shortlist` (why) and `watch_on` (JSON). **The rank is
   unvalidated**: every pack the agents read says so (`fit.RANK_NOTE`, #210). Levels is
@@ -220,7 +221,7 @@ Current state:
   (`SOLARA_ORDERS_BY` = owner); no orders by hand.
 - **Portfolio rules** (capital, risk per trade, position / sector / heat limits, entry validity,
   long-only, the pre-results event policy, the drawdown circuit breaker) live in `config/portfolio.toml`, read through `portfolio.rules.load_rules`. The owner
-  set them on 2026-10-20 (`confirmed = true`: £5,000, 2% risk (1-3% by the PM's conviction, ADR 0027), 5 positions, 25% / 40% position
+  set them on 2026-10-20 (`confirmed = true`: £5,000, 2% risk (1-3% by the PM's conviction, ADR 0027), 8 positions (5 until 2026-11-01), 25% / 40% position
   / sector caps, 10% heat, breaker on at 15%); reports warn whenever `confirmed` is false. See
   epic #104.
 

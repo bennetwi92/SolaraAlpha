@@ -13,7 +13,7 @@ currency = "GBP"           # account currency (only GBP is supported: no account
 capital = 5000.0           # paper-test starting capital (owner, 2026-10-20); deposited with `book.py cash deposit`
 risk_per_trade = 0.02      # fraction of equity lost if the stop is hit (owner, 2026-10-20); used without a PM allocation
 risk_per_trade_range = [0.01, 0.03]  # the PM agent sizes each trade inside this band by conviction (owner, 2026-10-20; ADR 0027)
-max_positions = 5          # (owner, 2026-10-20; 5 concentrated positions confirmed, ADR 0027) ~£800 each at 2% risk and 10-15% stops
+max_positions = 8          # (owner, 2026-11-01; was 5 from 2026-10-20, ADR 0027) ~£500-800 each at 1-2% risk and 10-15% stops
 max_position_pct = 0.25    # max position value / equity (owner, 2026-10-20)
 max_sector_pct = 0.40      # max sector value / equity (owner, 2026-10-20)
 max_heat = 0.10            # sum of open risk to the stops / equity: 5 full-risk trades (owner, 2026-10-20)
@@ -31,7 +31,7 @@ target_moves = [0.15, 0.30]  # plan targets: entry x (1 + each), the +15-30% mov
                            # a target hit is a review, not a sell order: the trailing stop exits
 trail_atr = 3.0            # chandelier trailing stop distance in ATRs (ADR 0003)
 event_flag_days = 14       # results / trading update within this many days of entry = flag
-max_agent_tickers = 15     # cap on tickers the unattended agents work per run (ADR 0019)
+max_agent_tickers = 18     # cap on tickers the unattended agents work per run (ADR 0019): the whole shortlist (12 + 6)
 # Adds to a winner are the monitor agent's call (size, timing; ADR 0025), within the limits above.
 event_policy = "flag"      # results inside event_flag_days of an open position: flag / hold / trim / exit (§6 Q9, #129);
                            # flag (owner, 2026-10-20): the monitor agent decides hold / trim / exit
@@ -40,7 +40,8 @@ circuit_breaker = true     # on (owner, 2026-10-20; #143, §6 Q1)
 max_drawdown_new_entries = 0.15  # equity this far below its high stops new entries while the breaker is on
 benchmark = "^FTAI"        # equity-curve comparison (Yahoo ticker): FTSE AIM All-Share, our own market (owner, 2026-10-20; #210)
 shortlist_size = 12        # top-ranked tickers the screen sends to the agents a week (ADR 0022, #192)
-shortlist_catalysts = 3    # at most this many more join the shortlist on a catalyst (outside the top N)
+shortlist_catalysts = 6    # at most this many more join the shortlist on a fresh information filing (tier 1,
+                           # outside the top N); headlines and scheduled events take no slot (owner, 2026-11-01)
 min_adv_gbp = 25000.0      # the screen's liquidity floor: 20-session median daily traded value, GBP
 # The risk manager's daily report (ADR 0036): VaR and CVaR of the book at this confidence over
 # this many sessions (historical simulation, and EWMA-filtered); the larger of the two above

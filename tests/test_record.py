@@ -420,7 +420,7 @@ def test_error_queue_latest_run_and_outcome(
 def test_max_agent_tickers_rule() -> None:
     from solaraalpha.portfolio.rules import load_rules
 
-    assert load_rules().max_agent_tickers == 15
+    assert load_rules().max_agent_tickers == 18
 
 
 def test_trade_levels_required_on_a_research_act_and_validated() -> None:
