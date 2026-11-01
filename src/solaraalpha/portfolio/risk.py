@@ -39,14 +39,20 @@ HOLDING_COLS = [
 ]
 
 
+SECTORS = BENCHMARKS.with_name("sectors.toml")  # the wider universe's sectors (#310)
 UNKNOWN_SECTOR = "unknown"  # no `sector` on file: not one sector, so the sector cap skips it
 
 
-def sector_of(ticker: str, path: Path = BENCHMARKS) -> str:
-    """The stock's ``sector`` from ``config/benchmarks.toml``, else :data:`UNKNOWN_SECTOR`."""
+def sector_of(ticker: str, path: Path = BENCHMARKS, sectors: Path = SECTORS) -> str:
+    """The stock's ``sector`` from ``config/benchmarks.toml``, else from ``config/sectors.toml``
+    (the wider universe, #310), else :data:`UNKNOWN_SECTOR`."""
     with path.open("rb") as f:
         cfg = tomllib.load(f)
-    return str(cfg.get("stocks", {}).get(ticker, {}).get("sector", UNKNOWN_SECTOR))
+    found = cfg.get("stocks", {}).get(ticker, {}).get("sector")
+    if found is None and sectors.exists():
+        with sectors.open("rb") as f:
+            found = tomllib.load(f).get("sectors", {}).get(ticker)
+    return str(found or UNKNOWN_SECTOR)
 
 
 @dataclass(frozen=True)

@@ -285,6 +285,7 @@ Current state:
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
 | Fresh catalysts (filings, headlines, scheduled events) per stock | `uv run python scripts/catalysts.py [TICKERS...] [--days 7] [--horizon 10] [--no-news]` |
 | Refresh the watchlist (FTSE AIM 100 + AIM UK 50; by hand, never CI) | `uv run python scripts/universe.py [--write]` |
+| ICB sectors for universe stocks without one (`config/sectors.toml`; LSE; by hand, never CI) | `uv run python scripts/sectors.py [--write]` |
 | LEIs for new watchlist stocks (`config/issuers.toml`; NSM name search; check the names) | `uv run python scripts/issuers.py [--write]` |
 | Refresh the AIM research universe (every AIM company Trading212 offers: its London lines minus the FCA Official List and `official_list.NOT_AIM`; by hand, never CI; needs the Trading212 keys) | `uv run python scripts/research_universe.py [--write]` |
 | AIM leavers ledger since 2022 from the LSE's AIM notices on the NSM (how each ended, offer price; by hand, never CI; research 0012) | `uv run python scripts/leavers.py [--write]` |
@@ -452,6 +453,7 @@ config/research_universe.toml  every AIM company Trading212 offers (#290; snapsh
 config/aim_leavers.csv  every company that left AIM since 2022 (scripts/leavers.py; research 0012): LEI,
                         dates, how it ended, offer price, source filing (the survivorship bias bound)
 config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)
+config/sectors.toml     ICB sector of the other universe stocks (scripts/sectors.py; #310)
 config/issuers.toml     per-stock LEI + legal name: how filings are found (the LSE lookup 403s in CI)
 config/value_models.toml  per-stock value models (skill + script) the research agent calls — #127
 config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeholders until confirmed)
