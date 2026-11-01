@@ -34,10 +34,10 @@ from solaraalpha.analysis.fundamentals import (
     with_publication,
 )
 from solaraalpha.analysis.levels import LevelsCard, levels_card
-from solaraalpha.analysis.liquidity import LiquidityCard, liquidity_card
+from solaraalpha.analysis.liquidity import GBP_QUOTES, LiquidityCard, liquidity_card
 from solaraalpha.analysis.relative_strength import RelativeStrength, compare, comparisons, rs_card
 from solaraalpha.analysis.technical import Position, Scorecard, assess_position, scorecard
-from solaraalpha.data.announcements import fetch_announcements, resolve_issuer
+from solaraalpha.data.announcements import filings, resolve_issuer
 from solaraalpha.data.clean import check_prices, clean_prices, to_weekly, trim_to_consistent
 from solaraalpha.data.fundamentals import fetch_fundamentals
 from solaraalpha.data.prices import fetch_daily

@@ -51,6 +51,16 @@ def test_liquidity_card_values_pence_and_zero_volume() -> None:
     assert 0 <= card.spread_proxy < 0.1
 
 
+def test_a_line_quoted_in_euros_converts_through_the_rate() -> None:
+    df = _daily()
+    df.attrs["currency"] = "EUR"
+    with pytest.raises(NotImplementedError):  # no rate: no guess
+        liquidity_card(df, 0.05)
+    card = liquidity_card(df, 0.05, gbp_rate=0.85)
+    expect = float(((df["close"] * df["volume"]).iloc[-20:]).median()) * 0.85
+    assert card.adv_gbp_20 == pytest.approx(expect)
+
+
 def test_spread_proxy_orders_wide_before_tight() -> None:
     tight = liquidity_card(_daily(spread=0.005), 0.05).spread_proxy
     wide = liquidity_card(_daily(spread=0.04), 0.05).spread_proxy

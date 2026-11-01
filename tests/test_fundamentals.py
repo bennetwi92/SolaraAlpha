@@ -12,6 +12,7 @@ from solaraalpha.analysis.fundamentals import (
     fundamentals_card,
     fx_ticker,
     known,
+    shares_out,
     usable_from,
     with_publication,
     yoy,
@@ -216,3 +217,25 @@ def test_publication_falls_back_to_statutory_lag() -> None:
     assert usable_from(with_publication(fund, late))[fy25].iloc[0] == _ts("2026-01-15")
     stray = _filings([("FR", "2026-05-01")])  # over a year on: another period's, not FY25's
     assert usable_from(with_publication(fund, stray))[fy25].iloc[0] == _ts("2025-09-30")
+
+
+def test_shares_out_takes_the_latest_count() -> None:
+    rows = [
+        ("annualOrdinarySharesNumber", _ts("2025-12-31"), 232e6),
+        ("trailingDilutedAverageShares", _ts("2025-12-31"), 230e6),
+        ("trailingDilutedAverageShares", _ts("2026-06-30"), 436e6),  # after the placings
+    ]
+    fund = pd.DataFrame(rows, columns=["field", "date", "value"]).assign(currency="EUR")
+    assert shares_out(fund) == 436e6
+    assert shares_out(fund[fund["date"] < _ts("2026-01-01")]) == 232e6  # year end wins a tie
+    assert np.isnan(shares_out(fund.iloc[0:0]))
+
+
+def test_a_narrower_loss_is_not_growth() -> None:
+    weekly = _weekly(close=7.0)
+    narrowing = fundamentals_card(_synthetic([-0.0094, -0.0079], [0.0, 0.0]), weekly)
+    assert narrowing.eps_growth == 0.0 and narrowing.growth <= 0  # POLB.L, scan run 26
+    widening = fundamentals_card(_synthetic([-0.0079, -0.0094], [0.0, 0.0]), weekly)
+    assert widening.eps_growth < 0
+    turnaround = fundamentals_card(_synthetic([-0.01, 0.01], [1e6, 1.2e6]), weekly)
+    assert turnaround.eps_growth > 0 and turnaround.growth > 0
