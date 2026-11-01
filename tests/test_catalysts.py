@@ -66,6 +66,15 @@ def test_classify_and_tier_of() -> None:
     assert catalysts.classify("TST", "Trading Update") == 1
     assert catalysts.classify("DSH", "Director/PDMR Shareholding") == 3  # mostly grants
     assert catalysts.classify("HOL", "Holding(s) in Company") == 3
+    # information filed under another type (#305), admin filings stay tier 3
+    assert catalysts.classify("MSCL", "$7m Production Orders from US Defence Prime") == 1
+    assert catalysts.classify("MSCL", "Acquisition of Porter Brothers Holdings Limited") == 1
+    assert catalysts.classify("MSCL", "Contract award with Network Rail") == 1
+    assert catalysts.classify("RAG", "Result of Annual General Meeting") == 3
+    assert catalysts.classify("MSCL", "Results of Court Meeting and General Meeting") == 3
+    assert catalysts.classify("MSCL", "Form 8.3 - Ramsdens Holdings Plc") == 3
+    assert catalysts.classify("TVR", "Exercise of Options & TVR") == 3
+    assert catalysts.classify("MSCL", "Senior Secured Bond Tap Issue") == 3
     assert catalysts.classify("MSCL", "Fundraise of £7.6m") == 4
     assert catalysts.classify("APP", "Change of Nominated Adviser") == 4
     assert catalysts.classify("NOR", "Delay to Final Results") == 4
@@ -219,3 +228,48 @@ def test_fresh_catalysts_live() -> None:
     )
     assert set(out) <= {"JET2.L"}
     assert all(isinstance(v, str) and v for v in out.values())
+
+
+def test_a_current_catalyst_fetch_is_shared(
+    fake_sources: dict[str, list], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from solaraalpha.data import announcements
+
+    monkeypatch.setattr(announcements, "_FILINGS", {})
+    catalysts.fresh_catalysts(["AAA.L"], now=NOW)  # a past `now`: not a current fetch
+    assert announcements._FILINGS == {}
+    catalysts.fresh_catalysts(["AAA.L"], news=False)  # now = the current time
+    assert "LEI_AAA" in announcements._FILINGS
+
+
+def test_offer_period() -> None:
+    firm = _ann(
+        ("2026-06-20 07:00", "MSCL", "", "Recommended Cash Acquisition of AMS"),
+        ("2026-08-12 07:00", "RAG", "", "Results of Court Meeting and General Meeting"),
+        ("2026-10-10 07:00", "MSCL", "", "Rule 2.9 Announcement"),
+    )
+    assert catalysts.offer_period(firm, NOW) == (
+        "in an offer period: RNS 2026-08-12: Results of Court Meeting and General Meeting"
+    )
+    lapsed = pd.concat([firm, _ann(("2026-09-01 07:00", "MSCL", "", "Offer lapsed"))])
+    assert catalysts.offer_period(lapsed.sort_values("published"), NOW) is None
+    possible = _ann(("2026-10-01 07:00", "OUP", "", "Statement re Possible Offer (Rule 2.4)"))
+    assert catalysts.offer_period(possible, NOW) is None
+    stale = _ann(("2025-10-01 07:00", "MSCL", "", "Recommended Cash Offer"))
+    assert catalysts.offer_period(stale, NOW) is None
+    later = _ann(("2026-10-20 07:00", "MSCL", "", "Recommended Cash Offer"))
+    assert catalysts.offer_period(later, NOW) is None  # after `now`: not yet known
+
+
+def test_offer_periods_only_read_cached_filings(monkeypatch: pytest.MonkeyPatch) -> None:
+    from solaraalpha.data import announcements
+
+    def issuer(ticker: str) -> Issuer:
+        return Issuer(ticker, "", f"LEI_{ticker}", "CO PLC", "AIM")
+
+    offer = _ann(("2026-09-01 07:00", "MSCL", "", "Publication of Scheme Document"))
+    monkeypatch.setattr(catalysts, "resolve_issuer", issuer)
+    monkeypatch.setattr(announcements, "_FILINGS", {"LEI_A.L": offer})
+    assert catalysts.offer_periods(["A.L", "B.L"], now=NOW) == {
+        "A.L": "in an offer period: RNS 2026-09-01: Publication of Scheme Document"
+    }

@@ -119,3 +119,66 @@ def test_fetch_announcements_live() -> None:
     df = fetch_announcements(JET2_LEI, start="2025-07-01", end="2025-07-31")
     assert "Final Results" in set(df["headline"])
     assert resolve_issuer("JET2.L").lei == JET2_LEI
+
+
+class _Resp:
+    def __init__(self, code: int) -> None:
+        self.status_code = code
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            import requests
+
+            raise requests.HTTPError(f"{self.status_code}", response=self)  # type: ignore[arg-type]
+
+    def json(self) -> dict:
+        return {"hits": {"hits": []}}
+
+
+def _fake_post(monkeypatch: pytest.MonkeyPatch, codes: list[int]) -> list[int]:
+    sent: list[int] = []
+
+    class _Session:
+        def post(self, *args: object, **kwargs: object) -> _Resp:
+            code = codes.pop(0)
+            sent.append(code)
+            return _Resp(code)
+
+    monkeypatch.setattr(announcements, "session", lambda: _Session())
+    monkeypatch.setattr(announcements.time, "sleep", lambda s: None)
+    return sent
+
+
+def test_search_waits_out_a_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
+    sent = _fake_post(monkeypatch, [403, 429, 200])
+    monkeypatch.setattr(announcements, "_retry_left", 100.0)
+    assert announcements._search({}) == {"hits": {"hits": []}}
+    assert sent == [403, 429, 200]
+    assert announcements._retry_left == 100.0 - 5.0 - 10.0  # doubling waits, from the budget
+
+
+def test_search_raises_once_the_retry_budget_is_spent(monkeypatch: pytest.MonkeyPatch) -> None:
+    import requests
+
+    sent = _fake_post(monkeypatch, [403, 403])
+    monkeypatch.setattr(announcements, "_retry_left", 6.0)  # one 5s wait, not a 10s one
+    with pytest.raises(requests.HTTPError):
+        announcements._search({})
+    assert sent == [403, 403]
+
+
+def test_filings_fetch_once_per_issuer(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def fetch(lei: str) -> pd.DataFrame:
+        calls.append(lei)
+        return pd.DataFrame(columns=COLUMNS)
+
+    monkeypatch.setattr(announcements, "_FILINGS", {})
+    monkeypatch.setattr(announcements, "fetch_announcements", fetch)
+    announcements.filings("A")
+    announcements.filings("A")
+    seeded = pd.DataFrame(columns=COLUMNS)
+    announcements.remember("B", seeded)
+    assert announcements.filings("B") is seeded
+    assert calls == ["A"]
