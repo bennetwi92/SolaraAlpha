@@ -232,3 +232,23 @@ def test_expire_ends_an_add_past_its_validity_and_the_stop_stays(db_backend: Pat
     assert book.order_status(conn, add) == "expired"
     assert ((od["purpose"] == "stop") & od["status"].isin(list(book.LIVE_ORDER))).any()
     conn.close()
+
+
+def test_ref_recorded_later_on_an_order_placed_by_hand(db_backend: Path | None) -> None:
+    conn = book.connect(db_backend)
+    _, oid = _draft(conn)
+    book.order_event(conn, oid, "approved")
+    with pytest.raises(ValueError, match="only an order at the broker"):
+        book.record_ref(conn, oid, "B1")  # not placed yet
+    book.place_order(conn, oid)  # placed by hand, no ref
+    book.place_order(conn, oid, "B1")  # the ref later: recorded, status unchanged
+    od = book.orders(conn).set_index("order_id")
+    assert (od.loc[oid, "status"], od.loc[oid, "broker_ref"]) == ("placed", "B1")
+    with pytest.raises(ValueError, match="already has"):
+        book.record_ref(conn, oid, "B1")
+    with pytest.raises(ValueError, match="not B2"):
+        book.record_ref(conn, oid, "B2")
+    with pytest.raises(ValueError, match="cannot record 'placed'"):
+        book.place_order(conn, oid)  # placing twice without a ref is still refused
+    book.add_fill(conn, oid, 100, 1500.0)
+    assert book.order_status(conn, oid) == "filled"
