@@ -223,11 +223,36 @@ def test_a_fill_matched_by_its_terms_keeps_the_broker_id(db_backend: Path | None
     assert od.loc[ids["stop"], "broker_ref"] == "900000004"  # later passes match it by id
 
 
+def test_absorb_records_the_id_of_an_order_placed_by_hand(db_backend: Path | None) -> None:
+    conn, ids = _book(db_backend)  # AAZ's stop placed by hand, reported without --ref
+    assert pd.isna(book.orders(conn).set_index("order_id").loc[ids["stop"], "broker_ref"])
+    booked, left, matched = absorb(conn, _broker())
+    assert _kinds(booked) == ["ref"] and left == [] and matched == 5
+    assert booked[0].order_id == ids["stop"]
+    assert booked[0].command == f"placed {ids['stop']} --ref 900000002"
+    od = book.orders(conn).set_index("order_id")
+    assert od.loc[ids["stop"], "broker_ref"] == "900000002"
+    assert od.loc[ids["stop"], "status"] == "placed"  # status unchanged, only the id is new
+    assert book.order_events(conn, ids["stop"])["actor"].iloc[-1] == "broker"
+    assert absorb(conn, _broker())[0] == []  # nothing twice
+    assert reconcile(conn, _broker())[0] == []  # still agrees, now matched by id
+
+
+def test_no_id_recorded_when_the_match_is_ambiguous(db_backend: Path | None) -> None:
+    conn, ids = _book(db_backend)
+    br = _broker()
+    twin = br.pending.iloc[:1].assign(id=900000098)  # a second identical AAZ stop at the broker
+    br.pending = pd.concat([br.pending, twin], ignore_index=True)
+    booked, _, _ = absorb(conn, br)
+    assert "ref" not in _kinds(booked)
+    assert pd.isna(book.orders(conn).set_index("order_id").loc[ids["stop"], "broker_ref"])
+
+
 def test_absorb_marks_placed_then_takes_its_fill(db_backend: Path | None) -> None:
     conn, ids = _book(db_backend, avg_placed=False)
     br = _broker()
     booked, left, _ = absorb(conn, br)
-    assert _kinds(booked) == ["placed"] and left == []
+    assert _kinds(booked) == ["placed", "ref"] and left == []  # ref: AAZ's stop placed by hand
     assert book.order_status(conn, ids["avg_entry"]) == "placed"
     assert book.order_events(conn, ids["avg_entry"])["broker_ref"].iloc[-1] == "900000003"
 
@@ -241,7 +266,7 @@ def test_absorb_ends_orders_and_books_dividends(db_backend: Path | None) -> None
     br.history = pd.concat([br.history, gone], ignore_index=True)
     br.pending = br.pending.iloc[:1]  # AVG's entry was cancelled at Trading212
     booked, left, _ = absorb(conn, br)
-    assert sorted(_kinds(booked)) == ["dividend", "order_gone"] and left == []
+    assert sorted(_kinds(booked)) == ["dividend", "order_gone", "ref"] and left == []
     assert book.order_status(conn, ids["avg_entry"]) == "not_filled"  # an entry ends unfilled
     assert book.position_status(conn, ids["avg"]) == "cancelled"
     assert book.dividends_for(conn, ids["aaz"]) == pytest.approx(2.5)
@@ -252,7 +277,7 @@ def test_absorb_leaves_mismatches_to_the_owner(db_backend: Path | None) -> None:
     br = _broker()
     br.positions = br.positions.assign(qty=40.0)
     booked, left, _ = absorb(conn, br)
-    assert booked == [] and _kinds(left) == ["shares"]
+    assert _kinds(booked) == ["ref"] and _kinds(left) == ["shares"]
 
 
 def test_daily_job_absorbs_before_its_checks(db_backend: Path | None) -> None:

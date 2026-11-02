@@ -9,6 +9,7 @@ uv run python scripts/book.py amend POSITION_ID [--qty N] [--price P] [--stop P]
 uv run python scripts/book.py reject POSITION_ID --reason TEXT
 uv run python scripts/book.py tickets                       # approved, not yet placed orders
 uv run python scripts/book.py placed ORDER_ID [ORDER_ID ...] [--ref BROKER_REF] [--at ISO]
+                                 # (already placed without a ref: --ref records it)
 uv run python scripts/book.py fill ORDER_ID --qty N --price P [--at ISO] [--commission X] [--fees X]
 uv run python scripts/book.py unfilled ORDER_ID [--reason TEXT]   # entry never filled
 uv run python scripts/book.py cancel ORDER_ID [--reason TEXT]
@@ -461,8 +462,12 @@ def _expire(conn: Conn, a: argparse.Namespace) -> None:
 @command("placed")
 def _placed(conn: Conn, a: argparse.Namespace) -> None:
     for oid in a.order_id:
+        was = book.order_status(conn, oid)
         book.place_order(conn, oid, a.ref, a.at)
-        print(f"order {oid} placed" + (f" ({a.ref})" if a.ref else ""))
+        if was == "placed":  # already placed by hand: only its Trading212 id is new
+            print(f"order {oid}: Trading212 ref {a.ref} recorded")
+        else:
+            print(f"order {oid} placed" + (f" ({a.ref})" if a.ref else ""))
 
 
 def build_parser() -> argparse.ArgumentParser:

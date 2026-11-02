@@ -940,7 +940,41 @@ def place_order(
     at: str | None = None,
     actor: str = OWNER,
 ) -> None:
+    if broker_ref and order_status(conn, order_id) == "placed":
+        record_ref(conn, order_id, broker_ref, actor=actor, at=at)  # placed by hand, ref later
+        return
     order_event(conn, order_id, "placed", broker_ref=broker_ref, actor=actor, at=at)
+
+
+REF_STATUSES = frozenset({"placed", "part_filled", "cancelling"})  # working there, id unknown
+
+
+def record_ref(
+    conn: Conn,
+    order_id: int,
+    broker_ref: str,
+    actor: str = OWNER,
+    at: str | None = None,
+) -> int:
+    """Record the Trading212 id of an order already at the broker that the book has without one
+    (placed by hand and reported without ``--ref``): a repeat of its current status carrying the
+    ref, so the order is matched by id from then on, never by its terms. Returns the event id."""
+    status = order_status(conn, order_id)
+    if status not in REF_STATUSES:
+        raise ValueError(f"order {order_id} is {status}; only an order at the broker takes a ref")
+    od = orders(conn).set_index("order_id")
+    have = str(od.loc[order_id, "broker_ref"]) if pd.notna(od.loc[order_id, "broker_ref"]) else None
+    if have is not None:
+        if have == str(broker_ref):
+            raise ValueError(f"order {order_id} already has Trading212 ref {have}")
+        raise ValueError(f"order {order_id} has Trading212 ref {have}, not {broker_ref}")
+    cur = conn.execute(
+        "INSERT INTO order_events (order_id, at, status, broker_ref, actor, reason)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (order_id, iso(at), status, str(broker_ref), actor, "Trading212 reference recorded"),
+    )
+    assert cur.lastrowid is not None
+    return cur.lastrowid
 
 
 def tickets(conn: Conn) -> pd.DataFrame:

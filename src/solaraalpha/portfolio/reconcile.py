@@ -16,7 +16,9 @@ in plain words what differs and, when one fixes it, the ``book.py`` arguments to
 
 Book and broker orders are tied by the ``broker_ref`` of the book's ``placed`` event (the
 Trading212 order id), else by a unique match on ticker, side, type, quantity and price (within
-``PRICE_TOL``). Prices are compared in pence: the book stores the quote currency and Trading212
+``PRICE_TOL``). An order matched only by its terms (placed by hand without ``--ref``) gets its
+Trading212 id from :func:`absorb` when exactly one broker order fits, so it is matched by id from
+then on. Prices are compared in pence: the book stores the quote currency and Trading212
 quotes LSE lines in GBX. Broker history from before the book's first order is ignored.
 """
 
@@ -43,7 +45,7 @@ ENDED = frozenset({"filled", "not_filled", "cancelled", "expired"})
 class Difference:
     # fill / late_fill / part_fill / unknown_fill / placed / order_gone / unknown_order /
     # ended_order / order_terms / position_missing / unknown_position / shares / avg_price /
-    # dividend / cash
+    # dividend / cash; ref (absorb only: an order matched by its terms gets its Trading212 id)
     kind: str
     ticker: str
     text: str
@@ -540,6 +542,8 @@ def _book(conn: Conn, d: Difference) -> None:
         book.cancel_order(conn, oid, book.PART_FILL, ACTOR)
     elif d.kind == "placed":
         book.place_order(conn, oid, x["ref"], actor=ACTOR)
+    elif d.kind == "ref":
+        book.record_ref(conn, oid, x["ref"], actor=ACTOR)
     elif d.kind == "order_gone":
         book.end_order(conn, oid, x["status"], x["reason"], actor=ACTOR)
     elif d.kind == "dividend":
@@ -563,12 +567,52 @@ def absorb(conn: Conn, br: Broker) -> tuple[list[Difference], list[Difference], 
         diffs, matched = reconcile(conn, br)
         todo = [d for d in diffs if d.data]
         if not todo:
-            return booked, diffs, matched
+            break
         for d in todo:
             _book(conn, d)
             booked.append(d)
-    diffs, matched = reconcile(conn, br)
+    else:
+        diffs, matched = reconcile(conn, br)
+    for d in _missing_refs(conn, br):
+        _book(conn, d)
+        booked.append(d)
     return booked, diffs, matched
+
+
+def _missing_refs(conn: Conn, br: Broker) -> list[Difference]:
+    """Book orders working at Trading212 that are matched only by their terms (placed by hand
+    without ``--ref``): their Trading212 id, so they are matched by id from then on. Not a
+    difference the owner sees (book and broker agree), only booked by :func:`absorb`."""
+    od = _book_orders(conn)
+    match, _ = _matcher(od, br)
+    by_id = od.set_index("order_id")
+    out = []
+    for o in br.pending.to_dict("records"):
+        oid = match(o, book.REF_STATUSES)
+        if oid is None or pd.notna(by_id.loc[oid, "broker_ref"]):
+            continue
+        b = by_id.loc[oid]
+        twins = [
+            p
+            for p in br.pending.to_dict("records")
+            if (p["t212"], p["side"], p["type"], round(p["qty"]))
+            == (o["t212"], o["side"], o["type"], int(b["qty"]))
+            and _close(b["price"], p["price"])
+        ]
+        if len(twins) != 1:
+            continue  # two identical orders at the broker: which is the book's is the owner's call
+        out.append(
+            Difference(
+                "ref",
+                br.yahoo(str(o["t212"])),
+                f"order #{oid} is Trading212 order {o['id']}",
+                f"placed {oid} --ref {o['id']}",
+                int(b["position_id"]),
+                oid,
+                {"ref": str(o["id"])},
+            )
+        )
+    return out
 
 
 def booked_text(d: Difference) -> str:
@@ -578,6 +622,8 @@ def booked_text(d: Difference) -> str:
         return f"order #{d.order_id} filled {x['qty']} at {_px(x['price'])} on {x['at'][:10]}"
     if d.kind == "placed":
         return f"order #{d.order_id} placed (Trading212 order {x['ref']})"
+    if d.kind == "ref":
+        return f"order #{d.order_id}: its Trading212 order id {x['ref']} recorded"
     if d.kind == "order_gone":
         return f"order #{d.order_id} {x['status'].replace('_', ' ')} ({x['reason']})"
     if d.kind == "part_fill":
