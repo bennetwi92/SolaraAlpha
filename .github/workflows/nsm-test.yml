@@ -1,0 +1,55 @@
+# NSM pacing test: the Sunday scan (scripts/scan.py over the whole universe) on the same GitHub
+# runner, with nothing saved (no --save, no results-DB or Telegram secrets: no live write), and
+# a check that the FCA NSM never refused a search (403 / 429). Dispatched through cron-job.org
+# like the other workflows (docs/decisions/0038 amendment 2026-11-06).
+name: NSM pacing test
+
+on:
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: Space-separated Yahoo tickers; blank = the watchlist + the research universe
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --no-default-groups
+      - name: Pipeline (not saved)
+        env:
+          SOLARA_T212_KEY: ${{ secrets.SOLARA_T212_KEY }}  # read-only: Trading212's AIM lines
+          SOLARA_T212_SECRET: ${{ secrets.SOLARA_T212_SECRET }}
+          SOLARA_T212_ENV: ${{ vars.SOLARA_T212_ENV || 'demo' }}
+          TICKERS: ${{ inputs.tickers }}
+        run: |
+          set +e
+          uv run --no-sync python scripts/scan.py $TICKERS --report "$GITHUB_STEP_SUMMARY" 2>&1 | tee scan.log
+          echo "scan exit: ${PIPESTATUS[0]} (1 = a toolkit errored; not what this test checks)"
+      - name: No NSM refusals
+        run: |
+          refused=$(grep -c "NSM refused" scan.log || true)
+          forbidden=$(grep -cE "40[39] Client Error" scan.log || true)
+          missing=$(grep -c "filings unavailable" scan.log || true)
+          {
+            echo "## NSM pacing test"
+            echo "- NSM refusals (403 / 429, waited out): $refused"
+            echo "- searches failed with 403 / 429: $forbidden"
+            echo "- stocks without filings (any reason): $missing"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -E "NSM refused|filings unavailable" scan.log | head -50 || true
+          test "$refused" = "0" && test "$forbidden" = "0"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nsm-test-${{ github.run_id }}
+          path: scan.log
+          retention-days: 14

@@ -151,17 +151,20 @@ def _fake_post(monkeypatch: pytest.MonkeyPatch, codes: list[int]) -> list[int]:
 
 def test_search_waits_out_a_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
     sent = _fake_post(monkeypatch, [403, 429, 200])
-    monkeypatch.setattr(announcements, "_retry_left", 100.0)
+    monkeypatch.setattr(announcements, "_retry_left", 1000.0)
+    monkeypatch.setattr(announcements, "_gap", 3.5)
     assert announcements._search({}) == {"hits": {"hits": []}}
     assert sent == [403, 429, 200]
-    assert announcements._retry_left == 100.0 - 5.0 - 10.0  # doubling waits, from the budget
+    assert announcements._retry_left == 1000.0 - 2 * announcements.NSM_RETRY_WAIT
+    assert announcements._gap == 14.0  # the pace slows after each refusal
 
 
 def test_search_raises_once_the_retry_budget_is_spent(monkeypatch: pytest.MonkeyPatch) -> None:
     import requests
 
     sent = _fake_post(monkeypatch, [403, 403])
-    monkeypatch.setattr(announcements, "_retry_left", 6.0)  # one 5s wait, not a 10s one
+    monkeypatch.setattr(announcements, "_retry_left", 400.0)  # one wait, not two
+    monkeypatch.setattr(announcements, "_gap", 3.5)
     with pytest.raises(requests.HTTPError):
         announcements._search({})
     assert sent == [403, 403]

@@ -38,14 +38,20 @@ from solaraalpha.log import get_logger
 log = get_logger(__name__)
 
 NSM_SEARCH_URL = "https://api.data.fca.org.uk/search?index=nsm-search"
-# Seconds between NSM searches: an unpaced scan of the whole universe got the caller refused
-# (403) within minutes, 2026-10-29 (docs/decisions/0038).
-NSM_GAP = 1.0
+# Seconds between NSM searches. The NSM sits behind AWS API Gateway, whose WAF refuses (403) a
+# caller over a request rate in a rolling window, and keeps refusing while the caller keeps
+# asking: an unpaced scan got refused within minutes (2026-10-29, docs/decisions/0038), and at
+# one a second the 2026-11-01 Sunday scan was refused after ~3 minutes, then 310 of 557 stocks
+# while it retried into the block. ~17 a minute (85 per 5 minutes) stays under it.
+NSM_GAP = 3.5
+NSM_GAP_MAX = 15.0
+_gap = NSM_GAP
 _last_search = 0.0
-# Seconds a process may spend waiting out NSM refusals (403 / 429) in all, doubling from
-# NSM_RETRY_WAIT: a refusal is retried while the budget lasts, then raised at once (#303).
-NSM_RETRY_BUDGET = 300.0
-NSM_RETRY_WAIT = 5.0
+# A refusal (403 / 429) is waited out with no requests for longer than the WAF's 5-minute
+# window, and the gap doubles (up to NSM_GAP_MAX) for the rest of the process; retried while
+# the process's NSM_RETRY_BUDGET of seconds lasts, then raised at once (#303).
+NSM_RETRY_BUDGET = 1200.0
+NSM_RETRY_WAIT = 330.0
 _retry_left = NSM_RETRY_BUDGET
 # Each issuer's filings (the default LOOKBACK_YEARS window) fetched in this process, by LEI: the
 # weekly scan's catalyst pass and its events stage share one NSM search per stock (#303).
@@ -167,20 +173,25 @@ def remember(lei: str, df: pd.DataFrame) -> None:
 
 def _search(body: dict) -> dict:
     """One NSM search, at most one every :data:`NSM_GAP` seconds; a 403 / 429 refusal is waited
-    out (doubling waits) while the process's :data:`NSM_RETRY_BUDGET` lasts."""
-    global _last_search, _retry_left
-    wait = NSM_RETRY_WAIT
+    out (:data:`NSM_RETRY_WAIT`, then a slower pace) while the process's
+    :data:`NSM_RETRY_BUDGET` lasts."""
+    global _last_search, _retry_left, _gap
     while True:
-        time.sleep(max(0.0, _last_search + NSM_GAP - time.monotonic()))
+        time.sleep(max(0.0, _last_search + _gap - time.monotonic()))
         try:
             resp = session().post(NSM_SEARCH_URL, json=body, timeout=DEFAULT_TIMEOUT)
         finally:
             _last_search = time.monotonic()
-        if resp.status_code in (403, 429) and _retry_left >= wait:
-            log.warning("NSM refused the search (%s): retrying in %.0fs", resp.status_code, wait)
-            _retry_left -= wait
-            time.sleep(wait)
-            wait *= 2
+        if resp.status_code in (403, 429) and _retry_left >= NSM_RETRY_WAIT:
+            _gap = min(NSM_GAP_MAX, _gap * 2)
+            log.warning(
+                "NSM refused the search (%s): retrying in %.0fs, then one every %.1fs",
+                resp.status_code,
+                NSM_RETRY_WAIT,
+                _gap,
+            )
+            _retry_left -= NSM_RETRY_WAIT
+            time.sleep(NSM_RETRY_WAIT)
             continue
         resp.raise_for_status()
         return dict(resp.json())

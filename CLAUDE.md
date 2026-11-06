@@ -33,7 +33,7 @@ Current state:
   `config/issuers.toml`); the rest come from `config/research_universe.toml`
   (`scripts/research_universe.py --write`, by hand). Stocks with no `sector` on file skip the
   sector cap (flagged); fewer than 26 clean weekly bars → PASS without running the toolkits;
-  NSM searches are paced one a second.
+  NSM searches are paced one every 3.5 s (a refusal waits 330 s, then slower; `nsm-test.yml` checks it).
 - Price data is **fetched fresh each run** (no `@parquet_cache`). With `--save` the raw fetch is
   also snapshotted into the results DB (`solaraalpha.store`) — for the record, never as a cache.
 - **Results DB**: scripts' `--save` records the run, model cards and input snapshots in an
@@ -465,6 +465,7 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
                         the desk-errors issue and the inbox), execute.yml (the execution job: every
                         15 minutes in the session and after Agents; the only one that may trade),
                         desk-reply.yml (every 10 minutes 06:30-23:30 UK: the PM answers the owner)
+                        nsm-test.yml (the full scan on a runner, not saved; fails on any NSM 403)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
 .claude/skills/validate/  agent skill: re-checks a run's screen labels against the pack; downgrade only
