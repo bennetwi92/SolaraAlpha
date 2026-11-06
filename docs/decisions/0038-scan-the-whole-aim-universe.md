@@ -37,6 +37,12 @@ minutes and found two things fixed here:
 - **The FCA NSM refused us (403)** after about a dozen stocks of unpaced searches, and for some
   minutes after. NSM searches are now at most one a second (`announcements.NSM_GAP`), about 13
   minutes more per scan.
+  *Amended 2026-11-06*: one a second was still refused after ~3 minutes on the 2026-11-01 scan
+  (310 of 557 stocks without filings, the retries hitting the block). The NSM is AWS API
+  Gateway behind a WAF rate rule: searches are now one every 3.5 s (~35 minutes for the
+  universe), a refusal is waited out for 330 s with no requests and the pace doubled. The
+  `NSM pacing test` workflow (`nsm-test.yml`, dispatched through cron-job.org) runs the full
+  scan on a GitHub runner without saving and fails on any 403.
 
 ## Consequences
 
