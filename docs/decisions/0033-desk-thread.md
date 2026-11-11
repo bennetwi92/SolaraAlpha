@@ -63,3 +63,8 @@ Travel sector"). An `observation:` post is headed "Note for the next desk self-r
 the prefix on Telegram only; the thread in the DB is unchanged, so agents still read the codes.
 The skills' posting rule now writes for the owner on a phone: plain English, company names, no
 labels, codes or field names.
+
+**Amendment (2026-11-11): every 30 minutes, 07:00-22:00 UK.** At every 10 minutes the reply job
+ran about 100 times a day, each a checkout, a `uv sync` and a DB connection, mostly to find
+nothing, and on 11 Nov each failed run posted a desk error to the inbox. It now runs every 30
+minutes, 07:00-22:00 Europe/London (about 30 runs a day), so an answer takes up to half an hour.

@@ -142,6 +142,10 @@ CREATE TABLE IF NOT EXISTS labels (
     actor      TEXT NOT NULL,      -- pipeline / agent:<name>
     PRIMARY KEY (run_id, ticker, stage)
 );
+-- "the latest card of model M (for ticker T)": the primary key leads with run_id, so without
+-- this every such lookup scans the whole table, and a correlated MAX(run_id) per row scanned it
+-- once per row. Turso bills each row scanned as a read, and that used up the plan's reads.
+CREATE INDEX IF NOT EXISTS results_model_ticker ON results (model, ticker, run_id);
 """
 STEPS = """
 CREATE TABLE IF NOT EXISTS steps (

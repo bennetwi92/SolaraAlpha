@@ -32,3 +32,11 @@ artifact for event packs.
   triggers), is tested over both backends with the `db_backend` pytest fixture, parametrised
   over a `tmp_path` file and `FakeTurso` (tests/fakes.py); workflows that touch the DB pass the
   two secrets as `scan.yml` does.
+- 2026-11-11: **reads are billed per row scanned.** On 11 Nov Turso blocked every read, with the
+  plan's monthly reads used up. The main cause was `risk.next_events`, a correlated
+  `MAX(run_id)` over `results` with no index to use, since its primary key leads with `run_id`.
+  It scanned the whole table once per `next_event` row: about 640M rows a call on a ~750k-row
+  synthetic table. The daily job, the risk card, the planner and `portfolio.py` all call it.
+  `results_model_ticker` (`model, ticker, run_id`) makes it and every "latest card of model M
+  (for T)" lookup an index search, about 50k rows a call. A new query on a large table (`results`,
+  `prices`, `labels`, `steps`) needs an index that serves it.

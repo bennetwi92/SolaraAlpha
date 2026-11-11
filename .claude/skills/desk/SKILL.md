@@ -1,6 +1,6 @@
 ---
 name: desk
-description: The portfolio manager answering the owner in the desk thread. Reads the owner's unanswered Telegram messages and the thread around them, looks up what the question needs (the book, positions, the latest runs and verdicts, the web), and posts one reply as agent:pm. Answer-only - records no verdict and changes nothing in the book; a request to change something gets the command that does it or goes into the PM's next weekly run. Use for "/desk" (desk-reply.yml runs it every 10 minutes, 06:30-23:30 UK, only when the owner has written since the PM last posted), or when asked to answer the owner in the thread.
+description: The portfolio manager answering the owner in the desk thread. Reads the owner's unanswered Telegram messages and the thread around them, looks up what the question needs (the book, positions, the latest runs and verdicts, the web), and posts one reply as agent:pm. Answer-only - records no verdict and changes nothing in the book; a request to change something gets the command that does it or goes into the PM's next weekly run. Use for "/desk" (desk-reply.yml runs it every 30 minutes, 07:00-22:00 UK, only when the owner has written since the PM last posted), or when asked to answer the owner in the thread.
 ---
 
 # Desk: the PM answers the owner
