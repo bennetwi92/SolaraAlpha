@@ -149,7 +149,7 @@ Current state:
   `desk_chat.heading`; posts are written for the owner in plain English), and the owner's replies there come back into the thread as `owner`
   (questions and context, never a bypass of a skill or the book; pulled by every agent read and
   by `daily.py --save`, `scan.py --save` and each `execute.py turn`, inside Telegram's 24-hour hold).
-  **The PM answers the owner**: `desk-reply.yml` every 10 minutes 06:30-23:30 UK runs `/desk`
+  **The PM answers the owner**: `desk-reply.yml` every 30 minutes 07:00-22:00 UK runs `/desk`
   (answer-only, one post as `agent:pm`) only when the owner wrote since the PM last posted.
   Every agent skill reads it
   before deciding (`chat.py read`) and posts one short update after recording (`chat.py post`).
@@ -464,7 +464,7 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
                         weekly_pack.py against Turso, from GitHub), desk-errors.yml (a failed run →
                         the desk-errors issue and the inbox), execute.yml (the execution job: every
                         15 minutes in the session and after Agents; the only one that may trade),
-                        desk-reply.yml (every 10 minutes 06:30-23:30 UK: the PM answers the owner)
+                        desk-reply.yml (every 30 minutes 07:00-22:00 UK: the PM answers the owner)
                         nsm-test.yml (the full scan on a runner, not saved; fails on any NSM 403)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
 .claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact

@@ -1,4 +1,4 @@
-# Desk reply (docs/decisions/0033): every 10 minutes, 06:30-23:30 UK time, pull the owner's
+# Desk reply (docs/decisions/0033): every 30 minutes, 07:00-22:00 UK time, pull the owner's
 # Telegram messages into the desk thread and, only when the owner has written since the PM last
 # posted, run the PM's answer-only skill (/desk) to reply there. Nothing written: no Claude run.
 # Inert without a Claude secret, the Telegram secrets or the Turso secrets. The PM reads and
@@ -7,7 +7,7 @@ name: Desk reply
 
 on:
   schedule:
-    - cron: "*/10 5-23 * * *"  # UTC; the gate keeps 06:30-23:30 Europe/London (BST and GMT)
+    - cron: "*/30 6-22 * * *"  # UTC; the gate keeps 07:00-22:00 Europe/London (BST and GMT)
   workflow_dispatch:
 
 concurrency:
@@ -38,8 +38,8 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           now=$(TZ=Europe/London date +%H%M)
-          if [ "${{ github.event_name }}" = "schedule" ] && { [ "$now" -lt 630 ] || [ "$now" -ge 2330 ]; }; then
-            echo "go=false" >> "$GITHUB_OUTPUT"; echo "outside 06:30-23:30 UK ($now)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ github.event_name }}" = "schedule" ] && { [ "$now" -lt 700 ] || [ "$now" -gt 2200 ]; }; then
+            echo "go=false" >> "$GITHUB_OUTPUT"; echo "outside 07:00-22:00 UK ($now)" >> "$GITHUB_STEP_SUMMARY"
           elif { [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -z "$ANTHROPIC_API_KEY" ]; } || [ -z "$SOLARA_TURSO_URL" ] || [ -z "$SOLARA_TELEGRAM_TOKEN" ] || [ -z "$SOLARA_TELEGRAM_CHAT" ]; then
             echo "go=false" >> "$GITHUB_OUTPUT"; echo "skipped: Claude, Turso or Telegram secrets not set" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -73,7 +73,7 @@ jobs:
           github_token: ${{ github.token }}  # the action otherwise wants an OIDC token (id-token: write)
           prompt: "/desk"
           claude_args: '--max-turns 30 --allowedTools "${{ env.ALLOWED_TOOLS }}"'
-      # /desk failed before its post: say so in the thread (which also stops the 10-minute retry
+      # /desk failed before its post: say so in the thread (which also stops the 30-minute retry
       # of the same message all day), then fail the run so the desk errors report it
       - name: The PM could not answer
         if: steps.desk.outcome == 'failure'

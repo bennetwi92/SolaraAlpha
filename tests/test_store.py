@@ -344,3 +344,22 @@ def test_a_snapshot_compares_with_the_latest_version_only(
     latest = store._read_latest(conn, "prices", "JET2.L", ["date"])
     conn.close()
     assert len(latest) == len(daily) and set(latest["run_id"]) == {3}
+
+
+def test_latest_card_lookups_use_an_index(db: Path | None, tmp_path: Path) -> None:
+    """Turso bills every row scanned: "the latest card of model M (for ticker T)" must search the
+    ``results_model_ticker`` index, not scan the table (once per row when correlated)."""
+    conn = store.connect(db)
+    names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
+    conn.close()
+    assert "results_model_ticker" in names
+    conn = store.connect(tmp_path / "plan.db")  # EXPLAIN QUERY PLAN: local SQLite only
+    sql = (
+        "SELECT x.ticker, x.text FROM results x WHERE x.model = 'events' AND x.field = 'next_event'"
+        " AND x.run_id = (SELECT MAX(run_id) FROM results y WHERE y.ticker = x.ticker"
+        " AND y.model = 'events')"
+    )
+    plan = [r[-1] for r in conn.execute("EXPLAIN QUERY PLAN " + sql)]
+    conn.close()
+    assert not [p for p in plan if p.startswith("SCAN")], plan
+    assert all("results_model_ticker" in p for p in plan if p.startswith("SEARCH")), plan
