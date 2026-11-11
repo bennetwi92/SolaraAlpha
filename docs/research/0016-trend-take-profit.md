@@ -59,3 +59,52 @@ panel and floor). The holdout is not computed.*
 - **Biases stated in advance:** survivors only (research 0012). Fills at printed prices. The
   stop is assumed first in a session that touches both. Positions are sized at 1/8 of the book
   with no ADV or heat cap (a £625 slot is under 5% of £25k ADV).
+
+## Result (2026-11-11): no variant passes; the trend entries have no edge even before costs
+
+Run with `r14_trend_target.py run` on research 0015's panel. `count` (no outcomes) gave 13,103
+candidate stock-weeks (`s26 > 0`, past £25k), a median of 95 a Friday. The names bought had an
+estimated cost of 0.69% per side (1×): much cheaper than research 0015's 4-week picks.
+
+### The answer in one paragraph
+
+**Taking profit at +5%, +10% or +15% does not rescue trend entries on AIM, because the entries
+themselves have no edge.** Before any costs, the average trade made +0.12% with a +5% target,
+−0.14% and −0.26% with +10% and +15%, and +0.30% with no target. That is close to nothing. A
++5% target hits often (72% of trades), but the losers are four times the size of the winners
+(+2.4% against −9.8% after costs): AIM gaps through stops, and a 3-ATR stop on a volatile stock
+is about 10% away. After costs every variant loses money. Even at half the estimated cost, all
+four lose 5–14% a year, while the equal-weight universe made +8.9% a year.
+
+### The test: expectancy after 2× costs
+
+| variant | trades | expectancy (R) | 97.5% interval | positive half-years | halves (R) | without the best 3 | pass |
+|---|---|---|---|---|---|---|---|
+| +5% target | 394 | −0.23 | −0.35 to −0.15 | 0 of 6 | −0.33 / −0.13 / −0.16 / −0.39 / −0.16 / −0.22 | −0.26 | no |
+| +10% target | 269 | −0.25 | −0.45 to −0.14 | 1 of 6 | −0.38 / −0.06 / −0.09 / −0.51 / −0.19 / +0.04 | −0.28 | no |
+| +15% target | 220 | −0.23 | −0.49 to −0.12 | 2 of 6 | −0.24 / +0.06 / −0.20 / −0.52 / −0.27 / +0.14 | −0.27 | no |
+| no target | 138 | −0.23 | −0.60 to −0.10 | 1 of 6 | −0.31 / −0.20 / −0.06 / −0.58 / +0.06 / −0.23 | −0.32 | no |
+
+### In money terms (reported, not the bar)
+
+| variant | a year: 2× / 1× / ½× costs | max drawdown: 2× / ½× | exit at target / stop / 10 weeks | win rate (2×) | avg win / avg loss (2×) | days held (median) | gross return a trade |
+|---|---|---|---|---|---|---|---|
+| +5% | −47% / −27% / −14% | −84% / −41% | 72% / 25% / 3% | 51% | +2.4% / −9.8% | 6 | +0.12% |
+| +10% | −37% / −22% / −13% | −77% / −49% | 53% / 36% / 10% | 52% | +6.1% / −14.3% | 12 | −0.14% |
+| +15% | −33% / −20% / −13% | −74% / −52% | 41% / 41% / 18% | 47% | +9.5% / −15.9% | 17 | −0.26% |
+| none | −19% / −10% / −5% | −62% / −44% | 0% / 41% / 59% | 37% | +14.4% / −13.3% | 50 | +0.30% |
+
+The equal-weight eligible universe made +8.9% a year (max drawdown −19.8%) over the same span.
+
+### Reading
+
+- **The entry is the problem.** Buying AIM stocks with the steadiest 26-week climb gave about
+  zero return a trade before costs, over 2023 to 2025. That agrees with research 0001 (`trend` IC
+  −0.008) and 0015. Exits rearrange a zero; they cannot create an edge.
+- **Small targets make the arithmetic worse.** They need a win rate far above 72% to cover
+  losses of about 10%, which arrive as gaps through the stop.
+- **The no-target control did least badly,** in line with "let winners run". It still lost.
+- **Together with research 0015, this closes pure price trend on AIM for now**, as an entry on
+  its own, in a weekly rotation or with a take-profit, on these years. The holdout was not
+  touched. Not tested: trend combined with a situation (research 0010's route), e.g. good news
+  near the high (research 0014 V3, now recorded forward only).
