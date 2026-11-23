@@ -1,5 +1,7 @@
 # 0022 — What Solara Alpha is looking for
 
+**Status:** superseded by ADR 0042 (owner, 2026-11-23): the AIM strategy is wound down (ADR 0040).
+
 **Context.** The toolkits were designed one by one and are not aligned on one kind of
 opportunity. Some clauses worked against the strategy: `risk_pct <= 0.15` screened out volatile
 stocks (dropped, ADR 0014 amendment of 2026-10-18), and `reward_risk >= 2` assumes the price
