@@ -508,13 +508,13 @@ def record_revision(conn: Conn, verdict: Verdict, position_id: int, actor: str) 
     action = verdict.checks.get("action", "hold")
     if action == "renew":
         raise ValueError("renewing a pending entry is the PM's decision (ADR 0034), not a revision")
-    from solaraalpha.monitoring import MIDWEEK_ACTIONS, weekly_review
+    from solaraalpha.monitoring import UNREVIEWED_ACTIONS, full_review
 
-    if action not in MIDWEEK_ACTIONS and not weekly_review(conn, verdict.run_id, position_id):
+    if action not in UNREVIEWED_ACTIONS and not full_review(conn, verdict.run_id, position_id):
         raise ValueError(
-            f"run {verdict.run_id} is a midweek review of position {position_id}: only"
-            f" {', '.join(sorted(MIDWEEK_ACTIONS))} on news, not {action!r} (ADR 0039);"
-            " leave it to Friday's weekly review"
+            f"run {verdict.run_id} did not put position {position_id} up for review: only"
+            f" {', '.join(sorted(UNREVIEWED_ACTIONS))} on news, not {action!r} (ADR 0040);"
+            " leave it to the position's daily review"
         )
     out = record_verdict(conn, verdict, actor)
     out["revision_id"] = None
@@ -728,14 +728,9 @@ def record_pm_daily(conn: Conn, verdict: Verdict, actor: str = "agent:pm") -> di
 
 
 def risk_due(conn: Conn, run_id: int) -> bool:
-    """Whether the risk manager reports on daily run ``run_id`` (ADR 0039): the run has a risk
-    card and is the weekly review (Friday) or the card breaches a limit."""
-    from solaraalpha.monitoring import weekly_review
-
-    card = store.load_cards(run_id, BOOK, conn=conn).get("book_risk")
-    if not card:
-        return False
-    return bool(float(card.get("escalate") or 0)) or weekly_review(conn, run_id)
+    """Whether the risk manager reports on daily run ``run_id`` (ADR 0040): every run with a
+    risk card."""
+    return bool(store.load_cards(run_id, BOOK, conn=conn).get("book_risk"))
 
 
 def pm_called(conn: Conn, run_id: int) -> bool:

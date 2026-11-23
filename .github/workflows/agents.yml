@@ -2,15 +2,13 @@
 # macro (one shared note per sector group, #140) -> research -> pm (the portfolio manager: the
 # week's allocation and rotations, ADR 0027) -> retro (each desk area due one reviews its own
 # track record and proposes changes, ADR 0035) -> plan.py -> weekly_pack.py) and after the daily check (monitor, postmortem of
-# positions closed since the previous daily run), or by hand. On Friday's daily run the monitor
-# reviews every open position and pending entry (the weekly review, docs/decisions/0039);
-# midweek only those with news (a filing, a gap, a kill criterion hit), and it may only cut risk
-# (event-triggered first, capped by max_agent_tickers). Its changes are applied by the book as
+# positions closed since the previous daily run), or by hand. Every daily run the monitor
+# reviews every open position and pending entry (docs/decisions/0040; event-triggered first,
+# capped by max_agent_tickers). Its changes are applied by the book as
 # they are recorded; the inbox says what to change in Trading212 and how to undo it. Nothing to
 # review: no monitor job. The risk manager reports the book's VaR / CVaR and P&L to the desk
-# thread (the owner's Telegram) on Friday, or on any day the risk card breaches a limit, and the
-# PM reviews the book when a limit is breached or the risk manager calls it, cutting risk as
-# recorded (ADR 0036, 0039).
+# thread (the owner's Telegram) every daily run, and the PM reviews the book when a limit is
+# breached or the risk manager calls it, cutting risk as recorded (ADR 0036, 0040).
 #
 # Skipped when the triggering workflow did not succeed (a crashed scan leaves a partial run).
 # INERT UNTIL THE OWNER ADDS A CLAUDE SECRET: the gate job skips everything unless
@@ -588,9 +586,8 @@ jobs:
             --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }}, position ${{ matrix.position }})" || true
 
   risk:
-    # the risk manager's report (ADR 0036): after the monitors, on the code's risk card, on
-    # Friday's weekly review or a day the card breaches a limit (record.py queue --stage risk,
-    # ADR 0039); posts the report to the desk thread (the owner's Telegram) and may call the PM
+    # the risk manager's report (ADR 0036): after the monitors, on the code's risk card, every
+    # daily run (record.py queue --stage risk, ADR 0040); posts the report to the desk thread (the owner's Telegram) and may call the PM
     needs: [gate, monitor]
     if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'daily' && needs.gate.outputs.risk != '[]' && !cancelled()
     runs-on: ubuntu-latest

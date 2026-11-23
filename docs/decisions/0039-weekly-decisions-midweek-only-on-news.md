@@ -1,6 +1,6 @@
 # 0039 — Decisions are weekly; midweek the desk acts only on news that can break a thesis
 
-**Status:** accepted (owner, 2026-10-29). Amends ADR 0024 (daily agent review), 0036 (risk
+**Status:** superseded by ADR 0040 (owner, 2026-11-23: daily frequency). Was accepted (owner, 2026-10-29). Amends ADR 0024 (daily agent review), 0036 (risk
 manager and PM daily review); supersedes ADR 0037 (event sessions). Returns the daily job to
 the shape of ADR 0017: cheap checks every day, the agent only when one fires.
 

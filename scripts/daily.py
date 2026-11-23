@@ -8,8 +8,8 @@ broken), finds new filings and headlines since the last daily run, and prints th
 Owner actions, Agent review needed, Watch breaks, Headlines, Errors. --save records a `daily`
 run with a price snapshot per ticker and the triggers table (the monitor agent reads it).
 Exits 1 only if no stock's prices could be fetched, after reporting; other errors are saved
-(`error` triggers) for the desk errors. On Friday every open position and pending entry also
-gets a weekly review (`daily_review`, ADR 0039). See docs/decisions/0017.
+(`error` triggers) for the desk errors. Every open position and pending entry also gets
+a daily review (`daily_review`, ADR 0040). See docs/decisions/0017.
 """
 
 from __future__ import annotations

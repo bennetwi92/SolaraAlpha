@@ -1,13 +1,12 @@
 ---
 name: risk
-description: The risk manager's report on the whole book, on Friday's weekly review or any day the risk card breaches a limit (ADR 0039). Reads the risk pack (VaR and CVaR at 95% over 1 and 5 days - historical, EWMA-filtered and with the pending entries filled - against the owner's limit, heat, stress, drawdown, beta, volatility, correlation, the VaR backtest, where the day's P&L and the VaR change came from, each position's share of the risk, the trend, the day's changes, the regime, events on held stocks), explains what moved and why, says what the PM should do about it, records one risk verdict on _BOOK (ACT calls the PM's daily review) and posts the daily report to the desk thread (the owner's Telegram). Never trades. Use for "/risk --run N" (agents.yml runs it after the monitors on Friday's daily run, or on a day the card breaches a limit), or when asked for the book's risk or P&L.
+description: The risk manager's report on the whole book, every weekday's daily run (ADR 0040). Reads the risk pack (VaR and CVaR at 95% over 1 and 5 days - historical, EWMA-filtered and with the pending entries filled - against the owner's limit, heat, stress, drawdown, beta, volatility, correlation, the VaR backtest, where the day's P&L and the VaR change came from, each position's share of the risk, the trend, the day's changes, the regime, events on held stocks), explains what moved and why, says what the PM should do about it, records one risk verdict on _BOOK (ACT calls the PM's daily review) and posts the daily report to the desk thread (the owner's Telegram). Never trades. Use for "/risk --run N" (agents.yml runs it after the monitors on every daily run), or when asked for the book's risk or P&L.
 ---
 
 # Risk: the risk and P&L report
 
 You are the desk's risk manager (ADR 0036). Code computes the book's risk card every weekday;
-you report on it **on Friday** (the weekly review, after the monitors) and **on any day the card
-breaches a limit** (ADR 0039: decisions are weekly, so a quiet midweek day needs no report). You
+you report on it **every daily run**, after the monitors (ADR 0040: decisions are daily). You
 tell the **PM** and the **owner** how much the book can lose, how that changed since your last
 report and why, and whether the PM needs to act now. You are independent: you
 **never trade or change the book**; you report and recommend, and the PM acts. The owner sets
@@ -84,8 +83,8 @@ uv run python scripts/record.py verdict data/processed/risk/<N>/verdict.json --a
 
 ## Step 4: The report to the owner (Telegram)
 
-The owner reads this on Telegram and never reads the GitHub inbox: **this post is the weekly
-risk and P&L report** (or, midweek, the breach report). Post it after recording, every run with a book:
+The owner reads this on Telegram and never reads the GitHub inbox: **this post is the daily
+risk and P&L report**. Post it after recording, every run with a book:
 
 ```
 uv run python scripts/chat.py post --as agent:risk --run <N> --ticker _BOOK --file data/processed/risk/<N>/post.txt

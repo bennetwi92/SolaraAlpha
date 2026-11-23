@@ -21,8 +21,8 @@ ERROR is always allowed. Violations and invalid files exit 2. --run N overrides 
 run_id; --new-run starts a run named after the stage (a standalone `/events JET2.L`) and
 records under it. revision records a monitor verdict (card + evidence) and proposes the plan
 revision in its `checks` (action hold / tighten_stop / take_partial / exit / revise_target / add, or
-for a pending entry hold / amend_entry / cancel; midweek, outside the position's Friday review,
-only hold / take_partial / exit / cancel, ADR 0039) as a `revision_proposed` event; an agent's
+for a pending entry hold / amend_entry / cancel; on a run that did not put the position up for
+review, only hold / take_partial / exit / cancel, ADR 0040) as a `revision_proposed` event; an agent's
 revision is applied at once (ADR 0024) and the owner can reverse it with `book.py undo`. prior prints the ticker's latest
 verdicts (with their age in days and the latest evidence `retrieved` time, for the research
 skill's delta mode) and evidence and every filing already interpreted (nsm_id), so a run reuses
