@@ -185,3 +185,15 @@ def test_fit_rejection_is_reported_not_written(
     conn = book.connect(scan_db)
     assert "A.L" not in set(book.positions(conn)["ticker"])
     conn.close()
+
+
+def test_new_entries_off_plans_but_writes_nothing(scan_db: Path) -> None:
+    from dataclasses import replace
+
+    from solaraalpha.portfolio.rules import load_rules
+
+    conn = book.connect(scan_db)
+    out = plan_run(conn, 1, rules=replace(load_rules(), new_entries=False))  # ADR 0040
+    assert [p.ticker for p in out.plans] == ["A.L"] and not out.written
+    assert book.positions(conn).empty
+    conn.close()

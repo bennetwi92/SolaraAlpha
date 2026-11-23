@@ -22,6 +22,18 @@ def no_broker_keys(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(settings, "telegram_chat", "")
 
 
+@pytest.fixture(autouse=True)
+def entries_on(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests run on the live rules with new entries on, whatever the wind-down switch in
+    config/portfolio.toml says (ADR 0040): the planner and the buy guards stay under test."""
+    from solaraalpha.portfolio import rules
+
+    text = rules.RULES.read_text().replace("new_entries = false", "new_entries = true")
+    path = tmp_path_factory.mktemp("rules") / "portfolio.toml"
+    path.write_text(text)
+    monkeypatch.setattr(rules.load_rules, "__defaults__", (path,))
+
+
 @pytest.fixture
 def tmp_cache(tmp_path: Path) -> Path:
     d = tmp_path / "cache"

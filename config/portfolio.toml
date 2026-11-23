@@ -49,3 +49,6 @@ min_adv_gbp = 25000.0      # the screen's liquidity floor: 20-session median dai
 var_confidence = 0.95      # one session in twenty is worse than the VaR
 var_horizon_days = 5       # a trading week: the book trades weekly
 max_var = 0.05             # 5-day 95% VaR above 5% of equity: the PM reviews the book that day
+# AIM wind-down (owner, 2026-11-23; ADR 0040): no new positions, adds or buys while false. The
+# planner drafts nothing and the execution guard refuses every buy; sells, stops and cancels go out.
+new_entries = false
