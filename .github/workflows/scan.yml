@@ -32,6 +32,9 @@ env:
 
 jobs:
   scan:
+    # Off (owner, 2026-11-23): every run skips while the fund migrates to the US strategy
+    # (ADR 0041), cron-job.org dispatches included. Delete this line to switch the job back on.
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 240  # ~13 min for 104 stocks on 2026-10-25; 578 now
     steps:

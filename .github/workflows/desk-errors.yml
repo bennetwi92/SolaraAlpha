@@ -19,9 +19,11 @@ jobs:
   report:
     # cancelled too: a run queued behind the shared `book` group is dropped when a newer one
     # queues (GitHub keeps one pending run per group); Execution and Desk reply come round again
+    # Off (owner, 2026-11-23): while the fund migrates to the US strategy (ADR 0041). Drop the
+    # leading `false && (` and its closing `)` to switch it back on.
     if: >-
-      github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'timed_out'
-      || (github.event.workflow_run.conclusion == 'cancelled' && github.event.workflow_run.name != 'Execution' && github.event.workflow_run.name != 'Desk reply')
+      false && (github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'timed_out'
+      || (github.event.workflow_run.conclusion == 'cancelled' && github.event.workflow_run.name != 'Execution' && github.event.workflow_run.name != 'Desk reply'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

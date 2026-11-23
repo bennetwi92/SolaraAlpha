@@ -21,9 +21,10 @@ Current state:
   to **US mega caps, the S&P 100** (docs/decisions/0041, proposed: the new strategy is the
   owner's to write, so don't assume one). Every AIM position was exited on the practice account
   on 2026-11-23, outside the DB book. `new_entries = false` in `config/portfolio.toml`: the
-  planner writes nothing and the execution guard refuses every buy. The jobs below still run on
-  AIM with buys off until the US pipeline replaces them. The AIM description below is the
-  record of what is still running, not the target.
+  planner writes nothing and the execution guard refuses every buy. **Every workflow but CI is off**
+  during the migration (owner, 2026-11-23): schedules commented out and each job's first line is
+  `if: false`, so cron-job.org dispatches skip too; delete that line to switch a job back on. The
+  AIM description below is the record of what was running, not the target.
 - **What we are looking for is defined in docs/decisions/0022** (the owner's paragraph: catalyst-led
   AIM trading, volatility wanted, screen = ranked wide net to the agents). Check toolkits, bands
   and agent prompts against it.
