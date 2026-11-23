@@ -67,8 +67,8 @@ stocks that have a story people are excited about, managed every day. The owner 
   is migrated from the AIM book, runs, cards or chat; the AIM-only code, config and research
   data are removed (ADR 0041's list), not kept beside the US pipeline.
 
-**Open (owner).** The agents' role (ADR 0041 question 2) needs a fuller discussion before the
-agent chain is redesigned.
+**The agents' role** (ADR 0041 question 2) is ADR 0044: technicals lead, the agents check what
+we buy into and set the trade levels, and an agent can bring in a stock on its story.
 
 **Consequences.** Fixed rules in `config/portfolio.toml` (`max_positions`, `target_moves`,
 `horizon_weeks`, `currency`, heat and sector caps) change with the US config, not now: the file

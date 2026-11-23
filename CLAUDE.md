@@ -29,8 +29,12 @@ Current state:
   crowd momentum in the Nasdaq 100 — a live narrative confirmed by strong technicals, held about
   3–15 sessions, managed daily, no fixed target (levels / ATR / R per trade), a partial then let
   the rest run (half by default), up to 10 positions at ~2% risk (PM band 1–3%), caps raised, USD
-  cash in the ISA, GBP benchmark, a fresh book with no AIM data; the agents' role still open). Not built yet; ADR 0022 (the
+  cash in the ISA, GBP benchmark, a fresh book with no AIM data). Not built yet; ADR 0022 (the
   AIM paragraph) is superseded. Check new toolkits, bands and agent prompts against 0043.
+- **The agents' role on the US desk is docs/decisions/0044** (owner, 2026-11-23): technicals lead
+  (news is priced in minutes); the agents check what we buy into, set entry / stop / partial /
+  targets, and may bring in a stock on its story (still needs technical confirmation to be ACT);
+  Claude spend is not a constraint; Telegram is ended. A lean chain is proposed, not confirmed.
 - **Trading frequency is moving from weekly to daily** (docs/decisions/0040, owner 2026-11-23):
   decisions, the scan and entries, the models and the risk report all go daily, and the horizon
   shortens to days (swing trades; target size and holding range still open). Built in slices:

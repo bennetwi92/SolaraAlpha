@@ -5,7 +5,7 @@ ADR 0040 (AIM wind-down). **Amended 2026-11-23 (owner, ADR 0043): the universe i
 100, not the S&P 100; the strategy is ADR 0043 (open question 1 answered); the ISA holds USD
 cash (question 3 answered). Questions 4–6 answered the same day (ADR 0043): a GBP benchmark, the
 owner's EDGAR contact kept out of the repo, a fresh book with no AIM data. Question 2 (the
-agents' role) is still open.** The rest of this ADR applies to the Nasdaq 100 as written.
+agents' role) is ADR 0044.** The rest of this ADR applies to the Nasdaq 100 as written.
 
 **Context.** The owner (2026-11-23) moves the fund from AIM small caps to "standard US major
 stocks": the **S&P 100**. The owner also said the strategy "will change significantly", so ADR
