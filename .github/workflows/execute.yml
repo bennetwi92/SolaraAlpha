@@ -11,7 +11,7 @@
 #
 # The only workflow with SOLARA_T212_TRADING: `demo` unless the owner sets the repository variable
 # SOLARA_T212_TRADING (to `live`, with SOLARA_T212_ENV `live`; or `off` to stop sending). Inert
-# without the Trading212 keys and the Turso secrets. Shares the `book` concurrency group, so a turn
+# without the Trading212 keys and SOLARA_DB_KEY. Shares the `book` concurrency group, so a turn
 # never overlaps the scan, the daily check, the agents or a Book command. The inbox hears only
 # when something went out, filled or was refused; failures go to the desk-errors issue.
 name: Execution
@@ -30,7 +30,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write  # db.py push to the db branch (ADR 0041)
   issues: write
 
 env:
@@ -38,8 +38,6 @@ env:
   SOLARA_T212_SECRET: ${{ secrets.SOLARA_T212_SECRET }}
   SOLARA_T212_ENV: ${{ vars.SOLARA_T212_ENV || 'demo' }}
   SOLARA_T212_TRADING: ${{ vars.SOLARA_T212_TRADING || 'demo' }}
-  SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-  SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
   SOLARA_ORDERS_BY: system
   SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
   SOLARA_TELEGRAM_CHAT: ${{ secrets.SOLARA_TELEGRAM_CHAT }}
@@ -57,9 +55,10 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
         run: |
-          if [ -z "$SOLARA_T212_KEY" ] || [ -z "$SOLARA_T212_SECRET" ] || [ -z "$SOLARA_TURSO_URL" ] || [ -z "$SOLARA_TURSO_TOKEN" ]; then
-            echo "execution skipped: needs SOLARA_T212_KEY / SOLARA_T212_SECRET and SOLARA_TURSO_URL / SOLARA_TURSO_TOKEN" >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$SOLARA_T212_KEY" ] || [ -z "$SOLARA_T212_SECRET" ] || [ -z "$SOLARA_DB_KEY" ]; then
+            echo "execution skipped: needs SOLARA_T212_KEY / SOLARA_T212_SECRET and SOLARA_DB_KEY" >> "$GITHUB_STEP_SUMMARY"
             echo "go=false" >> "$GITHUB_OUTPUT"
           elif [ "$SOLARA_T212_TRADING" = "off" ]; then
             echo "execution skipped: the repository variable SOLARA_T212_TRADING is off" >> "$GITHUB_STEP_SUMMARY"
@@ -79,6 +78,12 @@ jobs:
           enable-cache: true
       - run: uv sync --no-default-groups
         if: steps.gate.outputs.go == 'true'
+      - name: Pull the results DB (db branch, ADR 0041)
+        id: dbpull
+        if: steps.gate.outputs.go == 'true'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - id: code
         name: Turn (code only)
         if: steps.gate.outputs.go == 'true'
@@ -127,3 +132,8 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
+      - name: Push the results DB (even after a failed step, ADR 0041)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"

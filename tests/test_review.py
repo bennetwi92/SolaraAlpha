@@ -8,7 +8,6 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from fakes import FakeTurso
 from solaraalpha import store
 from solaraalpha.portfolio import book
 from solaraalpha.portfolio.book import PositionState
@@ -284,7 +283,7 @@ def stubs(monkeypatch: pytest.MonkeyPatch) -> dict[str, float]:
 
 def test_scan_reviews_open_positions_and_leaves_the_stop_to_the_monitor(
     stubs: dict[str, float],
-    fake_turso: FakeTurso,
+    local_db: Path,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -344,7 +343,7 @@ def test_scan_reviews_open_positions_and_leaves_the_stop_to_the_monitor(
 
 def test_scan_reviews_a_held_stock_it_also_screens(
     stubs: dict[str, float],
-    fake_turso: FakeTurso,
+    local_db: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     conn = book.connect()

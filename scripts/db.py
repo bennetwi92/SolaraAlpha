@@ -1,13 +1,14 @@
-"""Results DB tooling: which DB is in use, and copies between the local file and Turso.
+"""Results DB on the `db` branch (docs/decisions/0041): pull it, see it, push it back.
 
-uv run python scripts/db.py status                       # Turso host or local path; rows per table
-uv run python scripts/db.py push [--from PATH] [--append-new-runs]   # local file -> Turso
-uv run python scripts/db.py pull [--to PATH]             # Turso -> a new local file
+uv run python scripts/db.py pull [--force]        # fetch + decrypt the branch -> data/solara.db
+uv run python scripts/db.py status                # local file, rows per table, pulled vs branch
+uv run python scripts/db.py push [--message M]    # integrity check, encrypt, replace the branch
 
-push refuses when Turso already holds runs, unless --append-new-runs, which copies only the
-runs absent from Turso (matched on started_at, script, git_sha) under new run ids. pull refuses
-to overwrite an existing file. Both need SOLARA_TURSO_URL / SOLARA_TURSO_TOKEN (.env or env).
-See docs/decisions/0013.
+The file is encrypted with SOLARA_DB_KEY (.env or env). pull refuses to overwrite a local DB
+with changes not pushed unless --force; with no branch yet it starts an empty DB. push is
+leased on the pulled commit: if another writer saved first it is refused, never merged, and
+nothing is pushed when the file is unchanged. Workflows pull first and push last (every DB
+step runs in between, inside the `book` concurrency group); a chat session pulls to read.
 """
 
 from __future__ import annotations
@@ -16,82 +17,58 @@ import argparse
 import sys
 from pathlib import Path
 
-from solaraalpha import store
+from solaraalpha import dbsync, store
 from solaraalpha.config import settings
 
 
-def _turso() -> store.Conn:
-    if not settings.turso_url:
-        sys.exit("Turso not configured: set SOLARA_TURSO_URL and SOLARA_TURSO_TOKEN")
-    return store.connect()
+def _key() -> str:
+    return settings.db_key.get_secret_value()
 
 
-def _describe() -> str:
-    if settings.turso_url:
-        return f"Turso {settings.turso_url}"
-    return f"local {settings.db_path}"
-
-
-def status() -> None:
-    conn = store.connect()
+def status(db: Path) -> None:
+    head = dbsync.remote_head()
+    rec = dbsync.pulled(db)
+    print(f"db branch: {head[:10] or 'none yet'}")
+    if not db.exists():
+        print(f"local {db}: none (run `db.py pull`)")
+        return
+    changed = rec is None or dbsync.sha256(db) != rec.sha256
+    pulled_from = (rec.commit[:10] or "fresh DB") if rec else "never pulled"
+    print(f"local {db}: {db.stat().st_size / 1e6:.1f} MB, pulled from {pulled_from}")
+    if rec and rec.commit != head:
+        print("  the branch has moved since: `db.py pull` for the latest")
+    if changed:
+        print("  local changes not pushed")
+    conn = store.connect(db)
     try:
-        print(f"Results DB: {_describe()}")
         for table, n in store.counts(conn).items():
             print(f"  {table:<16} {n:>10,}")
     finally:
         conn.close()
 
 
-def push(src_path: Path, append_new_runs: bool) -> None:
-    if not src_path.exists():
-        sys.exit(f"no local DB at {src_path}")
-    src, dst = store.connect(src_path), _turso()
-    try:
-        copied = store.copy_db(src, dst, append_new_runs=append_new_runs)
-    except ValueError as e:
-        sys.exit(f"refused: {e} (--append-new-runs copies only the runs Turso lacks)")
-    finally:
-        src.close()
-        dst.close()
-    _print_copied(f"{src_path} -> Turso", copied)
-
-
-def pull(dst_path: Path) -> None:
-    if dst_path.exists():
-        sys.exit(f"refused: {dst_path} exists; move it or pass another --to")
-    src, dst = _turso(), store.connect(dst_path)
-    try:
-        copied = store.copy_db(src, dst)
-    finally:
-        src.close()
-        dst.close()
-    _print_copied(f"Turso -> {dst_path}", copied)
-
-
-def _print_copied(what: str, copied: dict[str, int]) -> None:
-    print(f"copied {what}:")
-    for table, n in copied.items():
-        print(f"  {table:<16} {n:>10,}")
-
-
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    p.add_argument("--db", type=Path, default=None, help="default data/solara.db")
     sub = p.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("status", help="which DB is in use and rows per table")
-    ps = sub.add_parser("push", help="copy a local DB file into Turso")
-    ps.add_argument("--from", dest="src", type=Path, default=None, help="default data/solara.db")
-    ps.add_argument(
-        "--append-new-runs", action="store_true", help="copy only runs Turso lacks (new ids)"
-    )
-    pl = sub.add_parser("pull", help="copy Turso into a new local DB file")
-    pl.add_argument("--to", dest="dst", type=Path, default=None, help="default data/solara.db")
+    sub.add_parser("status", help="the local DB, rows per table, and the branch head")
+    pl = sub.add_parser("pull", help="fetch and decrypt the db branch into the local file")
+    pl.add_argument("--force", action="store_true", help="overwrite local changes not pushed")
+    ps = sub.add_parser("push", help="encrypt the local file and replace the db branch")
+    ps.add_argument("--message", default="results DB", help="the db commit's message")
     args = p.parse_args(argv)
-    if args.cmd == "status":
-        status()
-    elif args.cmd == "push":
-        push(args.src or settings.db_path, args.append_new_runs)
-    else:
-        pull(args.dst or settings.db_path)
+    db = args.db or settings.db_path
+    try:
+        if args.cmd == "status":
+            status(db)
+        elif args.cmd == "pull":
+            rec = dbsync.pull(db, _key(), force=args.force)
+            print(f"pulled {rec.commit[:10] or 'a fresh DB (no db branch yet)'} into {db}")
+        else:
+            commit = dbsync.push(db, _key(), args.message)
+            print(f"pushed {db} as {commit[:10]}" if commit else "unchanged: nothing pushed")
+    except dbsync.DBSyncError as e:
+        sys.exit(f"refused: {e}")
 
 
 if __name__ == "__main__":

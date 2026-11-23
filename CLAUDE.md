@@ -41,9 +41,16 @@ Current state:
   also snapshotted into the results DB (`solaraalpha.store`) — for the record, never as a cache.
 - **Results DB**: scripts' `--save` records the run, model cards and input snapshots in an
   append-only SQLite DB (the **book** — positions, orders, fills, cash — lives in the same DB,
-  `portfolio/book.py`: state changes are new event rows, never updates) — hosted on **Turso** when `SOLARA_TURSO_URL` / `SOLARA_TURSO_TOKEN` are
-  set (GitHub secrets, cloud env vars, `.env`), else the local `data/solara.db`. See
-  docs/decisions/0007, 0013.
+  `portfolio/book.py`: state changes are new event rows, never updates) — the local
+  `data/solara.db`, kept between jobs **encrypted on the `db` branch** (ADR 0041; the repo is
+  public, the branch holds only ciphertext, key `SOLARA_DB_KEY`). Every workflow job that
+  touches it runs `db.py pull` first and `db.py push` last (even after a failed step), inside the
+  `book` concurrency group: one writer at a time, so the agents' matrix jobs run one by one. A
+  push is leased on the commit it pulled (a second writer is refused, never merged). A chat
+  session runs `db.py pull` to read; writes go through the workflows (`book.yml`). Never upload
+  the decrypted file (`data/` artifacts exclude `data/solara.db*`). See docs/decisions/0007, 0041.
+- **Desk paused** (owner, 2026-11-23, #321): every schedule and `workflow_run` trigger is
+  commented out; only manual runs. Restarting is the owner's call.
 - Price history: fetch the **last 5 years** (default), then cut per stock to the span after
   the last blocking data issue (`trim_to_consistent`). Don't pull long history yet.
 - The technical models (`analysis/technical.py`, `analysis/levels.py`) must stay **generic across
@@ -234,7 +241,8 @@ Current state:
 - **Free data sources only.** No paid APIs, paid tiers, or trial keys that later charge. A free
   tier with a key is fine (key goes in `.env`). If a source's terms are unclear, flag it before
   building on it. Record every source used in `docs/data-sources.md`.
-- **Never commit data or secrets.** `data/` and `.env` are gitignored. Keys are read through
+- **Never commit data or secrets.** `data/` and `.env` are gitignored. The one exception is
+  the encrypted results DB on the `db` branch (ADR 0041). Keys are read through
   `solaraalpha.config.settings`, never hard-coded.
 - **No look-ahead.** Any analysis over time-series must use only information available at each
   point in time. Be explicit about timestamps, timezones and publication lags.
@@ -312,7 +320,7 @@ Current state:
 | Execution turn (the 15-minute job, code only): book fills, stops at once, send what is approved, swap stops for exits in market hours, the 15:45 exit deadline | `uv run python scripts/execute.py turn [--agent] [--report FILE]` (needs `SOLARA_T212_TRADING=demo`; `log [--since ISO]` reads the executions) |
 | Execution agent: how and when each order goes out (never what) | `/execute` in Claude Code → `scripts/execution_pack.py`, then `execute.py send ID [--type market\|limit] [--price P] --reason` / `hold ID --until ISO --reason` / `cancel ID --reason` / `note [ID] --reason` |
 | Swap a stop off an approved exit by hand (market hours; owner mode only) | `uv run python scripts/book.py swap EXIT_ORDER_ID` |
-| Results DB: which is in use, copy local ↔ Turso | `uv run python scripts/db.py status` / `push [--from PATH] [--append-new-runs]` / `pull [--to PATH]` |
+| Results DB on the `db` branch: fetch + decrypt / what is local vs the branch / encrypt + replace the branch (workflows; leased) | `uv run python scripts/db.py pull [--force]` / `status` / `push [--message M]` (needs `SOLARA_DB_KEY`) |
 | Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `relative_strength` / `fundamentals` / `jet2_value` / `scan` |
 | Notebooks | `make notebook` |
 
@@ -328,7 +336,8 @@ src/solaraalpha/        importable package — all reusable code lives here
                         price/fundamental snapshots; start_run + save_ticker (a scan = one run) /
                         save_run / save_label / load_results / load_steps / load_labels /
                         shortlist / latest / load_prices — see docs/decisions/0007
-  turso.py              hosted results DB: sqlite3-style connection to Turso over HTTP — 0013
+  dbsync.py             the results DB on the `db` branch: gpg-encrypted, one orphan commit, pull /
+                        push leased on the pulled commit, integrity-checked — 0041
   agents.py             Verdict / Evidence / KillCriterion models, record_verdict (labels row +
                         card + evidence, downgrade-only), prior — see docs/decisions/0016
   validation.py         the validator's pack from the DB: independent cards, steps, label, price
@@ -466,7 +475,7 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
 .github/workflows/      ci.yml (checks), scan.yml (weekly pipeline + weekly pack, Sunday), daily.yml
                         (weekday daily check), agents.yml (unattended agents after both; inert
                         without a Claude secret), stock.yml (one stock), book.yml (book.py, plan.py,
-                        weekly_pack.py against Turso, from GitHub), desk-errors.yml (a failed run →
+                        weekly_pack.py against the DB, from GitHub), desk-errors.yml (a failed run →
                         the desk-errors issue and the inbox), execute.yml (the execution job: every
                         15 minutes in the session and after Agents; the only one that may trade),
                         desk-reply.yml (every 30 minutes 07:00-22:00 UK: the PM answers the owner)
@@ -506,7 +515,7 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
 .claude/hooks/guard_live_writes.py  PreToolUse guard the five subagents load: blocks live book / DB
                         writes, workflow runs and inbox posts unless `SOLARA_ALLOW_WRITES=1`
 notebooks/              exploration only; promote anything reused into src/
-tests/                  pytest; mirrors src/ structure; fakes.py (FakeTurso), conftest.py (db_backend)
+tests/                  pytest; mirrors src/ structure; fakes.py (FakeBroker), conftest.py (db_backend, local_db)
 data/                   gitignored; raw/ processed/ cache/ created on demand
 docs/
   data-sources.md       register of every external data source, its terms and limits
@@ -538,8 +547,9 @@ docs/
 - For fetchers, test parsing against a small saved fixture (in `tests/fixtures/`), not the
   live API.
 - Use the `tmp_cache` fixture (or `tmp_path`) — tests must never write into `data/`.
-- Every DB table is proven on both backends: DB tests take the `db_backend` fixture (a `tmp_path`
-  SQLite file, then `FakeTurso` from `tests/fakes.py`) as the `path` argument to store functions.
+- DB tests take the `db_backend` fixture (a `tmp_path` SQLite file) as the `path` argument to
+  store functions; `local_db` points `store.connect()` with no path at one. `test_db.py` runs the
+  `db` branch sync against a local bare repo (needs `git` and `gpg`).
 
 ## Notebooks
 

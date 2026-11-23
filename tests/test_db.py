@@ -1,120 +1,156 @@
+"""The results DB on the db branch (ADR 0041), against a local bare repo standing in for GitHub."""
+
 from __future__ import annotations
 
-import math
+import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
-from fakes import FakeTurso
-from solaraalpha import store
+from solaraalpha import dbsync, store
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import db
 
-
-@dataclass(frozen=True)
-class Card:
-    date: pd.Timestamp
-    score: float
-    target: float
+KEY = "correct horse battery staple"
 
 
-CARD = Card(pd.Timestamp("2026-10-09", tz="UTC"), 0.42, math.inf)
+def _git(cwd: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+    ).stdout.strip()
 
 
-def _local(tmp_path: Path, runs: int = 2) -> Path:
-    path = tmp_path / "local.db"
-    for i in range(runs):
-        steps = [("screen", "technical", "pass", f"run {i}")]
-        store.save_run("scan", {"i": i}, "JET2.L", {"technical": CARD}, path=path, steps=steps)
-    return path
+@pytest.fixture
+def origin(tmp_path: Path) -> Path:
+    bare = tmp_path / "origin.git"
+    bare.mkdir()
+    _git(bare, "init", "--quiet", "--bare")
+    return bare
 
 
-def test_status_names_backend_and_counts(
-    fake_turso: FakeTurso, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+def _clone(tmp_path: Path, origin: Path, name: str) -> Path:
+    repo = tmp_path / name
+    repo.mkdir()
+    _git(repo, "init", "--quiet")
+    _git(repo, "remote", "add", "origin", str(origin))
+    return repo
+
+
+def _write(path: Path, ticker: str) -> None:
+    store.save_run("scan", {}, ticker, {}, path=path, steps=[("screen", "technical", "pass", "x")])
+
+
+def _tickers(path: Path) -> list[str]:
+    conn = store.connect(path)
+    try:
+        return [r[0] for r in conn.execute("SELECT ticker FROM steps ORDER BY ticker")]
+    finally:
+        conn.close()
+
+
+def test_fresh_db_round_trip_through_the_branch(tmp_path: Path, origin: Path) -> None:
+    a, b = _clone(tmp_path, origin, "a"), _clone(tmp_path, origin, "b")
+    db_a, db_b = tmp_path / "a.db", tmp_path / "b.db"
+    rec = dbsync.pull(db_a, KEY, repo=a)
+    assert rec.commit == "" and db_a.exists()  # no branch yet: an empty DB
+    _write(db_a, "JET2.L")
+    commit = dbsync.push(db_a, KEY, "scan", repo=a)
+    assert commit and dbsync.remote_head(a) == commit
+    dbsync.pull(db_b, KEY, repo=b)
+    assert _tickers(db_b) == ["JET2.L"]
+
+
+def test_unchanged_db_is_not_pushed(tmp_path: Path, origin: Path) -> None:
+    a = _clone(tmp_path, origin, "a")
+    dbsync.pull(tmp_path / "a.db", KEY, repo=a)
+    assert dbsync.push(tmp_path / "a.db", KEY, "nothing", repo=a) is None
+    assert dbsync.remote_head(a) == ""
+
+
+def test_branch_keeps_one_commit_and_only_ciphertext(tmp_path: Path, origin: Path) -> None:
+    a = _clone(tmp_path, origin, "a")
+    path = tmp_path / "a.db"
+    dbsync.pull(path, KEY, repo=a)
+    for t in ("JET2.L", "SECRETTICKER.L"):
+        _write(path, t)
+        dbsync.push(path, KEY, f"save {t}", repo=a)
+    assert _git(origin, "rev-list", "--count", "db") == "1"
+    blob = subprocess.run(
+        ["git", "cat-file", "blob", f"db:{dbsync.FILE}"],
+        cwd=origin,
+        check=True,
+        capture_output=True,
+    ).stdout
+    assert b"SECRETTICKER" not in blob and b"SQLite format" not in blob
+
+
+def test_second_writer_is_refused_not_merged(tmp_path: Path, origin: Path) -> None:
+    a, b = _clone(tmp_path, origin, "a"), _clone(tmp_path, origin, "b")
+    db_a, db_b = tmp_path / "a.db", tmp_path / "b.db"
+    dbsync.pull(db_a, KEY, repo=a)
+    _write(db_a, "JET2.L")
+    dbsync.push(db_a, KEY, "first", repo=a)
+    dbsync.pull(db_a, KEY, repo=a)
+    dbsync.pull(db_b, KEY, repo=b)
+    _write(db_a, "AAA.L")
+    _write(db_b, "BBB.L")
+    head = dbsync.push(db_a, KEY, "a saves first", repo=a)
+    with pytest.raises(dbsync.DBSyncError, match="moved since"):
+        dbsync.push(db_b, KEY, "b too late", repo=b)
+    assert dbsync.remote_head(b) == head
+
+
+def test_first_push_is_refused_when_the_branch_appeared_meanwhile(
+    tmp_path: Path, origin: Path
 ) -> None:
-    store.save_run("scan", {}, "JET2.L", {"technical": CARD})
-    db.main(["status"])
-    out = capsys.readouterr().out
-    assert "Turso libsql://fake.turso.io" in out
-    assert "runs" in out and "results" in out
+    a, b = _clone(tmp_path, origin, "a"), _clone(tmp_path, origin, "b")
+    db_a, db_b = tmp_path / "a.db", tmp_path / "b.db"
+    dbsync.pull(db_a, KEY, repo=a)
+    dbsync.pull(db_b, KEY, repo=b)
+    _write(db_a, "AAA.L")
+    _write(db_b, "BBB.L")
+    dbsync.push(db_a, KEY, "a", repo=a)
+    with pytest.raises(dbsync.DBSyncError):
+        dbsync.push(db_b, KEY, "b", repo=b)
 
 
-def test_push_copies_everything_then_refuses(
-    fake_turso: FakeTurso, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    local = _local(tmp_path)
-    db.main(["push", "--from", str(local)])
-    conn_local, conn_turso = store.connect(local), store.connect()
-    assert store.counts(conn_turso) == store.counts(conn_local)
-    assert conn_turso.execute("SELECT run_id FROM runs").fetchall() == [(1,), (2,)]
-    conn_local.close()
-    conn_turso.close()
-    res = store.load_results("JET2.L", "technical")  # Turso
-    assert list(res[res["field"] == "target"]["value"]) == [math.inf, math.inf]
-
-    with pytest.raises(SystemExit, match="refused: destination already holds 2 runs"):
-        db.main(["push", "--from", str(local)])
+def test_pull_refuses_local_changes_unless_forced(tmp_path: Path, origin: Path) -> None:
+    a = _clone(tmp_path, origin, "a")
+    path = tmp_path / "a.db"
+    dbsync.pull(path, KEY, repo=a)
+    _write(path, "JET2.L")
+    with pytest.raises(dbsync.DBSyncError, match="not pushed"):
+        dbsync.pull(path, KEY, repo=a)
+    dbsync.pull(path, KEY, repo=a, force=True)
+    assert _tickers(path) == []
 
 
-def test_push_append_new_runs_remaps_ids(fake_turso: FakeTurso, tmp_path: Path) -> None:
-    local = _local(tmp_path, runs=2)
-    db.main(["push", "--from", str(local)])
-    store.save_run("technical", {}, "EZJ.L", {"technical": CARD})  # Turso-only run 3
-    store.save_run(
-        "scan", {"i": 9}, "JET2.L", {"technical": CARD}, path=local, steps=[("s", "t", "pass", "")]
-    )  # local-only run 3
-
-    db.main(["push", "--from", str(local), "--append-new-runs"])
-    turso = store.connect()
-    runs = turso.execute("SELECT run_id, script, args FROM runs ORDER BY run_id").fetchall()
-    assert runs == [
-        (1, "scan", '{"i": 0}'),
-        (2, "scan", '{"i": 1}'),
-        (3, "technical", "{}"),
-        (4, "scan", '{"i": 9}'),
-    ]
-    assert turso.execute("SELECT run_id, reason FROM steps WHERE run_id = 4").fetchall() == [
-        (4, "")
-    ]
-    assert turso.execute("SELECT COUNT(*) FROM results WHERE run_id = 4").fetchone()[0] == 2
-    turso.close()
-
-    db.main(["push", "--from", str(local), "--append-new-runs"])  # idempotent
-    turso = store.connect()
-    assert turso.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 4
-    turso.close()
+def test_wrong_key_is_refused(tmp_path: Path, origin: Path) -> None:
+    a, b = _clone(tmp_path, origin, "a"), _clone(tmp_path, origin, "b")
+    dbsync.pull(tmp_path / "a.db", KEY, repo=a)
+    _write(tmp_path / "a.db", "JET2.L")
+    dbsync.push(tmp_path / "a.db", KEY, "save", repo=a)
+    with pytest.raises(dbsync.DBSyncError, match="gpg failed"):
+        dbsync.pull(tmp_path / "b.db", "wrong", repo=b)
+    with pytest.raises(dbsync.DBSyncError, match="not set"):
+        dbsync.pull(tmp_path / "b.db", "", repo=b)
 
 
-def test_pull_into_new_file_only(fake_turso: FakeTurso, tmp_path: Path) -> None:
-    store.save_run("scan", {}, "JET2.L", {"technical": CARD}, steps=[("s", "t", "pass", "")])
-    target = tmp_path / "pulled.db"
-    db.main(["pull", "--to", str(target)])
-    conn = store.connect(target)
-    assert store.counts(conn) == {
-        "runs": 1,
-        "results": 2,
-        "prices": 0,
-        "fundamentals": 0,
-        "evidence": 0,
-        "triggers": 0,
-        "agent_runs": 0,
-        "labels": 0,
-        "steps": 1,
-    }
-    conn.close()
-    assert store.load_results("JET2.L", path=target).loc[0, "run_id"] == 1
-
-    with pytest.raises(SystemExit, match="exists"):
-        db.main(["pull", "--to", str(target)])
+def test_corrupt_db_is_not_pushed(tmp_path: Path, origin: Path) -> None:
+    a = _clone(tmp_path, origin, "a")
+    path = tmp_path / "a.db"
+    dbsync.pull(path, KEY, repo=a)
+    raw = bytearray(path.read_bytes())
+    raw[100:4096] = b"\xff" * (4096 - 100)  # trash the first page after the header
+    path.write_bytes(bytes(raw))
+    with pytest.raises(dbsync.DBSyncError):
+        dbsync.push(path, KEY, "corrupt", repo=a)
+    assert dbsync.remote_head(a) == ""
 
 
-def test_push_and_pull_need_turso(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from solaraalpha.config import settings
-
-    monkeypatch.setattr(settings, "turso_url", "")
-    with pytest.raises(SystemExit, match="Turso not configured"):
-        db.main(["pull", "--to", str(tmp_path / "x.db")])
+def test_cli_push_without_pull_is_refused(tmp_path: Path) -> None:
+    _write(tmp_path / "x.db", "JET2.L")
+    with pytest.raises(SystemExit, match="never pulled"):
+        db.main(["--db", str(tmp_path / "x.db"), "push"])

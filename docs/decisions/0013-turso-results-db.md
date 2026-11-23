@@ -1,5 +1,8 @@
 # 0013 — Hosted results DB on Turso, over HTTP with our own thin client
 
+**Status:** superseded by ADR 0041 (2026-11-23): `turso.py` is gone; the DB is an encrypted
+SQLite file on the `db` branch.
+
 **Context.** 0007 kept the results DB as a local SQLite file and planned a hosted SQLite for
 GitHub Actions and Claude Code cloud sessions, whose containers are discarded. The Turso DB
 (`solaradb`, AWS eu-west-1, free tier) now exists, with `SOLARA_TURSO_URL` / `SOLARA_TURSO_TOKEN`

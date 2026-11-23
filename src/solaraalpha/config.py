@@ -27,9 +27,8 @@ class Settings(BaseSettings):
 
     data_dir: Path = REPO_ROOT / "data"
     log_level: str = "INFO"
-    # Hosted results DB (Turso). Unset: the local SQLite file at db_path is used.
-    turso_url: str = ""
-    turso_token: SecretStr = SecretStr("")
+    # Passphrase of the encrypted results DB on the `db` branch (ADR 0041; scripts/db.py).
+    db_key: SecretStr = SecretStr("")
     # Trading212 API (ADR 0030, 0031). Unset: no broker reconcile, no tradable check, no orders.
     t212_key: SecretStr = SecretStr("")
     t212_secret: SecretStr = SecretStr("")
@@ -45,8 +44,7 @@ class Settings(BaseSettings):
     telegram_chat: str = ""
 
     @field_validator(
-        "turso_url",
-        "turso_token",
+        "db_key",
         "t212_key",
         "t212_secret",
         "t212_env",

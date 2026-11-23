@@ -1,7 +1,7 @@
 """The book: positions, orders, fills and cash in the results DB, append-only.
 
-Lives in the same database as the model results (:mod:`solaraalpha.store`; local file or
-Turso) under its own tables, ``BOOK_SCHEMA``. Nothing is ever updated or deleted: a change of
+Lives in the same database as the model results (:mod:`solaraalpha.store`) under its own
+tables, ``BOOK_SCHEMA``. Nothing is ever updated or deleted: a change of
 state (an order getting filled, a position being approved) is a new **event row**, and the
 current state is the latest state-changing event. Every write is one ``INSERT``; illegal
 transitions raise ``ValueError`` before anything is written.

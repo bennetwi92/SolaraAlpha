@@ -29,11 +29,9 @@ deleted, so every number can be traced to the run (time, git commit, arguments) 
 A run can cover many tickers (a weekly scan is one run): :func:`start_run`, then
 :func:`save_ticker` per ticker. :func:`save_run` does both for a single-ticker script.
 
-With ``SOLARA_TURSO_URL`` / ``SOLARA_TURSO_TOKEN`` set, the same tables live in the hosted
-Turso database instead (:mod:`solaraalpha.turso`); unset, the local file is used. Passing
-``path`` always uses that local file. Plain SQLite SQL only (docs/decisions/0007, 0013). Read
-frames with :func:`query` (not ``pd.read_sql_query``, which rejects the Turso client);
-``scripts/db.py`` copies a DB between the two backends with :func:`copy_db`.
+The DB is the local file ``settings.db_path`` (or ``path``). Between jobs it lives encrypted on
+the ``db`` branch: ``scripts/db.py pull`` before, ``push`` after (:mod:`solaraalpha.dbsync`,
+docs/decisions/0007, 0041). Read frames with :func:`query`.
 """
 
 from __future__ import annotations
@@ -50,7 +48,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from solaraalpha import turso
 from solaraalpha.config import REPO_ROOT, settings
 from solaraalpha.log import get_logger
 
@@ -144,7 +141,7 @@ CREATE TABLE IF NOT EXISTS labels (
 );
 -- "the latest card of model M (for ticker T)": the primary key leads with run_id, so without
 -- this every such lookup scans the whole table, and a correlated MAX(run_id) per row scanned it
--- once per row. Turso bills each row scanned as a read, and that used up the plan's reads.
+-- once per row (on Turso, which billed each row scanned, that used up the plan's reads).
 CREATE INDEX IF NOT EXISTS results_model_ticker ON results (model, ticker, run_id);
 """
 STEPS = """
@@ -163,17 +160,13 @@ RTOL = 1e-6
 _PRICE_COLS = ["open", "high", "low", "close", "adj_close", "volume", "currency"]
 
 
-Conn = sqlite3.Connection | turso.Connection
+Conn = sqlite3.Connection
 
 
 def connect(path: Path | None = None) -> Conn:
     """Open (creating tables if needed) the results database: the local file at ``path``, else
-    Turso when configured, else ``settings.db_path``."""
-    conn: Conn
-    if path is None and settings.turso_url:
-        conn = turso.Connection(settings.turso_url, settings.turso_token.get_secret_value())
-    else:
-        conn = sqlite3.connect(path or settings.db_path)
+    ``settings.db_path`` (pulled from the ``db`` branch by ``scripts/db.py``, ADR 0041)."""
+    conn = sqlite3.connect(path or settings.db_path)
     conn.executescript(SCHEMA)
     if "node" in _columns(conn, "steps"):  # 0008 layout: node (= toolkit id), no stage
         conn.executescript(
@@ -611,8 +604,7 @@ def _read(conn: Conn, table: str, ticker: str, as_seen: str | None = None) -> pd
 
 
 def query(sql: str, conn: Conn, params: list[Any] | None = None) -> pd.DataFrame:
-    """Run ``sql`` on ``conn`` and return the rows as a DataFrame (works on both backends;
-    ``pd.read_sql_query`` does not accept the Turso client)."""
+    """Run ``sql`` on ``conn`` and return the rows as a DataFrame."""
     cur = conn.execute(sql, params or [])
     return pd.DataFrame(cur.fetchall(), columns=[d[0] for d in cur.description or []])
 
@@ -629,73 +621,6 @@ def tables(conn: Conn) -> dict[str, str]:
 def counts(conn: Conn) -> dict[str, int]:
     """Row count per table."""
     return {t: int(conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]) for t in tables(conn)}
-
-
-def copy_db(
-    src: Conn, dst: Conn, append_new_runs: bool = False, page: int = 5000
-) -> dict[str, int]:
-    """Copy every table of ``src`` into ``dst`` (tables are created in ``dst`` if missing).
-
-    By default ``dst`` must hold no ``runs`` row (``ValueError`` otherwise) and rows are copied
-    verbatim, run ids included. With ``append_new_runs``, only runs whose
-    ``(started_at, script, git_sha)`` is absent from ``dst`` are copied, under new run ids, with
-    the rows of every run-linked table remapped; tables without a ``run_id`` column are skipped.
-    Returns the rows copied per table.
-    """
-    run_map: dict[int, int] | None = None
-    existing = int(dst.execute("SELECT COUNT(*) FROM runs").fetchone()[0])
-    if not append_new_runs and existing:
-        raise ValueError(f"destination already holds {existing} runs; use append_new_runs")
-    copied: dict[str, int] = {}
-    with dst:
-        if append_new_runs:
-            seen = set(dst.execute("SELECT started_at, script, git_sha FROM runs").fetchall())
-            run_map = {}
-            for run_id, started, script, args, sha in src.execute(
-                "SELECT run_id, started_at, script, args, git_sha FROM runs ORDER BY run_id"
-            ).fetchall():
-                if (started, script, sha) in seen:
-                    continue
-                cur = dst.execute(
-                    "INSERT INTO runs (started_at, script, args, git_sha) VALUES (?, ?, ?, ?)",
-                    (started, script, args, sha),
-                )
-                assert cur.lastrowid is not None
-                run_map[int(run_id)] = int(cur.lastrowid)
-            copied["runs"] = len(run_map)
-        for name, sql in tables(src).items():
-            dst.execute(
-                sql
-                if "IF NOT EXISTS" in sql
-                else sql.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS", 1)
-            )
-            if name == "runs" and run_map is not None:
-                continue
-            cols = _columns(src, name)
-            if run_map is not None and "run_id" not in cols:
-                log.warning("%s: no run_id column, not copied in append mode", name)
-                continue
-            copied[name] = 0
-            insert = f"INSERT INTO {name} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})"
-            for offset in range(0, 10**9, page):
-                raw = src.execute(
-                    f"SELECT {', '.join(cols)} FROM {name} ORDER BY rowid LIMIT ? OFFSET ?",
-                    (page, offset),
-                ).fetchall()
-                rows = raw
-                if run_map is not None:
-                    i = cols.index("run_id")
-                    rows = [
-                        tuple(run_map[int(r[i])] if j == i else v for j, v in enumerate(r))
-                        for r in raw
-                        if int(r[i]) in run_map
-                    ]
-                if rows:
-                    dst.executemany(insert, rows)
-                    copied[name] += len(rows)
-                if len(raw) < page:
-                    break
-    return copied
 
 
 def _latest(df: pd.DataFrame, key: list[str]) -> pd.DataFrame:
