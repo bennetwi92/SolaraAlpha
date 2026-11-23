@@ -17,6 +17,13 @@ have been chosen yet beyond what's listed below — **never assume any**. Ask wh
 depends on that choice.
 
 Current state:
+- **The AIM strategy is wound down (docs/decisions/0040, 2026-11-23)** and the fund is pivoting
+  to **US mega caps, the S&P 100** (docs/decisions/0041, proposed: the new strategy is the
+  owner's to write, so don't assume one). Every AIM position was exited on the practice account
+  on 2026-11-23, outside the DB book. `new_entries = false` in `config/portfolio.toml`: the
+  planner writes nothing and the execution guard refuses every buy. The jobs below still run on
+  AIM with buys off until the US pipeline replaces them. The AIM description below is the
+  record of what is still running, not the target.
 - **What we are looking for is defined in docs/decisions/0022** (the owner's paragraph: catalyst-led
   AIM trading, volatility wanted, screen = ranked wide net to the agents). Check toolkits, bands
   and agent prompts against it.

@@ -49,6 +49,9 @@ class Rules:
     var_confidence: float  # the risk report's VaR / CVaR confidence (ADR 0036)
     var_horizon_days: int  # the risk report's headline horizon, sessions
     max_var: float  # the headline VaR as a fraction of equity above which the PM is called
+    new_entries: (
+        bool  # False: no new positions or adds (planner drafts none, no buys sent; ADR 0040)
+    )
 
     @property
     def warning(self) -> str | None:
@@ -87,6 +90,7 @@ _TYPES = {
     "var_confidence": float,
     "var_horizon_days": int,
     "max_var": float,
+    "new_entries": bool,
 }
 EVENT_POLICIES = ("flag", "hold", "trim", "exit")
 _FRACTIONS = (

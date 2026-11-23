@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from fakes import FakeBroker
 from solaraalpha.data import trading212 as t212
 from solaraalpha.portfolio import book, execution
 from solaraalpha.portfolio.execution import Refused
+from solaraalpha.portfolio.rules import load_rules
 from solaraalpha.store import Conn
 
 OPEN_AT = pd.Timestamp("2026-10-27T10:00:00Z")  # a Tuesday, 10:00 London (GMT)
@@ -181,6 +183,10 @@ def test_guards_refuse(db_backend: Path | None, monkeypatch: pytest.MonkeyPatch)
     book.approve_position(conn, pid3)
     with pytest.raises(Refused, match="is free"):
         execution.check(conn, huge, 800.0, NIGHT)
+    # the wind-down switch stops every buy (ADR 0040)
+    off = replace(load_rules(), new_entries=False)
+    with pytest.raises(Refused, match="new entries are off"):
+        execution.check(conn, oid, 1450.0, NIGHT, rules=off)
     # the circuit breaker stops new buys
     with monkeypatch.context() as m:
         m.setattr(execution, "breaker_tripped", lambda *a: -0.2)
