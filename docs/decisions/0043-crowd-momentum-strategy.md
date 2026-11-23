@@ -52,15 +52,23 @@ stocks that have a story people are excited about, managed every day. The owner 
   trade (a round trip each fortnight would cost about 8% a year).
 - **Daily management** as in ADR 0040: every position reviewed every weekday.
 
-**Open (owner).**
+**Answered (owner, 2026-11-23).**
 
-1. Does the PM keep its 1–3% band by conviction around the 2% target (ADR 0027), or is it a
-   flat 2%?
-2. The partial's default size (a third, a half?) when research gives none.
-3. Heat and sector caps for 10 positions in one correlated index (today 10% heat, 40% sector:
-   10 × 2% is 20% heat, and the Nasdaq 100 is mostly tech).
-4. ADR 0041's questions 2 (the agents' role), 4 (benchmark currency), 5 (the EDGAR contact) and
-   6 (fresh book) are still open.
+- **Risk band:** the PM keeps its 1–3% band by conviction around the 2% target (ADR 0027).
+- **Partial:** half the position by default, when research gives no other size.
+- **Caps raised** for 10 positions in one correlated index. Proposed for the US config, to confirm
+  when it is written: `max_heat` 10% → 20% (10 × 2%), `max_sector_pct` 40% → 60% (the Nasdaq 100
+  is mostly technology); `max_position_pct` stays 25%.
+- **Benchmark in GBP:** the Nasdaq 100 (`^NDX`) converted to GBP, so the book is judged in the
+  currency it is owned in.
+- **EDGAR contact:** supplied by the owner. It is kept out of the repo (the repo is public): it
+  goes in `.env` and a GitHub secret, read through `settings`, never committed.
+- **Fresh book, no AIM data whatsoever:** the US desk starts on a new, empty results DB. Nothing
+  is migrated from the AIM book, runs, cards or chat; the AIM-only code, config and research
+  data are removed (ADR 0041's list), not kept beside the US pipeline.
+
+**Open (owner).** The agents' role (ADR 0041 question 2) needs a fuller discussion before the
+agent chain is redesigned.
 
 **Consequences.** Fixed rules in `config/portfolio.toml` (`max_positions`, `target_moves`,
 `horizon_weeks`, `currency`, heat and sector caps) change with the US config, not now: the file

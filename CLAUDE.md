@@ -28,7 +28,8 @@ Current state:
 - **What we are looking for is defined in docs/decisions/0043** (the owner's paragraph, 2026-11-23:
   crowd momentum in the Nasdaq 100 — a live narrative confirmed by strong technicals, held about
   3–15 sessions, managed daily, no fixed target (levels / ATR / R per trade), a partial then let
-  the rest run, up to 10 positions at ~2% risk, USD cash in the ISA). Not built yet; ADR 0022 (the
+  the rest run (half by default), up to 10 positions at ~2% risk (PM band 1–3%), caps raised, USD
+  cash in the ISA, GBP benchmark, a fresh book with no AIM data; the agents' role still open). Not built yet; ADR 0022 (the
   AIM paragraph) is superseded. Check new toolkits, bands and agent prompts against 0043.
 - **Trading frequency is moving from weekly to daily** (docs/decisions/0040, owner 2026-11-23):
   decisions, the scan and entries, the models and the risk report all go daily, and the horizon
