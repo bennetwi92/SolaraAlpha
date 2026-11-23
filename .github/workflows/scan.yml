@@ -1,9 +1,9 @@
 # Weekly pipeline: every stock in config/watchlist.toml and config/research_universe.toml
 # (ADR 0038, ~578 stocks) through the stages in
 # solaraalpha.pipeline (scripts/scan.py), one stage at a time. Results go to the job summary
-# and the hosted results DB (Turso, from the SOLARA_TURSO_* secrets; without them, the local
-# data/solara.db), then the weekly pack for the saved run (scripts/weekly_pack.py) is appended
-# to the summary. data/ (event packs, packs/) is kept as an artifact (docs/decisions/0007,
+# and the results DB (data/solara.db, pulled from and pushed back to the db branch, ADR 0042),
+# then the weekly pack for the saved run (scripts/weekly_pack.py) is appended
+# to the summary. data/ (event packs, packs/; never the DB) is kept as an artifact (docs/decisions/0007,
 # 0010, 0013, 0014, 0015).
 name: Weekly pipeline
 
@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write  # db.py push to the db branch (ADR 0042)
   issues: write
 
 env:
@@ -43,6 +43,11 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - name: Pipeline
         env:
           SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
@@ -50,17 +55,12 @@ jobs:
           SOLARA_T212_KEY: ${{ secrets.SOLARA_T212_KEY }}
           SOLARA_T212_SECRET: ${{ secrets.SOLARA_T212_SECRET }}
           SOLARA_T212_ENV: ${{ vars.SOLARA_T212_ENV || 'demo' }}
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
           TICKERS: ${{ inputs.tickers }}
         run: >
           uv run --no-sync python scripts/scan.py $TICKERS
           --save --report "$GITHUB_STEP_SUMMARY" --run-id-file run_id.txt
       - name: Weekly pack
         if: always()
-        env:
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
         run: |
           if [ -s run_id.txt ]; then
             uv run --no-sync python scripts/weekly_pack.py --run "$(cat run_id.txt)" --report "$GITHUB_STEP_SUMMARY"
@@ -72,8 +72,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
           HAS_AGENTS: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
           SCAN_OK: ${{ job.status == 'success' }}
         run: |
@@ -92,8 +90,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
         run: |
           set +e
           uv run --no-sync python scripts/notify.py --mode errors --part pipeline --run "$(cat run_id.txt)" --channel github-errors
@@ -102,9 +98,6 @@ jobs:
           if [ "$rc" = "3" ]; then echo "no desk errors" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
       - name: Dashboard
         if: always()
-        env:
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
         run: uv run --no-sync python scripts/dashboard.py --out data/processed/dashboard.html || echo "dashboard failed" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
@@ -117,6 +110,25 @@ jobs:
         if: always()
         with:
           name: scan-${{ github.run_id }}
-          path: data/
+          path: |
+            data/
+            !data/solara.db*
+          if-no-files-found: ignore
+          retention-days: 90
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
+      - name: Back up the encrypted DB as pushed (ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        run: |
+          mkdir -p db-backup
+          git fetch --quiet --depth 1 origin db && git cat-file blob FETCH_HEAD:solara.db.gpg > db-backup/solara.db.gpg || echo "no db branch to back up" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.dbpull.outcome == 'success'
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: db-backup/solara.db.gpg
           if-no-files-found: ignore
           retention-days: 90

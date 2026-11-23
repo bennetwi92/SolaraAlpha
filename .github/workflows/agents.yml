@@ -12,7 +12,7 @@
 #
 # Skipped when the triggering workflow did not succeed (a crashed scan leaves a partial run).
 # INERT UNTIL THE OWNER ADDS A CLAUDE SECRET: the gate job skips everything unless
-# CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY is set, and SOLARA_TURSO_URL / SOLARA_TURSO_TOKEN
+# CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY is set, and SOLARA_DB_KEY
 # are set (the agents read the run from the hosted DB and write back to it). No spend happens
 # otherwise. Cost guardrails: a ticker cap (config/portfolio.toml max_agent_tickers, taken in
 # rank order), --max-turns per invocation and a job timeout. A failed skill invocation is
@@ -41,7 +41,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write  # db.py push to the db branch (ADR 0042)
   issues: write
 
 env:
@@ -82,14 +82,13 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_run" ] && [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
             echo "agents skipped: ${{ github.event.workflow_run.name }} did not succeed (${{ github.event.workflow_run.conclusion }})" >> "$GITHUB_STEP_SUMMARY"
             echo "go=false" >> "$GITHUB_OUTPUT"
-          elif { [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -z "$ANTHROPIC_API_KEY" ]; } || [ -z "$SOLARA_TURSO_URL" ] || [ -z "$SOLARA_TURSO_TOKEN" ]; then
-            echo "agents skipped: secrets not configured (need CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY, and SOLARA_TURSO_URL / SOLARA_TURSO_TOKEN)" >> "$GITHUB_STEP_SUMMARY"
+          elif { [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -z "$ANTHROPIC_API_KEY" ]; } || [ -z "$SOLARA_DB_KEY" ]; then
+            echo "agents skipped: secrets not configured (need CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY, and SOLARA_DB_KEY)" >> "$GITHUB_STEP_SUMMARY"
             echo "go=false" >> "$GITHUB_OUTPUT"
           else
             echo "go=true" >> "$GITHUB_OUTPUT"
@@ -111,11 +110,14 @@ jobs:
           enable-cache: true
       - run: uv sync --no-default-groups
         if: steps.gate.outputs.go == 'true'
-      - id: run
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
         if: steps.gate.outputs.go == 'true'
         env:
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
+      - id: run
+        if: steps.gate.outputs.go == 'true'
         run: |
           if [ -n "${{ inputs.run_id }}" ]; then
             run="${{ inputs.run_id }}"
@@ -140,9 +142,6 @@ jobs:
           echo "agents: mode ${{ steps.mode.outputs.mode }}, run $run" >> "$GITHUB_STEP_SUMMARY"
       - id: queue
         if: steps.gate.outputs.go == 'true' && steps.run.outputs.skip != 'true'
-        env:
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
         run: |
           run="${{ steps.run.outputs.run }}"
           if [ "${{ steps.mode.outputs.mode }}" = "daily" ]; then
@@ -156,6 +155,11 @@ jobs:
             echo "risk=[]" >> "$GITHUB_OUTPUT"
             echo "postmortem=[]" >> "$GITHUB_OUTPUT"
           fi
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   validate:
     needs: gate
@@ -164,17 +168,21 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
+      max-parallel: 1  # one DB writer at a time (ADR 0042)
       matrix:
         ticker: ${{ fromJson(needs.gate.outputs.validate) }}
     env:
-      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - id: agent
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
@@ -204,6 +212,11 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   macro-groups:
     needs: [gate, validate]
@@ -213,16 +226,24 @@ jobs:
     outputs:
       groups: ${{ steps.queue.outputs.groups }}
     env:
-      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - id: queue
         run: echo "groups=$(uv run --no-sync python scripts/record.py queue --run "${{ needs.gate.outputs.run }}" --stage macro | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   macro:
     needs: [gate, macro-groups]
@@ -231,17 +252,21 @@ jobs:
     timeout-minutes: 60
     strategy:
       fail-fast: false
+      max-parallel: 1  # one DB writer at a time (ADR 0042)
       matrix:
         group: ${{ fromJson(needs.macro-groups.outputs.groups) }}
     env:
-      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - id: agent
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
@@ -271,6 +296,11 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   research:
     needs: [gate, validate, macro]
@@ -280,17 +310,25 @@ jobs:
     outputs:
       tickers: ${{ steps.queue.outputs.tickers }}
     env:
-      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage validate >> "$GITHUB_STEP_SUMMARY" || true
       - id: queue
         run: echo "tickers=$(uv run --no-sync python scripts/record.py queue --run "${{ needs.gate.outputs.run }}" --stage research | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   research-agents:
     needs: [gate, research]
@@ -299,17 +337,21 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
+      max-parallel: 1  # one DB writer at a time (ADR 0042)
       matrix:
         ticker: ${{ fromJson(needs.research.outputs.tickers) }}
     env:
-      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - id: agent
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
@@ -339,6 +381,11 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   pm:
     # the portfolio manager: one invocation over the whole book (ADR 0027); its allocation and
@@ -348,8 +395,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -358,6 +403,11 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - id: agent
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
@@ -387,6 +437,11 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   retro-areas:
     needs: [gate, pm]
@@ -396,16 +451,24 @@ jobs:
     outputs:
       areas: ${{ steps.queue.outputs.areas }}
     env:
-      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - id: queue
         run: echo "areas=$(uv run --no-sync python scripts/record.py queue --run "${{ needs.gate.outputs.run }}" --stage retro | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   retro:
     needs: [gate, retro-areas]
@@ -414,17 +477,21 @@ jobs:
     timeout-minutes: 45
     strategy:
       fail-fast: false
+      max-parallel: 1  # one DB writer at a time (ADR 0042)
       matrix:
         area: ${{ fromJson(needs.retro-areas.outputs.areas) }}
     env:
-      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - id: agent
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
@@ -454,6 +521,11 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   plan:
     needs: [gate, research, research-agents, pm, retro]
@@ -461,14 +533,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage research >> "$GITHUB_STEP_SUMMARY" || true
       - run: uv run --no-sync python scripts/plan.py --run "${{ needs.gate.outputs.run }}"
       - run: uv run --no-sync python scripts/weekly_pack.py --run "${{ needs.gate.outputs.run }}" --report "$GITHUB_STEP_SUMMARY"
@@ -487,8 +562,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
         run: |
           set +e
           uv run --no-sync python scripts/notify.py --mode errors --part agents --run "${{ needs.gate.outputs.run }}" --channel github-errors
@@ -504,9 +577,16 @@ jobs:
         if: always()
         with:
           name: agents-${{ github.run_id }}
-          path: data/
+          path: |
+            data/
+            !data/solara.db*
           if-no-files-found: ignore
           retention-days: 90
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   monitor:
     needs: gate
@@ -515,17 +595,21 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
+      max-parallel: 1  # one DB writer at a time (ADR 0042)
       matrix:
         position: ${{ fromJson(needs.gate.outputs.monitor) }}
     env:
-      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - id: agent
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
@@ -547,25 +631,34 @@ jobs:
           ticker=$(uv run --no-sync python -c "from solaraalpha.portfolio import book; c = book.connect(); print(book.position_state(c, ${{ matrix.position }}).ticker)")
           uv run --no-sync python scripts/record.py error "$ticker" --run "${{ needs.gate.outputs.run }}" --stage monitor --if-missing \
             --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }}, position ${{ matrix.position }})" || true
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   postmortem:
-    needs: gate
-    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'daily' && needs.gate.outputs.postmortem != '[]'
+    needs: [gate, monitor]  # after the monitors, not beside them: one DB writer (ADR 0042)
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'daily' && needs.gate.outputs.postmortem != '[]' && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
+      max-parallel: 1  # one DB writer at a time (ADR 0042)
       matrix:
         position: ${{ fromJson(needs.gate.outputs.postmortem) }}
     env:
-      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - id: agent
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
@@ -588,23 +681,31 @@ jobs:
           uv run --no-sync python scripts/record.py error "$ticker" --run "${{ needs.gate.outputs.run }}" --stage postmortem --if-missing \
             --position "${{ matrix.position }}" \
             --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }}, position ${{ matrix.position }})" || true
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   risk:
     # the risk manager's report (ADR 0036): after the monitors, on the code's risk card, every
     # daily run (record.py queue --stage risk, ADR 0040); posts the report to the desk thread (the owner's Telegram) and may call the PM
-    needs: [gate, monitor]
+    needs: [gate, monitor, postmortem]
     if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'daily' && needs.gate.outputs.risk != '[]' && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - id: card
         run: |
           set +e
@@ -642,6 +743,11 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   pm-daily:
     # the PM's daily review, only when the risk card breaches a limit or the risk manager called
@@ -651,14 +757,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - id: called
         run: |
           set +e
@@ -696,6 +805,11 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   monitor-outcome:
     needs: [gate, monitor, postmortem, risk, pm-daily]
@@ -703,14 +817,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-      SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage monitor | tee -a "$GITHUB_STEP_SUMMARY" || true
       - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage postmortem | tee -a "$GITHUB_STEP_SUMMARY" || true
       - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage risk | tee -a "$GITHUB_STEP_SUMMARY" || true
@@ -729,8 +846,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
         run: |
           set +e
           uv run --no-sync python scripts/notify.py --mode errors --part agents --run "${{ needs.gate.outputs.run }}" --channel github-errors
@@ -741,3 +856,8 @@ jobs:
         run: |
           uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage monitor
           uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage postmortem
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"

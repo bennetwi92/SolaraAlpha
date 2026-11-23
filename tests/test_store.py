@@ -41,7 +41,7 @@ CARD = Card(
 
 @pytest.fixture
 def db(db_backend: Path | None) -> Path | None:
-    """Runs every test on both backends (a tmp_path file and the fake Turso)."""
+    """Every test on a tmp_path DB file."""
     return db_backend
 
 
@@ -347,7 +347,7 @@ def test_a_snapshot_compares_with_the_latest_version_only(
 
 
 def test_latest_card_lookups_use_an_index(db: Path | None, tmp_path: Path) -> None:
-    """Turso bills every row scanned: "the latest card of model M (for ticker T)" must search the
+    """Turso billed every row scanned: "the latest card of model M (for ticker T)" must search the
     ``results_model_ticker`` index, not scan the table (once per row when correlated)."""
     conn = store.connect(db)
     names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}

@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write  # db.py push to the db branch (ADR 0042)
 
 jobs:
   run:
@@ -34,10 +34,13 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - name: Run
         env:
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
           TICKER: ${{ inputs.ticker }}
           TOOLKIT: ${{ inputs.toolkit }}
           PARAMS: ${{ inputs.params }}
@@ -52,6 +55,13 @@ jobs:
         if: always()
         with:
           name: stock-${{ github.run_id }}
-          path: data/
+          path: |
+            data/
+            !data/solara.db*
           if-no-files-found: ignore
           retention-days: 90
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"

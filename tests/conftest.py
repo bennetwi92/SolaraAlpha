@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import SecretStr
 
-from fakes import FakeTurso, start_fake_turso
+from solaraalpha.config import settings
 
 
 @pytest.fixture(autouse=True)
@@ -42,18 +42,14 @@ def tmp_cache(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def fake_turso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FakeTurso:
-    """A fake Turso endpoint that ``store.connect()`` (no path) talks to."""
-    return start_fake_turso(monkeypatch, tmp_path)
+def local_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Point ``settings`` at a ``tmp_path`` DB, so ``store.connect()`` with no path uses it."""
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    monkeypatch.setitem(settings.__dict__, "db_path", tmp_path / "solara.db")
+    return tmp_path / "solara.db"
 
 
-@pytest.fixture(params=["local", "turso"])
-def db_backend(
-    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> Path | None:
-    """The ``path`` to pass to store functions, once per backend: a ``tmp_path`` SQLite file, or
-    ``None`` with ``settings`` pointed at a :class:`FakeTurso`. Every DB table is tested over both."""
-    if request.param == "local":
-        return tmp_path / "solara.db"
-    start_fake_turso(monkeypatch, tmp_path)
-    return None
+@pytest.fixture
+def db_backend(tmp_path: Path) -> Path | None:
+    """The ``path`` to pass to store functions: a ``tmp_path`` SQLite file (ADR 0042)."""
+    return tmp_path / "solara.db"
