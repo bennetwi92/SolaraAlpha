@@ -23,9 +23,10 @@
 name: Agents
 
 on:
-  workflow_run:
-    workflows: ["Weekly pipeline", "Daily check"]
-    types: [completed]
+  # Paused (owner, 2026-11-23, #321): automatic triggers removed until the owner restarts the desk.
+  # workflow_run:
+  #   workflows: ["Weekly pipeline", "Daily check"]
+  #   types: [completed]
   workflow_dispatch:
     inputs:
       mode:

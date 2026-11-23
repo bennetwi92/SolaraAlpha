@@ -9,8 +9,9 @@
 name: Daily check
 
 on:
-  schedule:
-    - cron: "47 17 * * 1-5"  # 17:47 UTC: after the 16:35 London close in GMT and BST
+  # Paused (owner, 2026-11-23, #321): automatic triggers removed until the owner restarts the desk.
+  # schedule:
+  #   - cron: "47 17 * * 1-5"  # 17:47 UTC: after the 16:35 London close in GMT and BST
   workflow_dispatch:
 
 concurrency:
