@@ -1,4 +1,4 @@
-# 0042 — What Solara Alpha is looking for: crowd momentum in the Nasdaq 100
+# 0043 — What Solara Alpha is looking for: crowd momentum in the Nasdaq 100
 
 **Status:** accepted (owner, 2026-11-23). Replaces ADR 0022 as the reference every toolkit, band
 and agent is checked against. Answers ADR 0041's open question 1 (the strategy) and question 3
