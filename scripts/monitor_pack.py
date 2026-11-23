@@ -2,8 +2,8 @@
 
 uv run python scripts/monitor_pack.py --run DAILY_RUN_ID [--position ID] [--db PATH] [--no-text]
 
-For each position the daily run puts up for review (on Friday every open position and pending
-entry, midweek only those with an event trigger, ADR 0039; or the one given with --position), writes
+For each position the daily run puts up for review (every open position and pending
+entry, ADR 0040; or the one given with --position), writes
 data/processed/monitor/<position_id>/<run_id>/pack.json: status (open / pending), state, orders,
 plan and the pending entry order; the entry conditions (then); fresh technical / levels /
 relative-strength cards (now) and a then -> now diff; the thesis conditions with machine ones

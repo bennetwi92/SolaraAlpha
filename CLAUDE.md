@@ -20,10 +20,13 @@ Current state:
 - **What we are looking for is defined in docs/decisions/0022** (the owner's paragraph: catalyst-led
   AIM trading, volatility wanted, screen = ranked wide net to the agents). Check toolkits, bands
   and agent prompts against it.
-- **Strategy: long trades seeking bursty profits (+15–30%) over ~1-10 weeks** (held longer while the stock
-  keeps climbing). Models are judged by usefulness over that horizon.
-- **Trading frequency is weekly** unless the owner says otherwise. Weekly bars end Friday
-  (`to_weekly`), and only completed weeks are used.
+- **Trading frequency is moving from weekly to daily** (docs/decisions/0040, owner 2026-11-23):
+  decisions, the scan and entries, the models and the risk report all go daily, and the horizon
+  shortens to days (swing trades; target size and holding range still open). Built in slices:
+  slice 1 (decision cadence) is done; until slice 2 the models are still on weekly bars ending
+  Friday (`to_weekly`, completed weeks only) and the scan still runs on Sunday.
+- **Strategy (until ADR 0040's slice 4): long trades seeking bursty profits (+15–30%)**, held
+  while the stock keeps climbing. Models are judged by usefulness over the trade's horizon.
 - Working on **single-stock analysis**; first example is Jet2 (`JET2.L`, AIM-listed). The
   pipeline universe is **every AIM stock Trading212 offers** (ADR 0038, 557 on 2026-11-01: `pipeline.universe()`
   = the watchlist, then the research universe's other tickers). The watchlist is the **FTSE AIM
@@ -95,14 +98,14 @@ Current state:
   touched, target hit, gap > 2 ATR), coil breaks and pullbacks, entry breaks, machine thesis
   conditions re-evaluated on fresh cards (`thesis_hit`), dividends and splits not yet booked, a
   scheduled event two sessions out, orders past their validity (a saved run expires the buys first, ADR 0034), new filings and headlines since
-  the last daily run, saved to the `triggers` table. **Decisions are weekly** (docs/decisions/0039):
-  on **Friday** every open position and pending entry gets a `daily_review` (the weekly review,
-  ADR 0024) and the **monitor agent** (`/monitor`, docs/decisions/0018) re-evaluates each one
-  (queue capped by `max_agent_tickers`, event-triggered first) and sets the stop by judgement,
-  once a week (the levels / ATR / chandelier stops are context). **Midweek** it runs only on
-  news (a material filing, a gap > 2 ATR, a `thesis_hit`) and may only `hold` / `take_partial`
-  / `exit` / `cancel` (`monitoring.MIDWEEK_ACTIONS`; the book refuses the rest). Its revision is
-  **applied as it is recorded** (weekly: open: tighten_stop / take_partial / exit /
+  the last daily run, saved to the `triggers` table. **Decisions are daily** (docs/decisions/0040):
+  every run gives every open position and pending entry a `daily_review` (ADR 0024) and the
+  **monitor agent** (`/monitor`, docs/decisions/0018) re-evaluates each one (queue capped by
+  `max_agent_tickers`, event-triggered first) and sets the stop by judgement, only when
+  invalidation has moved (the levels / ATR / chandelier stops are context). A `--position`
+  review on a run that did not put the position up may only `hold` / `take_partial` / `exit` /
+  `cancel` (`monitoring.UNREVIEWED_ACTIONS`; the book refuses the rest). Its revision is
+  **applied as it is recorded** (open: tighten_stop / take_partial / exit /
   revise_target / add; pending: amend_entry / cancel; `hold` changes nothing; adds are the
   agent's call, refused by the book over the portfolio limits, ADR 0025); the book refuses an
   impossible one (recorded as declined). The owner is told in the inbox
@@ -116,8 +119,8 @@ Current state:
   split (market / stock-specific / trading / income), month to date, since inception; and where
   the VaR change came from (trades / price drift / new data). **Limit `max_var` = 5%** of equity
   (owner, 2026-10-27); a breach (or heat over `max_heat`, drawdown past the breaker) calls the
-  PM. The card is daily; the `/risk` agent runs on Friday's run (after the monitors) or on a
-  day the card breaches a limit (`record.py queue --stage risk`, ADR 0039), records a `risk`
+  PM. The card is daily; the `/risk` agent runs on every daily run after the monitors
+  (`record.py queue --stage risk`, ADR 0040), records a `risk`
   verdict (ACT = call the PM) and posts the risk and P&L report to the desk thread (the owner's
   Telegram: the owner never reads the inbox); `/pm-daily` runs only when called (`record.py called`) and records `pm_daily`
   `actions` that only cut risk (tighten / partial / exit / cancel), applied as recorded.
@@ -266,11 +269,11 @@ Current state:
 | Validator pack (DB only, independent of other agents) | `uv run python scripts/validate_pack.py JET2.L --run N` / `--run N --all` |
 | Validator (agent) | `/validate JET2.L --run N` or `/validate --run N` in Claude Code |
 | Monitor pack for a daily run's open positions and pending entries (then vs now, thesis, filing text, research levels, systematic stops) | `uv run python scripts/monitor_pack.py --run N [--position ID]` |
-| Monitor (agent): Friday's weekly review (open: hold / tighten / partial / exit / revise target / add; pending: hold / amend_entry / cancel); midweek on news only, hold / partial / exit / cancel — applied as recorded (ADR 0024, 0039) | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions --status all` / `undo REV_ID --reason` (pipeline proposals: `accept REV_ID` / `decline REV_ID --reason`) |
+| Monitor (agent): the daily review of every position (open: hold / tighten / partial / exit / revise target / add; pending: hold / amend_entry / cancel) — applied as recorded (ADR 0024, 0040) | `/monitor --run N` or `/monitor --position ID` in Claude Code; then `book.py revisions --status all` / `undo REV_ID --reason` (pipeline proposals: `accept REV_ID` / `decline REV_ID --reason`) |
 | An agent's own track record: decisions, what happened next (hindsight), where it was overruled, reliability and cost (ADR 0035) | `uv run python scripts/track_record.py --agent senior-quant\|fundamental-strategist\|portfolio-manager\|execution-trader\|STAGE\|all [--since D] [--out FILE]` |
 | Retro (agent): a desk area reviews its own track record and the thread's `observation:` posts, proposes changes (no cap, changes nothing); due weekly for the loop's first month, monthly to month 3, quarterly after | `/retro AREA --run N` in Claude Code (`track_record.py --agent AREA --retro` is its pack; `record.py queue --run N --stage retro` lists the areas due) |
 | Risk manager's pack for a daily run (the `book_risk` card: VaR / CVaR, limits, flags, P&L and VaR-change attribution, positions; trend, today's changes, regime, events, its previous report; exit 3 = no card) | `uv run python scripts/risk_pack.py --run N [--out FILE]` |
-| Risk manager (agent): risk and P&L report to the PM and the owner's Telegram, Fridays and breach days; ACT calls the PM; never trades (ADR 0036, 0039) | `/risk --run N` in Claude Code → `record.py verdict risk.json --actor agent:risk` |
+| Risk manager (agent): risk and P&L report to the PM and the owner's Telegram, every weekday; ACT calls the PM; never trades (ADR 0036, 0040) | `/risk --run N` in Claude Code → `record.py verdict risk.json --actor agent:risk` |
 | PM daily review (agent), only when called by a breach or the risk manager: risk-cutting `actions` applied as recorded | `/pm-daily --run N` in Claude Code (`record.py called --run N`: exit 3 = not called) |
 | Validator disagreement log (toolkits not warranted, concerns, rate per run) | `uv run python scripts/validator_stats.py [--since D]` |
 | Post-mortem pack for a closed position (record + weekly bars, hindsight labelled) | `uv run python scripts/postmortem_pack.py POSITION_ID` / `--since ISO` |
@@ -477,12 +480,12 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
                         (stage macro, pseudo-ticker _SECTOR:<name>); research reads it — #140
 .claude/skills/pm/        agent skill: the portfolio manager: allocation (1-3% risk by conviction), rotations,
                         the PM memo; the buck stops here — 0027
-.claude/skills/monitor/   agent skill: Friday's weekly review of every position; midweek news only, risk-cutting
-                        only (0039); structural change or noise; one action, applied as recorded
+.claude/skills/monitor/   agent skill: the daily review of every position (0040); structural change or noise;
+                        one action, applied as recorded
 .claude/skills/postmortem/  agent skill: post-mortem of a closed trade from its pack; setup / execution scores
 .claude/skills/retro/     agent skill: a desk area's retro: its track record, the thread's observations, its
                         earlier proposals → plain-English proposals (`_DESK:<area>`); proposes only — 0035
-.claude/skills/risk/      agent skill: the risk manager's report (Fridays, breach days): VaR / CVaR, P&L, what changed and why,
+.claude/skills/risk/      agent skill: the risk manager's report (every weekday): VaR / CVaR, P&L, what changed and why,
                         a risk verdict (ACT calls the PM), the owner's Telegram report; never trades — 0036
 .claude/skills/pm-daily/  agent skill: the PM's daily review when the risk manager calls it: risk-cutting
                         actions only (tighten / partial / exit / cancel), applied as recorded — 0036

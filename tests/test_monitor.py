@@ -158,13 +158,13 @@ def test_pack_then_now_diff_and_thesis(
     monitor_pack.main(["--run", str(run), *(["--db", str(db)] if db else [])])
     out = capsys.readouterr().out
     assert f"position {pid} JET2.L (open): 3 trigger(s)" in out and "written to" in out
-    assert "WEEKLY REVIEW" in out
+    assert "DAILY REVIEW" in out
     from solaraalpha.config import settings
 
     pack = json.loads(
         (settings.processed_dir / "monitor" / str(pid) / str(run) / "pack.json").read_text()
     )
-    assert pack["review"] == "weekly"
+    assert pack["review"] == "daily"
     assert pack["state"]["shares"] == 100 and pack["state"]["stop"] == 1400.0
     assert pack["plan"]["target"] == 1800.0 and pack["plan"]["qty"] == 100
     assert pack["entry_conditions"]["technical"]["trend"] == 0.9
@@ -542,19 +542,19 @@ def test_pending_entry_review_amend_cancel_and_undo(
     conn.close()
 
 
-def test_midweek_revisions_only_cut_risk(
+def test_unreviewed_revisions_only_cut_risk(
     world: tuple[Path | None, int, int], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     db, pid, _ = world
     run = store.start_run("daily", {}, path=db)
-    store.save_triggers(  # a filing midweek: no daily_review, so not the weekly review
+    store.save_triggers(  # a filing but no daily_review for the position: not a full review
         run, [Trigger("JET2.L", "filing", pid, None, {"headline": "x"}, "2026-10-27")], path=db
     )
     conn = store.connect(db)
-    assert not monitoring.weekly_review(conn, run, pid)
+    assert not monitoring.full_review(conn, run, pid)
     pack = monitoring.build_pack(conn, pid, run, text=False)
     conn.close()
-    assert pack["review"] == "midweek" and "MIDWEEK REVIEW" in pack["review_note"]
+    assert pack["review"] == "unreviewed" and "NOT PUT UP" in pack["review_note"]
     for checks in (
         {"action": "tighten_stop", "stop": "1450"},
         {"action": "revise_target", "target": "1900"},
@@ -562,7 +562,7 @@ def test_midweek_revisions_only_cut_risk(
         with pytest.raises(SystemExit) as e:
             _record(tmp_path, db, pid, run, checks, "mw")
         assert e.value.code == 2
-        assert "midweek review" in capsys.readouterr().out
+        assert "did not put position" in capsys.readouterr().out
     assert "monitor" not in store.load_cards(run, "JET2.L", path=db)  # nothing recorded
     _record(tmp_path, db, pid, run, {"action": "take_partial", "qty": "50"}, "tp")
     assert "applied to the book" in capsys.readouterr().out

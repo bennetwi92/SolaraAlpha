@@ -1,9 +1,8 @@
 """The monitor's pack: an open position or a pending entry, then versus now, for the monitor.
 
-On Friday (the weekly review, ADR 0039) each open position and each pending entry (a draft /
-approved position with an unfilled entry order) has a ``daily_review`` in the daily run; midweek
-only those with an event trigger (a filing, a gap, a thesis hit) are reviewed, and the agent may
-only cut risk (``MIDWEEK_ACTIONS``). Each gets a pack: the position's state (``status`` ``open`` / ``pending``), orders, plan and the pending
+Every daily run gives each open position and each pending entry (a draft / approved position
+with an unfilled entry order) a ``daily_review`` (ADR 0040), and the agent has its full action
+set; on a run without one for the position it may only cut risk (``UNREVIEWED_ACTIONS``). Each gets a pack: the position's state (``status`` ``open`` / ``pending``), orders, plan and the pending
 entry order, the **entry conditions** frozen when it was drafted, the cards **now** (technical
 with the position's entry date and price when open, levels, relative strength, liquidity, re-run on fresh
 data), a per-field then → now diff, the thesis conditions (machine ones evaluated now), the
@@ -41,9 +40,9 @@ log = get_logger(__name__)
 
 AGENT_TRIGGERS = ("gap", "filing", "thesis_hit", "daily_review")
 EVENT_TRIGGERS = ("gap", "filing", "thesis_hit")  # reviewed first when the queue is capped
-# what the monitor may record outside the position's weekly review (ADR 0039): news can end a
-# thesis midweek, but the stop, the target, adds and entry amendments wait for Friday
-MIDWEEK_ACTIONS = frozenset({"hold", "take_partial", "exit", "cancel"})
+# what the monitor may record on a run that did not put the position up for review (ADR 0040):
+# risk-cutting only; the stop, the target, adds and entry amendments wait for its daily review
+UNREVIEWED_ACTIONS = frozenset({"hold", "take_partial", "exit", "cancel"})
 DIFF_FIELDS = (
     ("technical", "trend"),
     ("technical", "momentum"),
@@ -57,8 +56,8 @@ DIFF_FIELDS = (
 NOW_TOOLKITS = ("technical", "levels", "relative_strength", "liquidity")
 
 
-def weekly_review(conn: Conn, run_id: int, position_id: int | None = None) -> bool:
-    """Whether daily run ``run_id`` is the weekly review (ADR 0039; of ``position_id`` when
+def full_review(conn: Conn, run_id: int, position_id: int | None = None) -> bool:
+    """Whether daily run ``run_id`` is a full review (ADR 0040; of ``position_id`` when
     given): it carries a ``daily_review`` trigger (for that position)."""
     sql = "SELECT 1 FROM triggers WHERE run_id = ? AND kind = 'daily_review'"
     params: list[Any] = [run_id]
@@ -68,24 +67,20 @@ def weekly_review(conn: Conn, run_id: int, position_id: int | None = None) -> bo
     return conn.execute(sql + " LIMIT 1", params).fetchone() is not None
 
 
-def review_note(weekly: bool) -> str:
-    """What the monitor pack says about the kind of review this is (ADR 0039)."""
-    if weekly:
-        return (
-            "WEEKLY REVIEW (Friday, after the week's last close): every action is open, and this"
-            " is the one review of the week that sets the stop."
-        )
+def review_note(full: bool) -> str:
+    """What the monitor pack says about the kind of review this is (ADR 0040)."""
+    if full:
+        return "DAILY REVIEW (after today's close): every action is open, the stop included."
     return (
-        "MIDWEEK REVIEW: only because news fired (a filing, a gap, a kill criterion hit). Only"
-        " cut risk on news that changes the thesis: hold, take_partial, exit; a pending entry"
-        " hold or cancel. No stop, target, add or entry change midweek: Friday's review does"
-        " those. A price move on its own is not news: hold."
+        "NOT PUT UP FOR REVIEW BY THIS RUN: only cut risk on news that changes the thesis: hold,"
+        " take_partial, exit; a pending entry hold or cancel. No stop, target, add or entry"
+        " change: the position's daily review does those."
     )
 
 
 def positions_to_review(conn: Conn, run_id: int) -> list[int]:
-    """Positions with an agent trigger in daily run ``run_id`` (on Friday every open position
-    and pending entry has its ``daily_review``, ADR 0039), most urgent first: an event trigger
+    """Positions with an agent trigger in daily run ``run_id`` (every open position
+    and pending entry has its ``daily_review``, ADR 0040), most urgent first: an event trigger
     (gap, filing, thesis hit), then open positions, then pending entries; by id within each."""
     marks = ", ".join("?" * len(AGENT_TRIGGERS))
     df = query(
@@ -156,7 +151,7 @@ def now_cards(
 
 def latest_bars(x: Inputs, n: int = 10) -> dict[str, Any]:
     """The last ``n`` daily sessions as fetched and cleaned (the weekly cards end at the last
-    completed Friday, so midweek they are days old): date, OHLC, volume, and the latest close
+    completed Friday, so midweek they are days old until the daily-bar models, ADR 0040): date, OHLC, volume, and the latest close
     against the last weekly close. The daily job runs after the close, so the last bar is the
     day's."""
     daily = clean_prices(x.daily)
@@ -307,14 +302,14 @@ def build_pack(
                 row["text"] = f"unavailable: {e}"
         trig_rows.append(row)
     research = latest_research(conn, state.ticker)
-    weekly = weekly_review(conn, run_id, position_id)
+    full = full_review(conn, run_id, position_id)
     status = "pending" if state.status in ("draft", "approved") else str(state.status)
     return {
         "position_id": position_id,
         "ticker": state.ticker,
         "daily_run_id": run_id,
-        "review": "weekly" if weekly else "midweek",
-        "review_note": review_note(weekly),
+        "review": "daily" if full else "unreviewed",
+        "review_note": review_note(full),
         "status": status,
         "pending_entry": book.pending_entry(conn, position_id) if status == "pending" else None,
         "state": asdict(state),

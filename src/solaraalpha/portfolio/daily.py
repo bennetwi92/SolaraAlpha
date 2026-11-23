@@ -6,9 +6,8 @@ order); run the checks in :mod:`solaraalpha.portfolio.triggers`; evaluate the ma
 conditions of open positions and pending entries on fresh cards; look for dividends and splits
 the book has not recorded, and for new filings (and headlines) since the last daily run; first,
 book what Trading212 shows (fills, orders, dividends) when its keys are set (ADR 0030); report
-owner actions and agent reviews. On Friday (the weekly review, ADR 0039) every open position and
-pending entry gets a ``daily_review`` trigger, so the monitor re-evaluates each one; midweek it
-sees only those with an event trigger (a filing, a gap, a thesis hit). One ticker's
+owner actions and agent reviews. Every run gives each open position and pending entry a
+``daily_review`` trigger, so the monitor re-evaluates each one (ADR 0040). One ticker's
 failure never stops the others. With ``save``: one ``daily`` run, a price snapshot per ticker
 and the triggers in the ``triggers`` table (the monitor agent reads them). See
 docs/decisions/0017.
@@ -49,7 +48,6 @@ from solaraalpha.portfolio.triggers import (
     market_trigger,
     news_triggers,
     price_triggers,
-    review_day,
     stale_order_triggers,
     thesis_hits,
     watch_break,
@@ -424,10 +422,10 @@ def run_daily(
             log.warning("%s: news unavailable (%s)", ticker, e)
             result.errors.append((ticker, f"news: {type(e).__name__}: {e}"))
 
-    # the weekly agent review of every open position and pending entry (ADR 0024, 0039)
+    # the daily agent review of every open position and pending entry (ADR 0024, 0040)
     today = now.strftime("%Y-%m-%d")
     order_of = {pe["position_id"]: pe["order_id"] for pe in pending}
-    for pid, st in reviewed.items() if review_day(now) else ():
+    for pid, st in reviewed.items():
         fired = [
             t
             for t in result.triggers
@@ -688,12 +686,12 @@ def render_daily(r: DailyResult) -> str:
             )
     lines += ([] if agent else ["none"]) + [""]
     reviews = r.of(("daily_review",))
-    lines += ["### Weekly agent review (Friday, ADR 0039)", ""]
+    lines += ["### Agent review (every position, ADR 0040)", ""]
     lines += [
         f"- **{t.ticker}** position {t.position_id} ({t.detail['status']})"
         + (f": {', '.join(t.detail['fired'])}" if t.detail["fired"] else ": nothing fired")
         for t in reviews
-    ] or ["none: midweek the monitor sees only the agent triggers above"]
+    ] or ["none: no open position or pending entry"]
     if (reviews or agent) and r.run_id is not None:
         lines.append(
             f"\nRun `/monitor --run {r.run_id}` (or `uv run python scripts/monitor_pack.py --run {r.run_id}`)."
