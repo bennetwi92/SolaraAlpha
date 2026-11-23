@@ -18,16 +18,18 @@ depends on that choice.
 
 Current state:
 - **The AIM strategy is wound down (docs/decisions/0040, 2026-11-23)** and the fund is pivoting
-  to **US mega caps, the S&P 100** (docs/decisions/0041, proposed: the new strategy is the
-  owner's to write, so don't assume one). Every AIM position was exited on the practice account
-  on 2026-11-23, outside the DB book. `new_entries = false` in `config/portfolio.toml`: the
-  planner writes nothing and the execution guard refuses every buy. **Every workflow but CI is off**
-  during the migration (owner, 2026-11-23): schedules commented out and each job's first line is
-  `if: false`, so cron-job.org dispatches skip too; delete that line to switch a job back on. The
-  AIM description below is the record of what was running, not the target.
-- **What we are looking for is defined in docs/decisions/0022** (the owner's paragraph: catalyst-led
-  AIM trading, volatility wanted, screen = ranked wide net to the agents). Check toolkits, bands
-  and agent prompts against it.
+  to **US large caps, the Nasdaq 100** (docs/decisions/0041, amended to the Nasdaq 100 by 0043).
+  Every AIM position was exited on the practice account on 2026-11-23, outside the DB book.
+  `new_entries = false` in `config/portfolio.toml`: the planner writes nothing and the execution
+  guard refuses every buy. **Every workflow but CI is off** during the migration (owner,
+  2026-11-23): schedules commented out and each job's first line is `if: false`, so cron-job.org
+  dispatches skip too; delete that line to switch a job back on. The AIM description below is
+  the record of what was running, not the target.
+- **What we are looking for is defined in docs/decisions/0043** (the owner's paragraph, 2026-11-23:
+  crowd momentum in the Nasdaq 100 — a live narrative confirmed by strong technicals, held about
+  3–15 sessions, managed daily, no fixed target (levels / ATR / R per trade), a partial then let
+  the rest run, up to 10 positions at ~2% risk, USD cash in the ISA). Not built yet; ADR 0022 (the
+  AIM paragraph) is superseded. Check new toolkits, bands and agent prompts against 0043.
 - **Trading frequency is moving from weekly to daily** (docs/decisions/0040, owner 2026-11-23):
   decisions, the scan and entries, the models and the risk report all go daily, and the horizon
   shortens to days (swing trades; target size and holding range still open). Built in slices:

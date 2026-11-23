@@ -1,7 +1,9 @@
 # 0041 — Pivot to US mega caps (S&P 100)
 
 **Status:** proposed (owner, 2026-11-23: universe chosen, strategy to be redefined). Follows
-ADR 0040 (AIM wind-down).
+ADR 0040 (AIM wind-down). **Amended 2026-11-23 (owner, ADR 0043): the universe is the Nasdaq
+100, not the S&P 100; the strategy is ADR 0043 (open question 1 answered); the ISA holds USD
+cash (question 3 answered).** The rest of this ADR applies to the Nasdaq 100 as written.
 
 **Context.** The owner (2026-11-23) moves the fund from AIM small caps to "standard US major
 stocks": the **S&P 100**. The owner also said the strategy "will change significantly", so ADR
