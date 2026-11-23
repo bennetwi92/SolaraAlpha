@@ -8,8 +8,9 @@
 name: Weekly pipeline
 
 on:
-  schedule:
-    - cron: "17 18 * * 0"  # Sunday 18:17 UTC: after Friday's close, before Monday's open
+  # Paused (owner, 2026-11-23, #321): automatic triggers removed until the owner restarts the desk.
+  # schedule:
+  #   - cron: "17 18 * * 0"  # Sunday 18:17 UTC: after Friday's close, before Monday's open
   workflow_dispatch:
     inputs:
       tickers:

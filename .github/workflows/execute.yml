@@ -17,11 +17,12 @@
 name: Execution
 
 on:
-  schedule:
-    - cron: "*/15 7-16 * * 1-5"
-  workflow_run:
-    workflows: ["Agents"]
-    types: [completed]
+  # Paused (owner, 2026-11-23, #321): automatic triggers removed until the owner restarts the desk.
+  # schedule:
+  #   - cron: "*/15 7-16 * * 1-5"
+  # workflow_run:
+  #   workflows: ["Agents"]
+  #   types: [completed]
   workflow_dispatch:
 
 concurrency:

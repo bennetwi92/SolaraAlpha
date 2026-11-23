@@ -1,6 +1,7 @@
 # 0040 — The results DB is an encrypted SQLite file on the `db` branch
 
-**Status:** proposed (2026-11-23, #321). Supersedes ADR 0013 (hosted results DB on Turso) once built;
+**Status:** accepted (owner, 2026-11-23, #321): start a fresh DB, create the key, force-push
+to `db` only, every job paused until the owner restarts the desk. Supersedes ADR 0013 (hosted results DB on Turso) once built;
 amends ADR 0007 (results DB) and the "never commit data" hard rule.
 
 **Context.** Turso's free plan blocked every read on 11 Nov when the month's read allowance ran
