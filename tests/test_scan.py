@@ -21,7 +21,7 @@ DATE = pd.Timestamp("2026-10-09", tz="UTC")
 class Card:
     date: pd.Timestamp
     score: float
-    trend: float  # technical's rank field: the combined score is `score`
+    crowd: float  # momentum's rank field: the combined score is `score`
     adv_gbp_20: float = 1e6  # liquidity past the floor
 
 
@@ -40,7 +40,15 @@ def stubs(monkeypatch: pytest.MonkeyPatch) -> None:
         bands = ((), ()) if real in ("events", "liquidity") else (("score > 0",), ("score > -0.5",))
         return Toolkit(real, run, bands[0], bands[1], real)
 
-    for real in ("technical", "levels", "relative_strength", "liquidity", "fundamentals", "events"):
+    for real in (
+        "momentum",
+        "technical",
+        "levels",
+        "relative_strength",
+        "liquidity",
+        "fundamentals",
+        "events",
+    ):
         monkeypatch.setitem(REGISTRY, real, stub(real))
     base = rules.load_rules()
     monkeypatch.setattr(rules, "load_rules", lambda: replace(base, shortlist_size=2))
@@ -69,14 +77,14 @@ def test_scan_labels_report_and_save(
     assert "saved run 1" in out and run_file.read_text() == "1\n"
 
     md = report.read_text()
-    assert "| UP.L | ACT | ACT | ACT | ACT | ACT | ACT | **ACT** |" in md
-    assert "| MID.L | WATCH | WATCH | WATCH | ACT | WATCH | - | **WATCH** |" in md
-    assert "| DOWN.L | pass | pass | pass | ACT | pass | - | **PASS** |" in md  # band PASS
-    assert "| ERR.L | ACT | ACT | ACT | ACT | ACT | ERROR | **ACT** |" in md
+    assert "| UP.L | ACT | ACT | ACT | ACT | ACT | ACT | ACT | **ACT** |" in md
+    assert "| MID.L | WATCH | WATCH | WATCH | WATCH | ACT | WATCH | - | **WATCH** |" in md
+    assert "| DOWN.L | pass | pass | pass | pass | ACT | pass | - | **PASS** |" in md  # band PASS
+    assert "| ERR.L | ACT | ACT | ACT | ACT | ACT | ACT | ERROR | **ACT** |" in md
     assert "**Shortlist (2, to the agents):**\n- ERR.L: rank 1\n- UP.L: rank 2\n" in md
     assert (
-        "- MID.L: rank 3, not shortlisted; technical WATCH: failed score > 0.0 (score=-0.30);"
-        " levels WATCH" in md
+        "- MID.L: rank 3, not shortlisted; momentum WATCH: failed score > 0.0 (score=-0.30);"
+        " technical WATCH" in md
     )
     assert "- ERR.L `events`: RuntimeError: NSM down" in md
 
@@ -90,7 +98,7 @@ def test_scan_labels_report_and_save(
     assert list(labels["rank"]) == [2, 3, 4, 1]
     assert list(labels["shortlist"].fillna("-")) == ["rank 2", "-", "-", "rank 1"]
     steps = store.load_steps("MID.L")
-    assert list(steps["status"]) == ["watch", "watch", "watch", "act", "watch", "skip"]
+    assert list(steps["status"]) == ["watch", "watch", "watch", "watch", "act", "watch", "skip"]
     assert steps["reason"].iloc[-1] == "not shortlisted"
 
 

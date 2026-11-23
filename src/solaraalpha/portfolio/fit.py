@@ -20,13 +20,10 @@ from solaraalpha.portfolio.plan import TradePlan
 from solaraalpha.portfolio.risk import UNKNOWN_SECTOR, Equity, sector_of
 from solaraalpha.portfolio.rules import Rules
 
-# ADR 0022: reward:risk (levels setup) is not an estimate we rank on and relative strength is
-# context for the agents (docs/research/0001), so the score is trend, compression and growth.
-RANK_FIELDS = (
-    ("technical", "trend"),
-    ("levels", "compression"),
-    ("fundamentals", "growth"),
-)
+# ADR 0043 / 0044: crowd momentum, technicals first. The rank is the momentum card's `crowd`
+# (trend, nearness to the high, volume, strength vs the market on daily bars). The AIM rank
+# (technical trend, levels compression, fundamentals growth; ADR 0022) went with AIM.
+RANK_FIELDS = (("momentum", "crowd"),)
 # Shown wherever the agents read the rank (validator, PM and weekly packs), until a rank model
 # passes the bar agreed in #210 (ADR 0029).
 RANK_NOTE = (
@@ -48,8 +45,8 @@ class FitReport:
 
 
 def rank_score(cards: Mapping[str, Any]) -> float:
-    """Placeholder rank: mean of technical ``trend``, levels ``compression`` and fundamentals
-    ``growth`` over the cards present, ignoring NaN (NaN if none)."""
+    """Placeholder rank: the mean of :data:`RANK_FIELDS` over the cards present (today the
+    momentum card's ``crowd``), ignoring NaN (NaN if none)."""
     vals = []
     for model, field in RANK_FIELDS:
         card = cards.get(model)

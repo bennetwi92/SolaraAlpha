@@ -74,7 +74,7 @@ THIN = "too little clean history"
 # scheduled event alone does not (owner, 2026-11-01; #273).
 SLOT_TIER = 1
 
-SCREEN_TOOLKITS = ("technical", "levels", "relative_strength", "fundamentals")
+SCREEN_TOOLKITS = ("momentum", "technical", "levels", "relative_strength", "fundamentals")
 _OPS: dict[str, Callable[[Any, Any], bool]] = {
     ">=": operator.ge,
     "<=": operator.le,
@@ -164,7 +164,7 @@ class Stage:
 
 NOT_ERROR = frozenset({"ACT", "WATCH", "PASS"})
 WEEKLY: tuple[Stage, ...] = (
-    Stage("screen", ("technical", "levels", "relative_strength", "liquidity")),
+    Stage("screen", ("momentum", "technical", "levels", "relative_strength", "liquidity")),
     Stage("fundamentals", ("fundamentals",), NOT_ERROR),
     Stage("events", ("events",), on_shortlist=True),
 )

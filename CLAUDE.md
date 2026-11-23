@@ -88,13 +88,14 @@ Current state:
 - Toolkits run as **one serialised weekly pipeline** (docs/decisions/0010, 0014): toolkits are
   registered by id in `solaraalpha/toolkits.py`, each with `act=` / `watch=` bands that label a
   stock **ACT / WATCH / PASS** (ERROR if it raised); since ADR 0022 the bands are information,
-  not the gate. The stages are `WEEKLY` in `solaraalpha/pipeline.py` — `screen` (technical +
-  levels + relative strength + liquidity, on every stock; liquidity has no bands and feeds
+  not the gate. The stages are `WEEKLY` in `solaraalpha/pipeline.py` — `screen` (momentum +
+  technical + levels + relative strength + liquidity, on every stock; liquidity has no bands and feeds
   sizing, but its ERROR is the stock's ERROR) → `fundamentals` (every stock without an ERROR) →
   `events` (the shortlist). **The screen is a ranked shortlist** (`pipeline.screen`, ADR 0014
   amendment #192): past a sanity floor (no ERROR, `min_adv_gbp`), stocks are ranked by
-  `portfolio.fit.rank_score` (mean of technical `trend`, levels `compression`, fundamentals
-  `growth`); the top `shortlist_size` (12, owner 2026-10-27) plus up to `shortlist_catalysts` (6, owner 2026-11-01) with a
+  `portfolio.fit.rank_score`, the momentum card's **`crowd`** score (ADR 0045: trend, nearness
+  to the 52-week high, volume, strength vs `^NDX` on daily bars; `scripts/momentum.py` prints
+  the ranking); the top `shortlist_size` (12, owner 2026-10-27) plus up to `shortlist_catalysts` (6, owner 2026-11-01) with a
   fresh **tier-1 information filing** (`solaraalpha.catalysts.fresh_catalysts`: new filings,
   headlines naming the company, scheduled events, tiered information > scheduled > discovery >
   warnings only, #222; only tier 1 takes a slot, `pipeline.SLOT_TIER`, best rank first; ADR 0014
@@ -275,6 +276,7 @@ Current state:
 | Single test | `uv run pytest tests/test_x.py::test_name -q` |
 | Run a script | `uv run python scripts/<name>.py` |
 | Stock prices + quality report | `uv run python scripts/stock_prices.py JET2.L` |
+| Crowd-momentum ranking of the watchlist (daily bars; the screen rank, ADR 0045) | `uv run python scripts/momentum.py [TICKERS...] [--top N]` |
 | Technical scorecard | `uv run python scripts/technical.py JET2.L [--entry-date D]` |
 | Levels + trade plan | `uv run python scripts/levels.py JET2.L [--short]` |
 | Fundamentals scorecard | `uv run python scripts/fundamentals.py JET2.L [--as-of D]` |
@@ -396,6 +398,9 @@ src/solaraalpha/        importable package — all reusable code lives here
                         warrants / convertibles from NSM headlines; context only — 0005, #218
     relative_strength.py  relative strength (any stock) vs market, industry, peer basket:
                         vol-scaled excess returns, peer rank — see docs/decisions/0011
+    momentum.py         crowd momentum on daily bars (any stock): trend, nearness to the 52-week
+                        high, volume, strength vs the market -> `crowd` (the screen rank);
+                        breakout, new high, sector strength, stretch in ATRs as context — 0045
     liquidity.py        liquidity (any stock): median daily traded value (20 / 60 sessions),
                         zero-volume share, Corwin-Schultz spread proxy, max position at max_adv_pct
     charts.py           weekly_chart: candles + 10/40w MAs + levels, coil, trigger, stop/target
@@ -546,7 +551,7 @@ Decision rules live in the skills (`.claude/skills/`), never duplicated in a sub
 
 | Area | Owner | Live state |
 |---|---|---|
-| `analysis/technical.py`, `levels.py`, `relative_strength.py`, `regime.py` (method), `backtest.py`, `scorecard.py`; the `fit.rank_score` formula and its test; `portfolio/shadow.py`; `docs/research/`; ADR 0029 | `senior-quant` | #210 |
+| `analysis/technical.py`, `levels.py`, `momentum.py`, `relative_strength.py`, `regime.py` (method), `backtest.py`, `scorecard.py`; the `fit.rank_score` formula and its test; `portfolio/shadow.py`; `docs/research/`; ADR 0029 | `senior-quant` | #210 |
 | `analysis/fundamentals.py`, `financing.py`, `events.py`; `data/fundamentals.py`, `announcements.py`; `catalysts.py`; `value_models`; the `growth` input to the rank; the fundamental content of `/events`, `/research`, `/macro` | `fundamental-strategist` | #214 |
 | `pm.py`, `portfolio/planner.py`, `plan.py`, `fit.py` (slots, sector, heat), `review.py`; the `/pm`, `/pm-daily`, `/validate`, `/monitor`, `/postmortem` skills and the agent chain (`agents.yml`, failures, cost) | `portfolio-manager` | ADR 0027 phases; its current issue |
 | `portfolio/execution.py`, `scripts/execute.py`, `scripts/execution_pack.py`, the order calls in `data/trading212.py`, `execute.yml`, the `/execute` skill | `execution-trader` | #244 |

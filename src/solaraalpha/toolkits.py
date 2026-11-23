@@ -35,6 +35,7 @@ from solaraalpha.analysis.fundamentals import (
 )
 from solaraalpha.analysis.levels import LevelsCard, levels_card
 from solaraalpha.analysis.liquidity import GBP_QUOTES, LiquidityCard, liquidity_card
+from solaraalpha.analysis.momentum import MomentumCard, momentum_card
 from solaraalpha.analysis.relative_strength import RelativeStrength, compare, comparisons, rs_card
 from solaraalpha.analysis.technical import Position, Scorecard, assess_position, scorecard
 from solaraalpha.data.announcements import filings, resolve_issuer
@@ -179,6 +180,19 @@ def _relative_strength(x: Inputs) -> Cards:
     return {"relative_strength": rs_card(c, trend)}
 
 
+# Crowd momentum (ADR 0043, 0044): the US desk's screen rank. Bands are placeholders until the
+# pre-registered test; like every band since ADR 0022 they are information, not the gate.
+@toolkit("momentum", act=("crowd >= 0.5",), watch=("crowd >= 0",))
+def _momentum(x: Inputs) -> Cards:
+    """Crowd momentum on daily bars: trend, nearness to the 52-week high, volume, strength vs
+    the market; breakout, new high, sector strength and stretch as context."""
+    daily = trim_to_consistent(clean_prices(x.daily), x.issues)
+    comp = comparisons(x.ticker)
+    market = x.other(comp.market)["close"] if comp.market else None
+    sector = x.other(comp.industry)["close"] if comp.industry else None
+    return {"momentum": momentum_card(daily, market, sector)}
+
+
 @toolkit(
     "fundamentals",
     act=("growth > 0", "quality > -0.5", "eps_revision >= 0 or eps_revision is nan"),
@@ -280,6 +294,7 @@ CARDS: dict[str, tuple[type, ...]] = {
     "fundamentals": (FundamentalsCard, FinancingCard),
     "liquidity": (LiquidityCard,),
     "events": (EventsCard,),
+    "momentum": (MomentumCard,),  # last: `trend`, `close`, `atr` stay technical's / levels'
 }
 
 
