@@ -84,3 +84,19 @@ def test_short_history_degrades_gracefully() -> None:
     assert c.regime == "calm" and math.isnan(c.vol_percentile_1y)
     with pytest.raises(ValueError, match="at least two sessions"):
         market_regime(_index(_quiet(1)))
+
+
+def test_risk_off_panel_equals_the_card_on_every_date() -> None:
+    from solaraalpha.analysis.regime import market_regime, risk_off_panel
+
+    rng = np.random.default_rng(7)
+    r = 0.01 * rng.standard_normal(300)
+    r[150] = -0.06  # a shock day
+    r[200:215] = -0.012  # a slide past -8% from the 20-day high
+    idx = pd.bdate_range(end="2026-11-20", periods=300, tz="UTC", name="date")
+    close = pd.Series(100 * np.exp(np.cumsum(r)), index=idx)
+    panel = risk_off_panel(close)
+    assert panel.any() and not panel.all()
+    for i in range(2, 300):
+        card = market_regime(close.iloc[: i + 1].to_frame("close"), "^NDX")
+        assert panel.iloc[i] == (card.regime == "risk_off"), i

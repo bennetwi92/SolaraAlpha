@@ -84,3 +84,17 @@ def market_regime(index_daily: pd.DataFrame, index: str = "^FTAS") -> RegimeCard
         regime=regime,
         reason="; ".join(reasons),
     )
+
+
+def risk_off_panel(index_close: pd.Series) -> pd.Series:
+    """``True`` on every session :func:`market_regime` would call ``risk_off`` (the drawdown or
+    the 3-sigma rule), each from that session and earlier only: the backtest's fast path
+    (research 0017), tested equal to the card."""
+    close = index_close.dropna()
+    dd = close / close.rolling(DRAWDOWN_WINDOW, min_periods=1).max() - 1
+    rets = np.log(close).diff()
+    sigma = rets.shift(1).rolling(Z_WINDOW, min_periods=2).std()
+    n_rets = rets.notna().cumsum()
+    sigma = sigma.where(n_rets > 5)
+    z = rets / sigma.where(sigma > 0)
+    return (dd < RISK_OFF_DRAWDOWN) | (z < RISK_OFF_Z)

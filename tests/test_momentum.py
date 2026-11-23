@@ -101,3 +101,45 @@ def test_toolkit_is_the_screen_rank(monkeypatch: pytest.MonkeyPatch) -> None:
     assert step.status == "act" and card.crowd == 0.5 and card.strength == 0.0
     assert rank_score(step.cards) == card.crowd
     assert toolkits.owner_of("crowd") == "momentum" and toolkits.owner_of("trend") == "technical"
+
+
+def _random_bars(n: int, seed: int) -> tuple[pd.DataFrame, pd.Series]:
+    rng = np.random.default_rng(seed)
+    close = 100 * np.exp(np.cumsum(0.0005 + 0.02 * rng.standard_normal(n)))
+    volume = 1e6 * np.exp(0.5 * rng.standard_normal(n))
+    bars = _bars(close, volume)
+    idx = pd.bdate_range(end="2026-11-20", periods=n + 30, tz="UTC", name="date")
+    market = pd.Series(100 * np.exp(np.cumsum(0.01 * rng.standard_normal(n + 30))), index=idx)
+    return bars, market.drop(market.index[[n + 5, n + 9]])  # gaps: the ffill is exercised
+
+
+def test_crowd_panel_equals_the_card_on_every_date() -> None:
+    from solaraalpha.analysis.momentum import crowd_panel
+
+    for n, seed in ((330, 1), (150, 2)):  # with and without the 200-day vote
+        bars, market = _random_bars(n, seed)
+        panel = crowd_panel(bars, market)
+        assert panel.iloc[: MIN_SESSIONS - 1].isna().all().all()
+        for i in (MIN_SESSIONS - 1, 120, 199, 200, n - 1):
+            if i >= n:
+                continue
+            day = bars.index[i]
+            card = momentum_card(bars, market, as_of=day)
+            row = panel.loc[day]
+            for f in ("trend", "high", "volume", "strength", "crowd"):
+                assert row[f] == pytest.approx(getattr(card, f), abs=1e-12), (n, i, f)
+
+
+def test_crowd_beta_takes_the_market_out() -> None:
+    from solaraalpha.analysis.momentum import crowd_panel
+
+    rng = np.random.default_rng(3)
+    n = 300
+    idx = pd.bdate_range(end="2026-11-20", periods=n, tz="UTC", name="date")
+    rm = 0.01 * rng.standard_normal(n)
+    market = pd.Series(100 * np.exp(np.cumsum(rm)), index=idx)
+    close = 100 * np.exp(np.cumsum(2 * rm))  # a pure beta-2 stock, no stock-specific return
+    panel = crowd_panel(_bars(close), market)
+    tail = panel.iloc[-100:]
+    raw, net = tail["strength"].abs().mean(), tail["strength_beta"].abs().mean()
+    assert net < raw / 3  # leverage alone moves the raw score; net of beta little is left
