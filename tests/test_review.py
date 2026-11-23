@@ -276,7 +276,15 @@ def stubs(monkeypatch: pytest.MonkeyPatch) -> dict[str, float]:
 
         return Toolkit(real, run, ("score > 0",), ("score > -0.5",), real)
 
-    for real in ("technical", "levels", "relative_strength", "liquidity", "fundamentals", "events"):
+    for real in (
+        "momentum",
+        "technical",
+        "levels",
+        "relative_strength",
+        "liquidity",
+        "fundamentals",
+        "events",
+    ):
         monkeypatch.setitem(REGISTRY, real, stub(real))
     return chandelier
 

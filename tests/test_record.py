@@ -331,7 +331,7 @@ def test_error_queue_latest_run_and_outcome(
     @dataclass(frozen=True)
     class Scored:
         date: pd.Timestamp
-        trend: float
+        crowd: float
 
     run_id = store.start_run("scan", {}, path=db_backend)
     for ticker, trend, label in (
@@ -340,7 +340,7 @@ def test_error_queue_latest_run_and_outcome(
         ("C.L", 0.5, "ACT"),
         ("W.L", 0.7, "WATCH"),
     ):
-        store.save_ticker(run_id, ticker, {"technical": Scored(DATE, trend)}, path=db_backend)
+        store.save_ticker(run_id, ticker, {"momentum": Scored(DATE, trend)}, path=db_backend)
         store.save_label(run_id, ticker, "screen", label, "", path=db_backend)
     args = _args(db_backend)
     record.main(["latest-run", *args])

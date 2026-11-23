@@ -288,7 +288,7 @@ def test_screen_label(fake: list[tuple[str, str]], monkeypatch: pytest.MonkeyPat
 
         return Toolkit(real, run, ("score > 0",), ("score > -0.5",), real)
 
-    for real in ("technical", "levels", "relative_strength", "fundamentals"):
+    for real in ("momentum", "technical", "levels", "relative_strength", "fundamentals"):
         monkeypatch.setitem(REGISTRY, real, stub(real))
     monkeypatch.setitem(
         REGISTRY,
@@ -299,15 +299,31 @@ def test_screen_label(fake: list[tuple[str, str]], monkeypatch: pytest.MonkeyPat
     got = run_pipeline([Inputs("UP.L"), Inputs("MID.L"), Inputs("DOWN.L")])
     assert screen_label(got["UP.L"]) == (
         "ACT",
-        "technical ACT; levels ACT; relative_strength ACT; fundamentals ACT",
+        "momentum ACT; technical ACT; levels ACT; relative_strength ACT; fundamentals ACT",
     )
     label, reason = screen_label(got["MID.L"])
     assert label == "WATCH"
-    assert reason.startswith("technical WATCH: failed score > 0.0 (score=-0.30); levels WATCH")
+    assert reason.startswith("momentum WATCH: failed score > 0.0 (score=-0.30); technical WATCH")
     assert screen_label(got["DOWN.L"])[0] == "PASS"
-    assert [s.status for s in got["MID.L"]] == ["watch", "watch", "watch", "act", "watch", "skip"]
+    assert [s.status for s in got["MID.L"]] == [
+        "watch",
+        "watch",
+        "watch",
+        "watch",
+        "act",
+        "watch",
+        "skip",
+    ]
     # fundamentals runs on every ticker without an ERROR (#192), PASS included
-    assert [s.status for s in got["DOWN.L"]] == ["pass", "pass", "pass", "act", "pass", "skip"]
+    assert [s.status for s in got["DOWN.L"]] == [
+        "pass",
+        "pass",
+        "pass",
+        "pass",
+        "act",
+        "pass",
+        "skip",
+    ]
     # events runs on the shortlist only; no adv_gbp_20 in these cards: nothing passes the floor
     assert got["UP.L"][-1].status == "skip" and got["UP.L"][-1].reason == "not shortlisted"
     assert screen_label(got["UP.L"])[0] == "ACT"
@@ -415,13 +431,13 @@ def test_rank_act_is_deterministic() -> None:
     @dataclass(frozen=True)
     class T:
         date: pd.Timestamp
-        trend: float
+        crowd: float
 
     cards = {
-        "B.L": {"technical": T(DATE, 0.5)},
-        "A.L": {"technical": T(DATE, 0.5)},  # tie with B.L: ticker order
-        "Z.L": {"technical": T(DATE, float("nan"))},  # no score: last
-        "C.L": {"technical": T(DATE, 0.9)},
+        "B.L": {"momentum": T(DATE, 0.5)},
+        "A.L": {"momentum": T(DATE, 0.5)},  # tie with B.L: ticker order
+        "Z.L": {"momentum": T(DATE, float("nan"))},  # no score: last
+        "C.L": {"momentum": T(DATE, 0.9)},
         "D.L": {},  # no cards: last, after Z.L by ticker? no: both NaN, ticker order
     }
     assert rank_act(cards) == {"C.L": 1, "A.L": 2, "B.L": 3, "D.L": 4, "Z.L": 5}
@@ -429,8 +445,8 @@ def test_rank_act_is_deterministic() -> None:
     assert rank_act({}) == {}
 
 
-def _ticker(trend: float, label: str = "ACT", adv: float | None = 1e6) -> list[Step]:
-    steps = [_step("technical", label, f"technical {label.lower()}", trend=trend)]
+def _ticker(crowd: float, label: str = "ACT", adv: float | None = 1e6) -> list[Step]:
+    steps = [_step("momentum", label, f"momentum {label.lower()}", crowd=crowd)]
     if adv is not None:
         steps.append(_step("liquidity", "ACT", "ran", adv_gbp_20=adv))
     return steps
@@ -471,10 +487,10 @@ def test_screen_ranks_a_floor_into_a_shortlist_with_catalysts() -> None:
         "N.L": None,
         "X.L": None,
     }
-    assert got["B.L"].reason == "shortlist rank 2; technical PASS: technical pass"
+    assert got["B.L"].reason == "shortlist rank 2; momentum PASS: momentum pass"
     assert (got["C.L"].label, got["C.L"].reason) == (
         "WATCH",
-        "rank 3, not shortlisted; technical ACT",
+        "rank 3, not shortlisted; momentum ACT",
     )
     assert got["E.L"].label == "WATCH" and "(catalyst: tier 1: new CEO)" in got["E.L"].reason
 
@@ -497,7 +513,7 @@ def test_pipeline_runs_shortlist_stages_on_the_shortlist(
     class Tech:
         date: pd.Timestamp
         score: float
-        trend: float
+        crowd: float
 
     @dataclass(frozen=True)
     class Liq:
@@ -507,14 +523,14 @@ def test_pipeline_runs_shortlist_stages_on_the_shortlist(
     trend = {"UP.L": 0.5, "MID.L": -0.3, "DOWN.L": -0.9}
 
     def tech(x: Inputs) -> dict:
-        return {"technical": Tech(DATE, trend[x.ticker], trend[x.ticker])}
+        return {"momentum": Tech(DATE, trend[x.ticker], trend[x.ticker])}
 
     def liq(x: Inputs) -> dict:
         return {"liquidity": Liq(DATE, 1e6)}
 
-    monkeypatch.setitem(REGISTRY, "technical", Toolkit("technical", tech, ("score > 0",), (), "t"))
+    monkeypatch.setitem(REGISTRY, "momentum", Toolkit("momentum", tech, ("score > 0",), (), "t"))
     monkeypatch.setitem(REGISTRY, "liquidity", Toolkit("liquidity", liq, (), (), "l"))
-    stages = (Stage("screen", ("technical", "liquidity")), Stage("late", ("a",), on_shortlist=True))
+    stages = (Stage("screen", ("momentum", "liquidity")), Stage("late", ("a",), on_shortlist=True))
     inputs = [Inputs("UP.L"), Inputs("MID.L"), Inputs("DOWN.L")]
     got = run_pipeline(inputs, stages, size=1, catalyst_cap=1, min_adv_gbp=0.0)
     assert [s.status for s in got["UP.L"]] == ["act", "act", "act"]  # rank 1: shortlisted
