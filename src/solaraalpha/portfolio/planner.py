@@ -184,6 +184,8 @@ def plan_run(
     the PM's verdict for the run when there is one (ADR 0027); False gives the plans at the
     rules' ``risk_per_trade`` in screen-rank order (the PM's own pack)."""
     rules = rules or load_rules()
+    if not rules.new_entries:  # wind-down (ADR 0040): report what would be planned, write nothing
+        dry_run = True
     pm = pm_decision(conn, run_id) if use_pm else None
     alloc = {str(a["ticker"]): a for a in pm["allocation"]} if pm else {}
     started = str(store.run_info(run_id, conn=conn)["started_at"])

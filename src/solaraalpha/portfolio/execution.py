@@ -413,6 +413,8 @@ def check(
                 f" last trade {book.fmt_price(last, st.currency)}: outside the"
                 f" {PRICE_BAND:.0%} band"
             )
+    if side == 1 and not rules.new_entries:
+        raise Refused("new entries are off (config/portfolio.toml new_entries, ADR 0040): no buys")
     if side == 1:
         dd = breaker_tripped(conn, now, rules)
         if dd is not None:
