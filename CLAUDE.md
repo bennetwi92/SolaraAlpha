@@ -34,7 +34,9 @@ Current state:
 - **The agents' role on the US desk is docs/decisions/0044** (owner, 2026-11-23): technicals lead
   (news is priced in minutes); the agents check what we buy into, set entry / stop / partial /
   targets, and may bring in a stock on its story (still needs technical confirmation to be ACT);
-  Claude spend is not a constraint; Telegram is ended. A lean chain is proposed, not confirmed.
+  Claude spend is not a constraint; a lean chain (screen → research → PM → plan; daily monitor;
+  risk as code). Telegram is ended and nothing is pushed to the owner: the owner asks for updates
+  in a Claude Code chat, which reads the DB.
 - **Trading frequency is moving from weekly to daily** (docs/decisions/0040, owner 2026-11-23):
   decisions, the scan and entries, the models and the risk report all go daily, and the horizon
   shortens to days (swing trades; target size and holding range still open). Built in slices:

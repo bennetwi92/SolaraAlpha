@@ -1,6 +1,6 @@
 # 0044 — The agents' role on the US desk
 
-**Status:** accepted in part (owner, 2026-11-23). Answers ADR 0041's question 2 and ADR 0043's
+**Status:** accepted (owner, 2026-11-23). Answers ADR 0041's question 2 and ADR 0043's
 open item. Nothing is built yet; the agent chain is redesigned when the US pipeline is.
 
 **Context.** On AIM the agents' edge was judging a catalyst before the market priced it in (ADR
@@ -29,7 +29,7 @@ agents do in that trade.
 - **Telegram is ended.** The owner does not need it. The Telegram leg of the desk thread and
   the PM's replies to the owner there (`desk-reply.yml`, `/desk`) go when the US desk is built.
 
-**Proposed (to confirm with the owner).** A lean chain in place of the AIM one, which had
+**The lean chain (owner confirmed, 2026-11-23).** A lean chain in place of the AIM one, which had
 about ten agents (validate → macro → research → PM; monitor → risk → PM-daily; execute, retro,
 desk):
 
@@ -43,5 +43,9 @@ desk):
 The shadow book (ADR 0028) keeps recording what plain rules would have done, so the agents are
 measured against them. On AIM that was never found out.
 
-**Open (owner).** With Telegram gone and the inbox unread, where should the owner see the
-day's trades, P&L and risk? The options are the dashboard, the GitHub inbox issue, or email.
+**The owner pulls updates; nothing is pushed (owner, 2026-11-23).** With Telegram gone, the
+owner asks for the day's trades, P&L and risk in a Claude Code chat, which reads the results DB
+(`db.py pull`) and answers. No workflow posts a report for the owner: the GitHub inbox and
+desk-errors issue posts go when the US desk is built. Errors are still recorded in the DB, and a
+failed workflow still shows in GitHub Actions. One plain status command for the chat to answer
+from is part of the build.
