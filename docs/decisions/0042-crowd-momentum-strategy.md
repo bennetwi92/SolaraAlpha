@@ -63,8 +63,8 @@ stocks that have a story people are excited about, managed every day. The owner 
    6 (fresh book) are still open.
 
 **Consequences.** Fixed rules in `config/portfolio.toml` (`max_positions`, `target_moves`,
-`horizon_weeks`, `currency`, heat and sector caps) change with the US config, not now: the AIM
-jobs still read the file with buys off. The weekly-frequency research (0001–0016) does not
+`horizon_weeks`, `currency`, heat and sector caps) change with the US config, not now: the file
+still holds the AIM rules (buys off, every workflow paused). The weekly-frequency research (0001–0016) does not
 carry over. Attention-driven moves are known to give part of the gain back once the attention
 fades, so quick exits and daily review are part of the strategy, not an extra. Momentum wins
 roughly half the time and makes its money on the size of the winners, so stopped-out losers

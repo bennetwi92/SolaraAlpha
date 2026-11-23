@@ -7,7 +7,6 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from fakes import FakeTurso
 from solaraalpha import store
 from solaraalpha.portfolio import rules
 from solaraalpha.toolkits import REGISTRY, Inputs, Toolkit
@@ -49,7 +48,7 @@ def stubs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_scan_labels_report_and_save(
-    stubs: None, fake_turso: FakeTurso, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    stubs: None, local_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     report, run_file = tmp_path / "report.md", tmp_path / "run_id"
     scan.main(
@@ -101,7 +100,7 @@ def test_scan_one_toolkit_prints_label(stubs: None, capsys: pytest.CaptureFixtur
     assert "MID.L      WATCH  technical:WATCH" in out
 
 
-def test_scan_fails_only_when_every_ticker_errored(stubs: None, fake_turso: FakeTurso) -> None:
+def test_scan_fails_only_when_every_ticker_errored(stubs: None, local_db: Path) -> None:
     with pytest.raises(SystemExit) as e:
         scan.main(["ERR.L"])
     assert e.value.code == 1

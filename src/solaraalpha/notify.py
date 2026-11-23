@@ -580,7 +580,7 @@ JOB_FAILED = {
 
 
 def job_failed_message(workflow: str, conclusion: str, url: str) -> str:
-    """One line for a workflow that ended in failure (no DB needed: a Turso outage too)."""
+    """One line for a workflow that ended in failure (no DB needed: a DB outage too)."""
     means = JOB_FAILED.get(workflow, "see the run")
     return (
         f"> **Desk error:** the **{workflow}** workflow ended `{conclusion}`. Means: {means}."

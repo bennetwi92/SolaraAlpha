@@ -2,7 +2,7 @@
 # entries (scripts/daily.py), weekday evenings after the London close; every open
 # position and pending entry gets a daily_review for the monitor agent (agents.yml,
 # docs/decisions/0040). Writes a
-# `daily` run with the triggers to the results DB (Turso secrets, else the local file) and the
+# `daily` run with the triggers to the results DB (the db branch, ADR 0042) and the
 # report to the job summary. Shares the `book` concurrency group with scan.yml so the two never
 # write at once (docs/decisions/0017). Posts to the GitHub issue labelled `inbox` only when the
 # run needs the owner (docs/decisions/0021).
@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write  # db.py push to the db branch (ADR 0042)
   issues: write
 
 env:
@@ -29,6 +29,9 @@ env:
 
 jobs:
   daily:
+    # Off (owner, 2026-11-23): every run skips while the fund migrates to the US strategy
+    # (ADR 0041), cron-job.org dispatches included. Delete this line to switch the job back on.
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -37,6 +40,11 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - name: Daily check
         env:
           SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
@@ -44,16 +52,12 @@ jobs:
           SOLARA_T212_KEY: ${{ secrets.SOLARA_T212_KEY }}
           SOLARA_T212_SECRET: ${{ secrets.SOLARA_T212_SECRET }}
           SOLARA_T212_ENV: ${{ vars.SOLARA_T212_ENV || 'demo' }}
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
         run: uv run --no-sync python scripts/daily.py --save --report "$GITHUB_STEP_SUMMARY" --run-id-file run_id.txt
       - name: Notify the owner (GitHub inbox issue) only when something needs them
         if: always() && hashFiles('run_id.txt') != ''
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
         run: |
           set +e
           uv run --no-sync python scripts/notify.py --mode daily --run "$(cat run_id.txt)" --channel github-issue
@@ -65,8 +69,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
         run: |
           set +e
           uv run --no-sync python scripts/notify.py --mode errors --part pipeline --run "$(cat run_id.txt)" --channel github-errors
@@ -75,9 +77,6 @@ jobs:
           if [ "$rc" = "3" ]; then echo "no desk errors" >> "$GITHUB_STEP_SUMMARY"; elif [ "$rc" != "0" ]; then exit "$rc"; fi
       - name: Dashboard
         if: always()
-        env:
-          SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-          SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
         run: uv run --no-sync python scripts/dashboard.py --out data/processed/dashboard.html || echo "dashboard failed" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
@@ -90,6 +89,13 @@ jobs:
         if: always()
         with:
           name: daily-${{ github.run_id }}
-          path: data/
+          path: |
+            data/
+            !data/solara.db*
           if-no-files-found: ignore
           retention-days: 30
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"

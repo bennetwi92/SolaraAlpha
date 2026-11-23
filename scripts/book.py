@@ -41,8 +41,8 @@ Dividends recorded against a position count in its net P&L; a split scales the s
 average cost and every open order from its date; a corporate close is a synthetic exit fill of
 every share at the offer (or 0) with reason `corporate_action`.
 
-Every command is one transaction in the results DB (Turso when configured, else data/solara.db;
---db PATH forces a local file). State changes are new event rows, never updates
+Every command is one transaction in the results DB (data/solara.db, pulled from the
+`db` branch, ADR 0042; --db PATH another file). State changes are new event rows, never updates
 (solaraalpha.portfolio.book). An illegal transition prints one line and exits 2.
 """
 

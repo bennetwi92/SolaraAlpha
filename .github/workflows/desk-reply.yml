@@ -1,7 +1,7 @@
 # Desk reply (docs/decisions/0033): every 30 minutes, 07:00-22:00 UK time, pull the owner's
 # Telegram messages into the desk thread and, only when the owner has written since the PM last
 # posted, run the PM's answer-only skill (/desk) to reply there. Nothing written: no Claude run.
-# Inert without a Claude secret, the Telegram secrets or the Turso secrets. The PM reads and
+# Inert without a Claude secret, the Telegram secrets or SOLARA_DB_KEY. The PM reads and
 # answers; it changes nothing in the book (the skill's tools are read-only plus its one post).
 name: Desk reply
 
@@ -12,15 +12,13 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: desk-reply
+  group: book  # it writes the desk thread: one DB writer at a time (ADR 0042)
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write  # db.py push to the db branch (ADR 0042)
 
 env:
-  SOLARA_TURSO_URL: ${{ secrets.SOLARA_TURSO_URL }}
-  SOLARA_TURSO_TOKEN: ${{ secrets.SOLARA_TURSO_TOKEN }}
   SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
   SOLARA_TELEGRAM_CHAT: ${{ secrets.SOLARA_TELEGRAM_CHAT }}
   # read-only lookups and the one post as the PM (.claude/skills/desk/SKILL.md); no bare Read /
@@ -30,6 +28,9 @@ env:
 
 jobs:
   reply:
+    # Off (owner, 2026-11-23): every run skips while the fund migrates to the US strategy
+    # (ADR 0041), cron-job.org dispatches included. Delete this line to switch the job back on.
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -37,12 +38,13 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
         run: |
           now=$(TZ=Europe/London date +%H%M)
           if [ "${{ github.event_name }}" = "schedule" ] && { [ "$now" -lt 700 ] || [ "$now" -gt 2200 ]; }; then
             echo "go=false" >> "$GITHUB_OUTPUT"; echo "outside 07:00-22:00 UK ($now)" >> "$GITHUB_STEP_SUMMARY"
-          elif { [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -z "$ANTHROPIC_API_KEY" ]; } || [ -z "$SOLARA_TURSO_URL" ] || [ -z "$SOLARA_TELEGRAM_TOKEN" ] || [ -z "$SOLARA_TELEGRAM_CHAT" ]; then
-            echo "go=false" >> "$GITHUB_OUTPUT"; echo "skipped: Claude, Turso or Telegram secrets not set" >> "$GITHUB_STEP_SUMMARY"
+          elif { [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -z "$ANTHROPIC_API_KEY" ]; } || [ -z "$SOLARA_DB_KEY" ] || [ -z "$SOLARA_TELEGRAM_TOKEN" ] || [ -z "$SOLARA_TELEGRAM_CHAT" ]; then
+            echo "go=false" >> "$GITHUB_OUTPUT"; echo "skipped: Claude, DB key or Telegram secrets not set" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "go=true" >> "$GITHUB_OUTPUT"
           fi
@@ -54,6 +56,12 @@ jobs:
           enable-cache: true
       - run: uv sync --no-default-groups
         if: steps.gate.outputs.go == 'true'
+      - name: Pull the results DB (db branch, ADR 0042)
+        id: dbpull
+        if: steps.gate.outputs.go == 'true'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py pull
       - id: pending
         name: Anything from the owner the PM has not answered?
         if: steps.gate.outputs.go == 'true'
@@ -87,3 +95,8 @@ jobs:
             uv run --no-sync python scripts/chat.py post --as agent:pm "I couldn't answer that just now (the run failed: see the desk-errors issue). Ask again and I'll pick it up."
           fi
           exit 1
+      - name: Push the results DB (even after a failed step, ADR 0042)
+        if: always() && steps.dbpull.outcome == 'success'
+        env:
+          SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
+        run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"

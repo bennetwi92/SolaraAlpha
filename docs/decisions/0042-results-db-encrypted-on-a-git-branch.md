@@ -1,6 +1,6 @@
-# 0040 — The results DB is an encrypted SQLite file on the `db` branch
+# 0042 — The results DB is an encrypted SQLite file on the `db` branch
 
-**Status:** accepted (owner, 2026-11-23, #321): start a fresh DB, create the key, force-push
+**Status:** accepted (owner, 2026-11-23, #321; numbered 0042: 0040 and 0041 were taken the same day): start a fresh DB, create the key, force-push
 to `db` only, every job paused until the owner restarts the desk. Supersedes ADR 0013 (hosted results DB on Turso) once built;
 amends ADR 0007 (results DB) and the "never commit data" hard rule.
 
@@ -70,9 +70,32 @@ The constraints:
   this ADR. A shorter large-cap scan is the fix.
 - Live SQL from anywhere is gone. Every reader pulls a copy.
 - The hard rule becomes "never commit data or secrets, except the encrypted results DB on the
-  `db` branch (ADR 0040)".
+  `db` branch (ADR 0042)".
 - **Migration:** `db.py pull` from Turso needs reads. Either wait for Turso's monthly reset, or
   start a fresh DB and rebuild the book from Trading212 (`book.py reconcile --book`), losing the
   run, card and agent history. The owner chooses.
 - **Not solved by this ADR:** the public `inbox` and `desk-errors` issues already publish order
   steps, positions and errors.
+
+**Built (2026-11-23, #321).**
+- `solaraalpha/dbsync.py`, `scripts/db.py pull | status | push`. `gpg` runs with a throwaway
+  keyring, passphrase on stdin. The commit is built with plumbing (`hash-object`, `mktree`,
+  `commit-tree`), so the work tree is never touched, and pushed with
+  `--force-with-lease=refs/heads/db:<pulled commit>`. An empty lease means the branch must not
+  exist yet. `pull` records the commit and the file's sha256 in `data/solara.db.pulled`.
+- **Parallel jobs.** Two copies of one SQLite file can't be merged (autoincrement ids collide),
+  so only one job writes at a time, not only one workflow:
+  - every matrix in `agents.yml` runs with `max-parallel: 1`;
+  - the daily agent jobs run in a chain: monitor, then postmortem, then risk, then pm-daily;
+  - the desk reply moved into the `book` group.
+
+  The weekly agent chain is slower (validate and research one stock at a time). The lease is
+  the safety net: an unexpected second writer fails loudly and loses nothing on the branch.
+- **Token scope.** Every job that pushes needs `contents: write`, and the agent jobs hand
+  `github.token` to `claude-code-action`. The agents' shell is limited to the named scripts in
+  `ALLOWED_TOOLS` (no `git`), which is what keeps them off other branches. Widening
+  `ALLOWED_TOOLS` must keep `git` out.
+- **Not yet done:** cutting the price and fundamentals snapshots down. `push` refuses an encrypted
+  file over 95 MB and warns over 50 MB. Measure on the first fresh scan, after the pivot settles
+  the universe, then trim if needed.
+- Every `data/` artifact excludes `data/solara.db*`. On a public repo, artifacts are public.
