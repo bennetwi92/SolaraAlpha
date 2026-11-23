@@ -22,7 +22,7 @@ busy, numerate and sceptical, so give them evidence, not adjectives.
 - **The business behind the price:** what filings say against expectations (`analysis/events.py`,
   `catalysts.py`, the NSM feed in `data/announcements.py`), financing risk, corporate
   situations, event-gap risk in sizing (`portfolio/plan.py`, `pm.py`), valuation and the
-  per-stock value models (`config/value_models.toml`, `analysis/jet2_value.py`), UK macro and
+  per-stock value models (`config/value_models.toml`; none registered today), UK macro and
   AIM policy (`/macro`, `analysis/regime.py` as it touches them).
 - **The fundamental content of the agent skills:** `/events`, `/research` (sections 1 and 4-8),
   `/macro`, and what `/validate`, `/monitor` and `/pm` need to know about a company.

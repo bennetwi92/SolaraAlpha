@@ -44,16 +44,17 @@ Current state:
   Friday (`to_weekly`, completed weeks only) and the scan still runs on Sunday.
 - **Strategy (until ADR 0040's slice 4): long trades seeking bursty profits (+15–30%)**, held
   while the stock keeps climbing. Models are judged by usefulness over the trade's horizon.
-- Working on **single-stock analysis**; first example is Jet2 (`JET2.L`, AIM-listed). The
-  pipeline universe is **every AIM stock Trading212 offers** (ADR 0038, 557 on 2026-11-01: `pipeline.universe()`
-  = the watchlist, then the research universe's other tickers). The watchlist is the **FTSE AIM
-  100 plus the FTSE AIM UK 50** (104 stocks; snapshot in `config/watchlist.toml`, refreshed after
-  each quarterly FTSE review with `scripts/universe.py --write`, run by hand, never in CI; not
-  point-in-time; then `scripts/issuers.py --write` for the new stocks' LEIs in
-  `config/issuers.toml`); the rest come from `config/research_universe.toml`
-  (`scripts/research_universe.py --write`, by hand). Stocks with no `sector` on file skip the
-  sector cap (flagged); fewer than 26 clean weekly bars → PASS without running the toolkits;
-  NSM searches are paced one every 3.5 s (a refusal waits 330 s, then slower; `nsm-test.yml` checks it).
+- **AIM is removed** (ADR 0043, "no AIM data whatsoever"): the AIM-only code, configs, research
+  scripts and data are gone (Jet2 value model, research universe, issuer register, sectors file,
+  leavers ledger, director-dealing and placing parsers, commodity futures, `nsm-test.yml`). The
+  pipeline universe is the watchlist, the **Nasdaq-100** (`pipeline.universe()`; 101 lines,
+  snapshot in `config/watchlist.toml` copied by hand from Wikipedia on 2026-11-23, never in CI; not
+  point-in-time; the scan warns once a December reconstitution has passed since it). Each stock's
+  ICB `sector` and sector-ETF `industry` are in `config/benchmarks.toml` (market `^NDX`). Filings
+  still read the FCA NSM, so **no ticker resolves to an issuer** (`resolve_issuer` raises) until
+  SEC EDGAR is built (ADR 0041): events and catalysts have no filings meanwhile. Currency (GBX
+  logic), market hours and the rules are still AIM's until their slices. Fewer than 26 clean
+  weekly bars → PASS without running the toolkits.
 - Price data is **fetched fresh each run** (no `@parquet_cache`). With `--save` the raw fetch is
   also snapshotted into the results DB (`solaraalpha.store`) — for the record, never as a cache.
 - **Results DB**: scripts' `--save` records the run, model cards and input snapshots in an
@@ -83,10 +84,6 @@ Current state:
   an agent via the `/events` skill (`.claude/skills/events/SKILL.md`), and the Sunday research
   stage is the `/research` skill (nine-section strategist's note with web search), both
   persisted through `record.py`. See docs/decisions/0006, 0016.
-- **Jet2 fair value** (`analysis/jet2_value.py`, `/jet2-value` skill) is deliberately Jet2-only:
-  a driver P&L calibrated to consensus EPS (`CONSENSUS`, `REFERENCE` — hand-updated, dated;
-  refresh after each results / trading update), updated for the live fuel curve and FX, valued
-  at the holding horizon; news goes in as driver shocks. See docs/decisions/0009.
 - Model outputs for the scorecard are scores in **[-1, +1]** (+ = bullish / favourable).
 - Toolkits run as **one serialised weekly pipeline** (docs/decisions/0010, 0014): toolkits are
   registered by id in `solaraalpha/toolkits.py`, each with `act=` / `watch=` bands that label a
@@ -283,8 +280,6 @@ Current state:
 | Fundamentals scorecard | `uv run python scripts/fundamentals.py JET2.L [--as-of D]` |
 | Relative strength vs market / industry / peers | `uv run python scripts/relative_strength.py JET2.L [--peers EZJ.L IAG.L]` |
 | Event pack (filings, reactions, expected events, news) | `uv run python scripts/events.py JET2.L [--days 7] [--horizon 16]` |
-| Jet2 fair value + news/scenario shocks | `uv run python scripts/jet2_value.py [--weeks 12] [--scenario fuel_spike] [--shock seats=+2%] [--list]` |
-| Jet2 news analyst (agent) | `/jet2-value <news or question>` in Claude Code |
 | Read one announcement | `uv run python scripts/announcement.py <NSM url>` |
 | Events analyst (agent; persists its note via `record.py`) | `/events JET2.L [--run N]` in Claude Code |
 | Macro analyst (agent): one shared sector / macro note per group of the run's ACT stocks | `/macro --run N` in Claude Code (`record.py queue --stage macro` lists the groups) |
@@ -313,18 +308,6 @@ Current state:
 | Some stocks through the pipeline / one toolkit | `uv run python scripts/scan.py JET2.L` / `JET2.L --toolkit technical [--param k=v]` |
 | List stages and toolkits | `uv run python scripts/scan.py --list` |
 | Fresh catalysts (filings, headlines, scheduled events) per stock | `uv run python scripts/catalysts.py [TICKERS...] [--days 7] [--horizon 10] [--no-news]` |
-| Refresh the watchlist (FTSE AIM 100 + AIM UK 50; by hand, never CI) | `uv run python scripts/universe.py [--write]` |
-| ICB sectors for universe stocks without one (`config/sectors.toml`; LSE; by hand, never CI) | `uv run python scripts/sectors.py [--write]` |
-| LEIs for new watchlist stocks (`config/issuers.toml`; NSM name search; check the names) | `uv run python scripts/issuers.py [--write]` |
-| Refresh the AIM research universe (every AIM company Trading212 offers: its London lines minus the FCA Official List and `official_list.NOT_AIM`; by hand, never CI; needs the Trading212 keys) | `uv run python scripts/research_universe.py [--write]` |
-| AIM leavers ledger since 2022 from the LSE's AIM notices on the NSM (how each ended, offer price; by hand, never CI; research 0012) | `uv run python scripts/leavers.py [--write]` |
-| Research 0005 director buys on the wide universe: power, the parse pre-step sample, parse; the drift test only after a passed pre-step | `uv run python scripts/research/r10_director_buys.py count\|sample\|parse\|drift PANEL_DIR` |
-| Research 0013 placings event study: power, the pre-step sample, the pre-registered test | `uv run python scripts/research/r11_placings.py count\|sample\|run\|bound PANEL_DIR` |
-| Research 0014 52-week-high anchor and overhang: features (no outcomes), power, the pre-registered test, the leavers' share | `uv run python scripts/research/r12_anchor_overhang.py build\|count\|run\|leavers PANEL_DIR` |
-| Research 0015 pure trend following, weekly top-8 rotation (failed: no next-week continuation, spread costs 2-5% a week): fetch, build, power / turnover, the pre-registered test | `uv run python scripts/research/r13_trend_rotation.py fetch\|build\|count\|run PANEL_DIR` |
-| Research 0016 trend entries with a take-profit (+5/+10/+15%, none) and a 3-ATR stop (failed: no edge before costs): trades / cost (no outcomes), the pre-registered test (on research 0015's panel) | `uv run python scripts/research/r14_trend_target.py count\|run PANEL_DIR` |
-| Research-universe coverage per in-sample year (Yahoo history, past the £10k floor point-in-time, by size group; research 0011) | `uv run python scripts/research/coverage.py RAW_DIR` |
-| Research panels on the AIM research universe (adds `floor` / `mcap` / `size` per Friday) | `uv run python scripts/research/build_panel.py OUT research` / `r9_relative_strength.py build OUT research` (reports: `r5_rank_growth.py OUT STEP --floor 10000`, `r9_relative_strength.py report OUT research`) |
 | Book trades by hand (draft, approve, amend, reject, tickets, placed, fills, exits) | `uv run python scripts/book.py new JET2.L --entry 1520 --stop 1400 --qty 100` / `list` / `show ID` / `approve ID` / `amend ID --qty N --price P --stop P` / `reject ID --reason TEXT` / `tickets` / `placed ORDER_ID [ORDER_ID ...] [--ref REF]` / `fill ORDER_ID --qty N --price P [--commission X]` / `unfilled ORDER_ID` / `cancel ORDER_ID` / `expire` / `exit ID --reason stop|target|thesis_broken|...` / `cash dividend TICKER GBP --at EXDATE` / `split ID --ratio 2:1` / `corporate-close ID --price P --reason takeover|delisting` / `stats [--since D]` (`--db PATH` for a local file; from GitHub: the **Book** workflow, `gh workflow run book.yml -f command='cash deposit 5000'`; `-f script=plan.py -f command='--run 8'` re-plans a run) |
 | Plan the week's trades from a saved scan run (final ACT labels → plan → fit → approved positions) | `uv run python scripts/plan.py --run N [--dry-run] [--replan]` (`--replan`: again for tickers whose draft was rejected; also records the shadow book's agent-paired baselines, ADR 0028) |
 | Weekly pack for a run (new plans with approve/reject commands, fit rejections, watch list, open positions, money, errors) | `uv run python scripts/weekly_pack.py --run N [--out FILE] [--report FILE]` |
@@ -338,7 +321,7 @@ Current state:
 | Execution agent: how and when each order goes out (never what) | `/execute` in Claude Code → `scripts/execution_pack.py`, then `execute.py send ID [--type market\|limit] [--price P] --reason` / `hold ID --until ISO --reason` / `cancel ID --reason` / `note [ID] --reason` |
 | Swap a stop off an approved exit by hand (market hours; owner mode only) | `uv run python scripts/book.py swap EXIT_ORDER_ID` |
 | Results DB on the `db` branch: fetch + decrypt / what is local vs the branch / encrypt + replace the branch (workflows; leased) | `uv run python scripts/db.py pull [--force]` / `status` / `push [--message M]` (needs `SOLARA_DB_KEY`) |
-| Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `relative_strength` / `fundamentals` / `jet2_value` / `scan` |
+| Save a run to the results DB | add `--save` to `stock_prices` / `technical` / `levels` / `relative_strength` / `fundamentals` / `scan` |
 | Notebooks | `make notebook` |
 
 Always use `uv run …` (or `make`) — never bare `python`/`pip`. Never edit `uv.lock` by hand.
@@ -394,22 +377,12 @@ src/solaraalpha/        importable package — all reusable code lives here
                         (fetch_corporate_actions, same endpoint)
     fundamentals.py     statements, TTM EPS, P/E / forward P/E / market cap for one stock
                         (Yahoo fundamentals-timeseries API), tidy long frame
-    announcements.py    regulatory filings for one issuer (FCA NSM, by LEI), ticker → LEI
-                        (issuers.toml, research_universe.toml, else the NSM filer of the same
-                        name), announcement full text
+    announcements.py    regulatory filings for one issuer (FCA NSM, by LEI), announcement full
+                        text; resolve_issuer resolves nothing until SEC EDGAR (ADR 0041, 0043)
     news.py             press headlines (Google News RSS), discovery only
-    dealings.py         director / PDMR dealings from MAR notices (NSM DSH): parse_dsh, notice_buys (research
-                        0005 rules v2; failed its parse check, so research only) — #284
-    raises.py           equity raises from NSM text: issue_price, use_class, directors_in (research 0013
-                        rules v1; price and use failed their check, directors passed) — #285
-    leavers.py          AIM leavers from the LSE's AIM notices on the NSM: parse_notice, classify (takeover /
-                        administration / suspension / cancellation / other), takeover_price — #291
-    official_list.py    the FCA Official List (CSV) and aim_lines: Trading212's London lines not on
-                        it = the AIM research universe (#290)
     trading212.py       Trading212 API, read-only (GET only): account summary, positions, pending
                         and historical orders with fills, dividends, transactions, instruments;
                         lse_lines (Yahoo ticker -> Trading212 ticker) — 0030
-    futures.py          commodity futures curves, one Yahoo ticker per contract month
     clean.py            check_prices / clean_prices / trim_to_consistent / to_weekly
   analysis/             research & analytics code
     technical.py        weekly technical model (any stock): trend/momentum/entry scores,
@@ -425,9 +398,6 @@ src/solaraalpha/        importable package — all reusable code lives here
                         vol-scaled excess returns, peer rank — see docs/decisions/0011
     liquidity.py        liquidity (any stock): median daily traded value (20 / 60 sessions),
                         zero-volume share, Corwin-Schultz spread proxy, max position at max_adv_pct
-    universe.py         the AIM research universe point-in-time (research only): research_tickers, the
-                        £10k floor per Friday, market cap from published share counts, size group
-                        (aim100 = today's watchlist / rest / micro < £50m), with_universe — #290
     charts.py           weekly_chart: candles + 10/40w MAs + levels, coil, trigger, stop/target
                         + volume as a PNG (Agg) for the validator's pack
     backtest.py         point-in-time replay of the screen (cards per Friday from the bars up to
@@ -439,8 +409,6 @@ src/solaraalpha/        importable package — all reusable code lives here
                         (kept vs downgraded, bootstrap interval) and confidence calibration — #144
     events.py           events model (any stock): market reaction per filing, expected
                         scheduled events from the issuer's own history — see docs/decisions/0006
-    jet2_value.py       Jet2-only fair value: consensus-calibrated FY27/FY28 driver P&L, live
-                        fuel curve / FX, horizon valuation, news shocks, Monte Carlo — 0009
   portfolio/            portfolio construction, booking and risk
     rules.py            Rules dataclass + load_rules (config/portfolio.toml, validated)
     book.py             the book: positions, orders, fills, cash, entry/thesis conditions as
@@ -479,15 +447,9 @@ src/solaraalpha/        importable package — all reusable code lives here
     shadow.py           shadow book: systematic baselines beside every decision, append-only
                         `shadow` table, record (scan / plan time) and load — 0028
 scripts/                thin CLI entry points (argparse) that call into the package
-config/watchlist.toml   stocks the weekly pipeline runs (FTSE AIM 100 + AIM UK 50 snapshot)
-config/research_universe.toml  every AIM company Trading212 offers (#290; snapshot, ticker -> name,
-                        ISIN, LEI, Trading212 ticker); the weekly scan runs it too (ADR 0038)
-config/aim_leavers.csv  every company that left AIM since 2022 (scripts/leavers.py; research 0012): LEI,
-                        dates, how it ended, offer price, source filing (the survivorship bias bound)
-config/benchmarks.toml  per-stock market / industry / peers for relative strength (+ sector)
-config/sectors.toml     ICB sector of the other universe stocks (scripts/sectors.py; #310)
-config/issuers.toml     per-stock LEI + legal name: how filings are found (the LSE lookup 403s in CI)
-config/value_models.toml  per-stock value models (skill + script) the research agent calls — #127
+config/watchlist.toml   stocks the pipeline runs: the Nasdaq-100 (hand snapshot from Wikipedia, 2026-11-23)
+config/benchmarks.toml  per-stock market (^NDX) / industry (sector ETF) / peers for relative strength (+ ICB sector)
+config/value_models.toml  per-stock value models (skill + script) the research agent calls (none today) — #127
 config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeholders until confirmed)
 .github/workflows/      ci.yml (checks), scan.yml (weekly pipeline + weekly pack, Sunday), daily.yml
                         (weekday daily check), agents.yml (unattended agents after both; inert
@@ -496,9 +458,7 @@ config/portfolio.toml   portfolio rules: capital, risk per trade, limits (placeh
                         the desk-errors issue and the inbox), execute.yml (the execution job: every
                         15 minutes in the session and after Agents; the only one that may trade),
                         desk-reply.yml (every 30 minutes 07:00-22:00 UK: the PM answers the owner)
-                        nsm-test.yml (the full scan on a runner, not saved; fails on any NSM 403)
 .claude/skills/events/  agent skill: interprets an event pack into analysis.json / analysis.md
-.claude/skills/jet2-value/  agent skill: maps Jet2 news to driver shocks and reports the impact
 .claude/skills/validate/  agent skill: re-checks a run's screen labels against the pack; downgrade only
 .claude/skills/research/  agent skill: strategist's 9-section pre-trade note, web search, evidence → record.py;
                         delta mode on a prior note ≤ 35 days; calls the stock's value model when registered
@@ -587,7 +547,7 @@ Decision rules live in the skills (`.claude/skills/`), never duplicated in a sub
 | Area | Owner | Live state |
 |---|---|---|
 | `analysis/technical.py`, `levels.py`, `relative_strength.py`, `regime.py` (method), `backtest.py`, `scorecard.py`; the `fit.rank_score` formula and its test; `portfolio/shadow.py`; `docs/research/`; ADR 0029 | `senior-quant` | #210 |
-| `analysis/fundamentals.py`, `financing.py`, `events.py`, `jet2_value.py`; `data/fundamentals.py`, `announcements.py`; `catalysts.py`; `value_models`; the `growth` input to the rank; the fundamental content of `/events`, `/research`, `/macro` | `fundamental-strategist` | #214 |
+| `analysis/fundamentals.py`, `financing.py`, `events.py`; `data/fundamentals.py`, `announcements.py`; `catalysts.py`; `value_models`; the `growth` input to the rank; the fundamental content of `/events`, `/research`, `/macro` | `fundamental-strategist` | #214 |
 | `pm.py`, `portfolio/planner.py`, `plan.py`, `fit.py` (slots, sector, heat), `review.py`; the `/pm`, `/pm-daily`, `/validate`, `/monitor`, `/postmortem` skills and the agent chain (`agents.yml`, failures, cost) | `portfolio-manager` | ADR 0027 phases; its current issue |
 | `portfolio/execution.py`, `scripts/execute.py`, `scripts/execution_pack.py`, the order calls in `data/trading212.py`, `execute.yml`, the `/execute` skill | `execution-trader` | #244 |
 | `portfolio/riskreport.py`, `scripts/risk_pack.py`, the `/risk` skill | `risk-manager` | ADR 0036 |

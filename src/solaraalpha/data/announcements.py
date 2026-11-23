@@ -6,12 +6,9 @@ publication time. Free, no key. The search endpoint is the one the NSM website i
 (``api.data.fca.org.uk``): it is not documented, so the format can change. NSM terms allow use
 "for any lawful purpose" — see ``docs/data-sources.md``.
 
-The issuer is identified by its **LEI**, which survives renames (Jet2 plc filed as Dart Group
-plc until 2020). :func:`resolve_issuer` maps an LSE ticker to its LEI from ``config/issuers.toml``
-(the watchlist, looked up once per stock: an LEI never changes), else from
-``config/research_universe.toml`` (every AIM company Trading212 offers; LEI from GLEIF by ISIN),
-else from the NSM filer whose name matches the research universe's (:func:`lei_by_name`: GLEIF
-does not link many non-UK issuers' ISINs to their LEI, but they file on the NSM under it).
+The issuer is identified by its **LEI**, which survives renames. The AIM issuer register is gone
+(ADR 0043: no AIM data), so :func:`resolve_issuer` resolves nothing until SEC EDGAR replaces this
+module for the Nasdaq 100 (ADR 0041).
 
 ``published`` is the publication time (tz-aware UTC). That is when the market could first act
 on the announcement; see :func:`solaraalpha.analysis.events.reactions` for the session it lands in.
@@ -19,18 +16,13 @@ on the announcement; see :func:`solaraalpha.analysis.events.reactions` for the s
 
 from __future__ import annotations
 
-import re
 import time
-import tomllib
-import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import cache
 from html.parser import HTMLParser
 
 import pandas as pd
 
-from solaraalpha.config import REPO_ROOT
 from solaraalpha.data.http import DEFAULT_TIMEOUT, session
 from solaraalpha.data.prices import LOOKBACK_YEARS
 from solaraalpha.log import get_logger
@@ -57,9 +49,6 @@ _retry_left = NSM_RETRY_BUDGET
 # weekly scan's catalyst pass and its events stage share one NSM search per stock (#303).
 _FILINGS: dict[str, pd.DataFrame] = {}
 NSM_DOC_BASE = "https://data.fca.org.uk/artefacts/"
-GLEIF_URL = "https://api.gleif.org/api/v1/lei-records"  # ISIN -> LEI (scripts/research_universe.py)
-ISSUERS = REPO_ROOT / "config" / "issuers.toml"
-RESEARCH_UNIVERSE = REPO_ROOT / "config" / "research_universe.toml"
 COLUMNS = [
     "published",
     "type_code",
@@ -83,35 +72,11 @@ class Issuer:
     market: str  # "AIM" for a research-universe stock, else ""
 
 
-@cache
-def known_issuers() -> dict[str, dict[str, str]]:
-    """``config/issuers.toml``: ticker -> ``{"lei", "name"}``."""
-    with ISSUERS.open("rb") as f:
-        return tomllib.load(f)["issuers"]
-
-
-@cache
-def research_issuers() -> dict[str, dict[str, str]]:
-    """``config/research_universe.toml``: ticker -> ``{"name", "isin", "lei", "t212"}``."""
-    with RESEARCH_UNIVERSE.open("rb") as f:
-        return tomllib.load(f)["stocks"]
-
-
 def resolve_issuer(ticker: str) -> Issuer:
-    """Identify the issuer behind an LSE Yahoo ticker (e.g. ``"JET2.L"``)."""
-    if not ticker.endswith(".L"):
-        raise ValueError(f"only LSE tickers (*.L) are supported, got {ticker!r}")
-    if known := known_issuers().get(ticker):
-        return Issuer(ticker, "", known["lei"], known["name"], "")
-    if r := research_issuers().get(ticker):
-        if r["lei"]:
-            return Issuer(ticker, r["isin"], r["lei"], r["name"], "AIM")
-        if found := lei_by_name(r["name"]):
-            return Issuer(ticker, r["isin"], found[1], found[0], "AIM")
-    raise ValueError(
-        f"no LEI for {ticker}: add it to config/issuers.toml "
-        "(scripts/issuers.py finds the NSM candidates by name)"
-    )
+    """The issuer behind a ticker. The AIM issuer register (``config/issuers.toml``, the research
+    universe) was removed with the AIM strategy (ADR 0040, 0043), and the Nasdaq 100 files with
+    the SEC, not the NSM, so no ticker resolves until SEC EDGAR replaces this module (ADR 0041)."""
+    raise ValueError(f"no filings source for {ticker}: SEC EDGAR is not built yet (ADR 0041)")
 
 
 def fetch_announcements(lei: str, start: str | None = None, end: str | None = None) -> pd.DataFrame:
@@ -195,73 +160,6 @@ def _search(body: dict) -> dict:
             continue
         resp.raise_for_status()
         return dict(resp.json())
-
-
-def search_issuers(name: str, days: int = 365) -> list[tuple[str, str, int]]:
-    """NSM filers whose company name matches ``name`` in the last ``days``: ``(company, lei,
-    filings)``, most filings first (one page). For filling ``config/issuers.toml`` by hand."""
-    stop = pd.Timestamp(datetime.now(UTC))
-    body = {
-        "from": 0,
-        "size": PAGE,
-        "sort": "publication_date",
-        "sortorder": "desc",
-        "criteriaObj": {
-            "criteria": [
-                {"name": "company_lei", "value": [name, "", "disclose_org", "related_org"]},
-                {"name": "latest_flag", "value": "Y"},
-            ],
-            "dateCriteria": [
-                {
-                    "name": "publication_date",
-                    "value": {"from": _iso(stop - pd.Timedelta(days=days)), "to": _iso(stop)},
-                }
-            ],
-        },
-    }
-    return filers(_search(body))
-
-
-def filers(payload: dict) -> list[tuple[str, str, int]]:
-    """``(company, lei, filings)`` per LEI in an NSM search payload, most filings first; the
-    company name is the one on the latest filing. Filings without an LEI are left out."""
-    seen: dict[str, list] = {}
-    for hit in payload["hits"]["hits"]:
-        s = hit["_source"]
-        if lei := s.get("lei"):
-            row = seen.setdefault(lei, [s.get("company") or "", s["publication_date"], 0])
-            if s["publication_date"] > row[1]:
-                row[:2] = [s.get("company") or "", s["publication_date"]]
-            row[2] += 1
-    rows = [(co, lei, n) for lei, (co, _, n) in seen.items()]
-    return sorted(rows, key=lambda r: -r[2])
-
-
-_LEGAL = {"plc", "ltd", "limited", "inc", "incorporated", "corp", "corporation", "company", "co"}
-_LEGAL |= {"public", "oy", "sa", "ag", "nv", "se", "llc", "the"}
-
-
-def _norm(name: str) -> str:
-    """A company name without case, accents, punctuation or legal-form words ("Arrow
-    Exploration Corp." and "ARROW EXPLORATION CORP" -> "arrow exploration")."""
-    plain = unicodedata.normalize("NFKD", name.lower()).encode("ascii", "ignore").decode()
-    plain = re.sub(r"[.'\-]", "", plain.replace("&", " and "))  # Fever-Tree, M.S.
-    words = re.sub(r"[^a-z0-9]+", " ", plain).split()
-    return " ".join(w for w in words if w not in _LEGAL)
-
-
-def match_filer(name: str, found: list[tuple[str, str, int]]) -> tuple[str, str] | None:
-    """``(company, lei)`` of the filer in ``found`` (:func:`search_issuers`) whose name is
-    ``name``, ignoring case, punctuation and legal form; ``None`` when none is. The NSM search
-    matches substrings (a search for "UIL" ranks Quilter first), so the top hit is not enough."""
-    want = _norm(name)
-    return next(((co, lei) for co, lei, _ in found if _norm(co) == want), None)
-
-
-@cache
-def lei_by_name(name: str) -> tuple[str, str] | None:
-    """The NSM filer named ``name`` (:func:`match_filer` over :func:`search_issuers`)."""
-    return match_filer(name, search_issuers(name))
 
 
 def _iso(ts: pd.Timestamp) -> str:

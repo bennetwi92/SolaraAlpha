@@ -22,7 +22,7 @@ from solaraalpha.store import save_run
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("ticker", help="Yahoo ticker, e.g. JET2.L")
+    p.add_argument("ticker", help="Yahoo ticker, e.g. NVDA")
     p.add_argument("--start", default=None, help="default: 5 years ago")
     p.add_argument("--end", default=None)
     p.add_argument("--save", action="store_true", help="snapshot the prices in the results DB")

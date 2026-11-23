@@ -57,13 +57,10 @@ from solaraalpha.toolkits import Cards, Inputs, get
 log = get_logger(__name__)
 
 WATCHLIST = REPO_ROOT / "config" / "watchlist.toml"
-# Every AIM company Trading212 offers in GBX (#290); the weekly scan runs it with the watchlist
-# (owner, 2026-10-29: docs/decisions/0038).
-RESEARCH_UNIVERSE = REPO_ROOT / "config" / "research_universe.toml"
-# FTSE reviews its UK indices quarterly; constituent changes take effect in these months. A
-# hand-copied snapshot is stale once a review month has passed (plus a week for the changes
-# to land) since it was taken.
-REVIEW_MONTHS = (3, 6, 9, 12)
+# Nasdaq reconstitutes the Nasdaq-100 once a year, in December (after the third Friday); a
+# company leaving mid-year is replaced ad hoc. A hand-copied snapshot is stale once a December
+# has passed (plus a week for the changes to land) since it was taken.
+REVIEW_MONTHS = (12,)
 REVIEW_GRACE_DAYS = 7
 LABELS = ("ACT", "WATCH", "PASS", "ERROR")
 ALL_LABELS = frozenset(LABELS)
@@ -193,12 +190,10 @@ def watchlist(path: Path = WATCHLIST) -> list[str]:
         return list(tomllib.load(f)["tickers"])
 
 
-def universe(path: Path = WATCHLIST, research: Path = RESEARCH_UNIVERSE) -> list[str]:
-    """The weekly scan's stocks: the watchlist, then the research universe's other tickers."""
-    with research.open("rb") as f:
-        wide = list(tomllib.load(f)["stocks"])
-    names = watchlist(path)
-    return names + [t for t in wide if t not in set(names)]
+def universe(path: Path = WATCHLIST) -> list[str]:
+    """The scan's stocks: the watchlist (the Nasdaq 100 snapshot, ADR 0043). The AIM research
+    universe (ADR 0038) went with the AIM strategy."""
+    return watchlist(path)
 
 
 def watchlist_snapshot(path: Path = WATCHLIST) -> pd.Timestamp | None:
@@ -210,7 +205,7 @@ def watchlist_snapshot(path: Path = WATCHLIST) -> pd.Timestamp | None:
 
 def stale_watchlist(snapshot: pd.Timestamp | None, today: pd.Timestamp) -> str | None:
     """A warning when ``today`` is more than :data:`REVIEW_GRACE_DAYS` past the end of the first
-    FTSE review month (:data:`REVIEW_MONTHS`) after ``snapshot``'s month; None when current."""
+    index review month (:data:`REVIEW_MONTHS`) after ``snapshot``'s month; None when current."""
     if snapshot is None:
         return "watchlist has no `snapshot` date; add one so staleness can be checked"
     snap, now = pd.Timestamp(snapshot).tz_localize(None), pd.Timestamp(today).tz_localize(None)
@@ -223,8 +218,8 @@ def stale_watchlist(snapshot: pd.Timestamp | None, today: pd.Timestamp) -> str |
     due = end_of_review + pd.Timedelta(days=REVIEW_GRACE_DAYS)
     if now.normalize() > due:
         return (
-            f"watchlist snapshot {snap:%Y-%m-%d} predates the {end_of_review:%B %Y} FTSE review:"
-            " refresh config/watchlist.toml (scripts/universe.py --write)"
+            f"watchlist snapshot {snap:%Y-%m-%d} predates the {end_of_review:%B %Y} Nasdaq-100"
+            " reconstitution: refresh config/watchlist.toml by hand"
         )
     return None
 

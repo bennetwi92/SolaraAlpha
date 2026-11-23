@@ -119,7 +119,7 @@ Look the ticker up in `config/value_models.toml` (one table per ticker: `skill`,
 No entry: say "no value model" in section 8 and leave `value` out of `scores`. With an entry:
 
 1. Read `.claude/skills/<skill>/SKILL.md` for how that model maps news to driver shocks.
-2. Run the script as the skill says (e.g. `uv run python scripts/jet2_value.py --weeks 12
+2. Run the script as the skill says (e.g. `uv run python scripts/<model>.py --weeks 12
    [--shock driver=+x% ...]`), with the shocks the catalysts of section 2 imply; run it once
    plain and once shocked when there is something to shock.
 3. Add a **Valuation** sub-section to section 8: fair value at the horizon vs the price, what
@@ -216,7 +216,7 @@ Write `verdict.json` in the event pack's directory, per `uv run python scripts/r
                 "impact_score": 0.0, "impact_confidence": 0.0, "driver": "...", "horizon_weeks": 0,
                 "nsm_id": "NI-... or null"}],
   "note_md": "the full note, all nine sections",
-  "checks": {"mode": "full|delta", "prior_run": "N or none", "carried": "scene,commercial,...", "value_model": "jet2-value or none"},
+  "checks": {"mode": "full|delta", "prior_run": "N or none", "carried": "scene,commercial,...", "value_model": "skill name or none"},
   "trade": {"entry_type": "limit|stop", "entry": 0.0, "stop": 0.0,
             "stop_reason": "why the set-up is wrong below this", "valid_days": 7}
 }

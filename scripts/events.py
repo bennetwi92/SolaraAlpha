@@ -17,7 +17,7 @@ from solaraalpha.analysis.events import build_pack
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    p.add_argument("ticker", help="Yahoo LSE ticker, e.g. JET2.L")
+    p.add_argument("ticker", help="Yahoo ticker, e.g. NVDA")
     p.add_argument("--days", type=int, default=7, help="look-back for new catalysts (default 7)")
     p.add_argument("--horizon", type=int, default=16, help="weeks ahead to anticipate (default 16)")
     p.add_argument("--lei", default=None, help="issuer LEI; skips the ticker lookup")

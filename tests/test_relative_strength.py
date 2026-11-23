@@ -64,8 +64,8 @@ def test_comparisons_from_config(tmp_path: Path) -> None:
     assert comparisons("B.L", cfg) == Comparisons("^FTMC")
     assert comparisons("C.L", cfg) == Comparisons("^FTAS")  # no entry: market only
     assert comparisons("AAPL", cfg) == Comparisons(None)  # no default for the suffix
-    jet2 = comparisons("JET2.L")  # the checked-in config loads
-    assert jet2.market and jet2.industry and len(jet2.peers) >= 4
+    nvda = comparisons("NVDA")  # the checked-in config loads
+    assert (nvda.market, nvda.industry) == ("^NDX", "XLK")
 
 
 def test_outperformer_scores_positive_and_underperformer_negative() -> None:

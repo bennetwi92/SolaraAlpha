@@ -95,15 +95,15 @@ def test_liquidity_toolkit_registered_in_screen(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_stale_watchlist() -> None:
-    assert REVIEW_MONTHS == (3, 6, 9, 12)
+    assert REVIEW_MONTHS == (12,)
     snap = pd.Timestamp("2026-10-16")
     assert stale_watchlist(snap, pd.Timestamp("2026-12-31")) is None
     assert stale_watchlist(snap, pd.Timestamp("2027-01-07")) is None  # grace week
     warn = stale_watchlist(snap, pd.Timestamp("2027-01-08"))
-    assert warn is not None and "predates the December 2026 FTSE review" in warn
+    assert warn is not None and "predates the December 2026 Nasdaq-100" in warn
     assert (
-        stale_watchlist(pd.Timestamp("2026-12-20"), pd.Timestamp("2027-04-08")) is not None
-    )  # next review March 2027
-    assert stale_watchlist(pd.Timestamp("2026-12-20"), pd.Timestamp("2027-04-07")) is None
+        stale_watchlist(pd.Timestamp("2026-12-20"), pd.Timestamp("2028-01-08")) is not None
+    )  # the next December
+    assert stale_watchlist(pd.Timestamp("2026-12-20"), pd.Timestamp("2027-04-08")) is None
     assert "no `snapshot`" in (stale_watchlist(None, pd.Timestamp("2026-10-16")) or "")
-    assert watchlist_snapshot() == pd.Timestamp("2026-10-18")
+    assert watchlist_snapshot() == pd.Timestamp("2026-11-23")

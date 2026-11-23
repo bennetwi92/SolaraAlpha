@@ -180,22 +180,8 @@ def test_the_cash_without_rebuilding_closed_trades(db_backend: Path | None) -> N
     )
 
 
-def test_sector_of_falls_back_to_the_wider_universe(tmp_path: Path) -> None:
-    sectors = tmp_path / "sectors.toml"
-    sectors.write_text('[sectors]\n"JNEO.L" = "Technology Hardware & Equipment"\n"JET2.L" = "X"\n')
-    assert risk.sector_of("JNEO.L", sectors=sectors) == "Technology Hardware & Equipment"
-    assert risk.sector_of("JET2.L", sectors=sectors) == "Travel & Leisure"  # benchmarks wins
-    assert risk.sector_of("NOPE.L", sectors=sectors) == "unknown"
-    assert risk.sector_of("JNEO.L", sectors=tmp_path / "none.toml") == "unknown"
-
-
-def test_sectors_script_renders_a_loadable_file() -> None:
-    import sys
-    import tomllib
-
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-    import sectors as sectors_cli
-
-    text = sectors_cli.render({"B.L": "Banks", "A.L": "Beverages"}, "# head\n\n")
-    assert text.startswith('# head\n\n[sectors]\n"A.L"')
-    assert tomllib.loads(text)["sectors"] == {"A.L": "Beverages", "B.L": "Banks"}
+def test_sector_of_reads_benchmarks(tmp_path: Path) -> None:
+    cfg = tmp_path / "benchmarks.toml"
+    cfg.write_text('[stocks."NVDA"]\nsector = "Technology"\n')
+    assert risk.sector_of("NVDA", path=cfg) == "Technology"
+    assert risk.sector_of("NOPE", path=cfg) == "unknown"

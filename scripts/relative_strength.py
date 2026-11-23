@@ -26,7 +26,7 @@ from solaraalpha.store import save_run
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    p.add_argument("ticker", help="Yahoo ticker, e.g. JET2.L")
+    p.add_argument("ticker", help="Yahoo ticker, e.g. NVDA")
     p.add_argument("--market", help="override the market index")
     p.add_argument("--industry", help="override the industry index / ETF")
     p.add_argument("--peers", nargs="+", help="override the peers")

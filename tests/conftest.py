@@ -7,6 +7,8 @@ from pydantic import SecretStr
 
 from solaraalpha.config import settings
 
+FIXTURES = Path(__file__).parent / "fixtures"
+
 
 @pytest.fixture(autouse=True)
 def no_broker_keys(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -32,6 +34,15 @@ def entries_on(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mon
     path = tmp_path_factory.mktemp("rules") / "portfolio.toml"
     path.write_text(text)
     monkeypatch.setattr(rules.load_rules, "__defaults__", (path,))
+
+
+@pytest.fixture(autouse=True)
+def test_sectors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sectors come from tests/fixtures/benchmarks.toml, not the checked-in universe, so the
+    tests' made-up books keep their sectors whatever stocks the watchlist holds."""
+    from solaraalpha.portfolio import risk
+
+    monkeypatch.setattr(risk.sector_of, "__defaults__", (FIXTURES / "benchmarks.toml",))
 
 
 @pytest.fixture

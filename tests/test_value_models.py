@@ -9,14 +9,13 @@ from solaraalpha.value_models import REPO_ROOT, load_value_models, value_model
 
 def test_registered_value_models_point_at_real_skills_and_scripts() -> None:
     models = load_value_models()
-    assert "JET2.L" in models  # the one value model today (ADR 0009)
     for ticker, m in models.items():
         assert m.ticker == ticker
         assert m.script_path.exists(), f"{ticker}: {m.script} missing"
         assert m.script_path.suffix == ".py" and m.script.startswith("scripts/")
         assert m.skill_path.exists(), f"{ticker}: skill {m.skill} missing"
         assert m.skill_path.read_text().startswith("---\nname: " + m.skill)
-    assert value_model("JET2.L") is not None and value_model("NOPE.L") is None
+    assert value_model("NOPE.L") is None
 
 
 def test_loader_edge_cases(tmp_path: Path) -> None:

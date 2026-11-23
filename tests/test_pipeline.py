@@ -321,10 +321,9 @@ def test_watchlist(tmp_path: Path) -> None:
 
 
 def test_universe(tmp_path: Path) -> None:
-    (tmp_path / "w.toml").write_text('tickers = ["A.L", "B.L"]\n')
-    (tmp_path / "r.toml").write_text('[stocks]\n"B.L" = {}\n"C.L" = {}\n')
-    assert universe(tmp_path / "w.toml", tmp_path / "r.toml") == ["A.L", "B.L", "C.L"]
-    assert len(universe()) > len(watchlist())  # the checked-in ones load
+    (tmp_path / "w.toml").write_text('tickers = ["A", "B"]\n')
+    assert universe(tmp_path / "w.toml") == ["A", "B"]
+    assert universe() == watchlist()  # the checked-in one loads
 
 
 def _daily(n: int = 800) -> pd.DataFrame:

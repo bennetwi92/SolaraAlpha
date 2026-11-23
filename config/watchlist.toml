@@ -1,114 +1,113 @@
-# Stocks the weekly pipeline runs (scripts/scan.py, .github/workflows/scan.yml).
+# Stocks the pipeline runs (scripts/scan.py, .github/workflows/scan.yml): the Nasdaq-100
+# (ADR 0043).
 #
-# Universe: FTSE AIM 100 plus FTSE AIM UK 50 constituents as listed on the London Stock Exchange
-# website on 2026-10-18 (londonstockexchange.com/indices/<index>/constituents/table; refresh with
-# scripts/universe.py). Hand-run snapshot, not point-in-time: refresh after each quarterly FTSE
-# review (Mar / Jun / Sep / Dec). Yahoo ticker = TIDM + ".L". `snapshot` is the copy date:
-# scan.py warns once a review month has passed since it (solaraalpha.pipeline.stale_watchlist).
-snapshot = 2026-10-18
+# Copied by hand from Wikipedia's "List of Nasdaq-100 companies" (the constituents table) on
+# 2026-11-23: 101 lines, 100 companies (Alphabet has two share classes). Yahoo ticker = the
+# Nasdaq symbol. Not point-in-time (survivorship bias for any backtest). Nasdaq reconstitutes the
+# index each December and replaces a leaver ad hoc: refresh after each change. `snapshot` is the
+# copy date: scan.py warns once a December has passed since it
+# (solaraalpha.pipeline.stale_watchlist).
+snapshot = 2026-11-23
 tickers = [
-    "AAZ.L",     # Anglo Asian Mining
-    "ABDP.L",    # AB Dynamics
-    "ADVT.L",    # AdvancedAdvT
-    "AET.L",     # Afentra
-    "AMS.L",     # Advanced Medical Solutions Group
-    "AOM.L",     # ActiveOps
-    "ARBB.L",    # Arbuthnot Banking Group
-    "AVCT.L",    # Avacta Group
-    "AVG.L",     # Avingtrans
-    "AXS.L",     # Accsys Technologies
-    "BIG.L",     # Big Technologies
-    "BOKU.L",    # Boku
-    "BPM.L",     # B.P. Marsh & Partners
-    "BRCK.L",    # BRCK Group
-    "BTG.L",     # BTG Consulting
-    "BUR.L",     # Burford Capital
-    "CAM.L",     # Camellia
-    "CAML.L",    # Central Asia Metals
-    "CER.L",     # Cerillion
-    "CHRT.L",    # Cohort
-    "CMCL.L",    # Caledonia Mining
-    "CNC.L",     # Concurrent Technologies
-    "CRW.L",     # Craneware
-    "DEBS.L",    # Boohoo Group
-    "DOTD.L",    # Dotdigital Group
-    "ECO.L",     # Eco (Atlantic) Oil & Gas
-    "EEE.L",     # Empire Metals
-    "EKF.L",     # EKF Diagnostics Holdings
-    "EVPL.L",    # Everplay Group
-    "FDEV.L",    # Frontier Developments
-    "FEVR.L",    # Fever-Tree Drinks
-    "FNTL.L",    # Fintel
-    "FNX.L",     # Fonix
-    "FRAN.L",    # Franchise Brands
-    "FRP.L",     # FRP Advisory Group
-    "FTC.L",     # Filtronic
-    "GFM.L",     # Griffin Mining
-    "GGP.L",     # Greatland Resources
-    "GHH.L",     # Gooch & Housego
-    "GMET.L",    # Guardian Metal Resources
-    "GRP.L",     # Greencoat Renewables
-    "HPOW.L",    # H-Power
-    "HSP.L",     # Hargreaves Services
-    "HUW.L",     # Helios Underwriting
-    "IPX.L",     # Impax Asset Management Group
-    "IQE.L",     # IQE
-    "ITM.L",     # ITM Power
-    "JDG.L",     # Judges Scientific
-    "JET2.L",    # Jet2
-    "JHD.L",     # James Halstead
-    "JSE.L",     # Jadestone Energy
-    "KEFI.L",    # KEFI Gold and Copper
-    "KEYS.L",    # Keystone Law Group
-    "KGH.L",     # Knights Group Holdings
-    "KIST.L",    # Kistos Holdings
-    "KP2.L",     # Kore Potash
-    "LTHM.L",    # Latham (James)
-    "MHA.L",     # MHA
-    "MIDW.L",    # Midwich Group
-    "MKA.L",     # Mkango Magnetic Materials
-    "MPE.L",     # M.P. Evans Group
-    "MSI.L",     # M.S. International
-    "MTL.L",     # Metals Exploration
-    "NET.L",     # Netcall
-    "NFG.L",     # Next 15 Group
-    "NICL.L",    # Nichols
-    "NIOX.L",    # NIOX Group
-    "OPT.L",     # Optima Health
-    "PANR.L",    # Pantheon Resources
-    "POLR.L",    # Polar Capital Holdings
-    "PPHC.L",    # Public Policy Holding Company
-    "PTAL.L",    # PetroTal
-    "RCN.L",     # Redcentric
-    "RFX.L",     # Ramsdens Holdings
-    "RKH.L",     # Rockhopper Exploration
-    "RNWH.L",    # Renew Holdings
-    "RST.L",     # Restore
-    "RWS.L",     # RWS Holdings
-    "SAA.L",     # M&C Saatchi
-    "SAG.L",     # Science Group
-    "SAV.L",     # Savannah Resources
-    "SEE.L",     # Seeing Machines
-    "SLP.L",     # Sylvania Platinum
-    "SQZ.L",     # Serica Energy
-    "SRB.L",     # Serabi Gold
-    "SRC.L",     # SigmaRoc
-    "SRT.L",     # SRT Marine Systems
-    "SUP.L",     # Supreme
-    "SVML.L",    # Sovereign Metals
-    "TAM.L",     # Tatton Asset Management
-    "TFW.L",     # Thorpe (F.W.)
-    "THX.L",     # Thor Explorations
-    "TPFG.L",    # The Property Franchise Group
-    "TRB.L",     # Tribal Group
-    "TSTL.L",    # Tristel
-    "TUN.L",     # Tungsten West
-    "TUNE.L",    # Focusrite
-    "UPR.L",     # Uniphar
-    "VIC.L",     # Victorian Plumbing Group
-    "VTU.L",     # Vertu Motors
-    "W7L.L",     # Warpaint London
-    "YCA.L",     # Yellow Cake
-    "YOU.L",     # YouGov
-    "YU.L",      # Yu Group
+    "AAPL",   # Apple Inc.
+    "ABNB",   # Airbnb
+    "ADBE",   # Adobe Inc.
+    "ADI",    # Analog Devices
+    "ADP",    # Automatic Data Processing
+    "ADSK",   # Autodesk
+    "AEP",    # American Electric Power
+    "ALAB",   # Astera Labs
+    "ALNY",   # Alnylam Pharmaceuticals
+    "AMAT",   # Applied Materials
+    "AMD",    # Advanced Micro Devices
+    "AMGN",   # Amgen
+    "AMZN",   # Amazon
+    "APP",    # AppLovin
+    "ARM",    # Arm Holdings
+    "ASML",   # ASML Holding
+    "AVGO",   # Broadcom
+    "AXON",   # Axon Enterprise
+    "BKNG",   # Booking Holdings
+    "BKR",    # Baker Hughes
+    "CCEP",   # Coca-Cola Europacific Partners
+    "CDNS",   # Cadence Design Systems
+    "CEG",    # Constellation Energy
+    "CMCSA",  # Comcast
+    "COST",   # Costco
+    "CPRT",   # Copart
+    "CRWD",   # CrowdStrike
+    "CRWV",   # CoreWeave
+    "CSCO",   # Cisco
+    "CSX",    # CSX Corporation
+    "CTAS",   # Cintas
+    "DASH",   # DoorDash
+    "DDOG",   # Datadog
+    "DXCM",   # DexCom
+    "EXC",    # Exelon
+    "FANG",   # Diamondback Energy
+    "FAST",   # Fastenal
+    "FER",    # Ferrovial
+    "FTNT",   # Fortinet
+    "GEHC",   # GE HealthCare
+    "GILD",   # Gilead Sciences
+    "GOOG",   # Alphabet Inc. (Class C)
+    "GOOGL",  # Alphabet Inc. (Class A)
+    "HON",    # Honeywell Technologies
+    "HONA",   # Honeywell Aerospace
+    "IDXX",   # Idexx Laboratories
+    "INTC",   # Intel
+    "INTU",   # Intuit
+    "ISRG",   # Intuitive Surgical
+    "KDP",    # Keurig Dr Pepper
+    "KLAC",   # KLA Corporation
+    "LIN",    # Linde plc
+    "LITE",   # Lumentum
+    "LRCX",   # Lam Research
+    "MAR",    # Marriott International
+    "MCHP",   # Microchip Technology
+    "MDLZ",   # Mondelez International
+    "MELI",   # Mercado Libre
+    "META",   # Meta Platforms
+    "MNST",   # Monster Beverage
+    "MPWR",   # Monolithic Power Systems
+    "MRNA",   # Moderna
+    "MRVL",   # Marvell Technology
+    "MSFT",   # Microsoft
+    "MSTR",   # MicroStrategy
+    "MU",     # Micron Technology
+    "NBIS",   # Nebius Group
+    "NFLX",   # Netflix, Inc.
+    "NVDA",   # Nvidia
+    "NXPI",   # NXP Semiconductors
+    "ODFL",   # Old Dominion Freight Line
+    "ORLY",   # O'Reilly Automotive
+    "PANW",   # Palo Alto Networks
+    "PAYX",   # Paychex
+    "PCAR",   # Paccar
+    "PDD",    # PDD Holdings
+    "PEP",    # PepsiCo
+    "PLTR",   # Palantir Technologies
+    "PYPL",   # PayPal
+    "QCOM",   # Qualcomm
+    "REGN",   # Regeneron Pharmaceuticals
+    "RKLB",   # Rocket Lab
+    "ROP",    # Roper Technologies
+    "ROST",   # Ross Stores
+    "SBUX",   # Starbucks
+    "SHOP",   # Shopify
+    "SNDK",   # Sandisk
+    "SNPS",   # Synopsys
+    "SPCX",   # SpaceX
+    "STX",    # Seagate Technology
+    "TER",    # Teradyne
+    "TMUS",   # T-Mobile US
+    "TRI",    # Thomson Reuters
+    "TSLA",   # Tesla, Inc.
+    "TTWO",   # Take-Two Interactive
+    "TXN",    # Texas Instruments
+    "VRTX",   # Vertex Pharmaceuticals
+    "WDAY",   # Workday, Inc.
+    "WDC",    # Western Digital
+    "WMT",    # Walmart
+    "XEL",    # Xcel Energy
 ]
