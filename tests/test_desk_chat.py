@@ -71,8 +71,8 @@ def test_thread_kept_without_telegram(db_backend: Path | None) -> None:
 
 
 def test_post_sends_to_telegram(db_backend: Path | None, telegram: _Telegram) -> None:
-    assert desk_chat.post("agent:research", "ACT, entry 805.", ticker="AVG.L", path=db_backend)
-    head = "Research analyst · Weekly research on a candidate\nAbout: Avingtrans (AVG)"
+    assert desk_chat.post("agent:research", "ACT, entry 805.", ticker="NVDA", path=db_backend)
+    head = "Research analyst · Weekly research on a candidate\nAbout: Nvidia (NVDA)"
     assert telegram.sent == [{"chat_id": "42", "text": f"{head}\n\nACT, entry 805."}]
 
 

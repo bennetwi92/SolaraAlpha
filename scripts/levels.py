@@ -17,7 +17,7 @@ from solaraalpha.store import save_run
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("ticker", help="Yahoo ticker, e.g. JET2.L")
+    p.add_argument("ticker", help="Yahoo ticker, e.g. NVDA")
     p.add_argument("--short", action="store_true", help="plan a short (default long)")
     p.add_argument("--n", type=int, default=6, help="levels to show each side of the close")
     p.add_argument("--save", action="store_true", help="record this run in the results DB")

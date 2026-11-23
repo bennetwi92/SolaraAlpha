@@ -17,7 +17,7 @@ from solaraalpha.store import save_run
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("ticker", help="Yahoo ticker, e.g. JET2.L")
+    p.add_argument("ticker", help="Yahoo ticker, e.g. NVDA")
     p.add_argument("--entry-date", default=None, help="assess a position opened on this date")
     p.add_argument("--entry-price", type=float, default=None)
     p.add_argument("--short", action="store_true", help="short side (default long)")

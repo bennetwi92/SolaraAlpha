@@ -138,7 +138,7 @@ Story format: *as <actor>, I want <capability> so that <outcome>*, then acceptan
 
 | ID | Story | Rel | Status |
 |---|---|---|---|
-| S0.1 | As the owner I want a watchlist universe so the scan knows which stocks to run. | R1 | ✅ `config/watchlist.toml` (FTSE AIM 100 + AIM UK 50, 104 stocks; `scripts/universe.py` refresh) |
+| S0.1 | As the owner I want a watchlist universe so the scan knows which stocks to run. | R1 | ✅ `config/watchlist.toml` (the Nasdaq-100, 101 lines, hand snapshot 2026-11-23; ADR 0043) |
 | S0.2 | As the owner I want per-stock benchmarks and peers so relative strength is meaningful. | R1 | ✅ `config/benchmarks.toml` |
 | S0.3 | As the owner I want **portfolio rules** in one config file (capital, risk per trade, max open positions, max per stock / sector, max portfolio heat, cash buffer, min liquidity) so sizing and checks are consistent and versioned. | R1 | ✅ `config/portfolio.toml`, `portfolio.rules` (set by the owner, `confirmed = true`, 2026-10-20) · #105 |
 | S0.4 | As the owner I want a reminder when the watchlist snapshot is older than the last quarterly FTSE review, so the universe doesn't drift. | R2 | ✅ `snapshot` in `watchlist.toml`; `scan.py` warns after the next FTSE review month · #124 |
@@ -239,7 +239,7 @@ labelled as such (no look-ahead in the record, and the live decision uses what's
 | S3.5 | As the owner I want the research verdict saved as a `research` card and step on the same run, so it reads like any other stage. | R1 | ✅ `record.py verdict` (#117); `/research` records `stage = research` (#119) |
 | S3.6 | As the owner I want the agent to separate facts (quoted, cited) from interpretation, and never invent consensus or dates. | R1 | ✅ rule in `/events` and `/research` · #119 |
 | S3.7 | As the owner I want the free web/news sources it uses listed in `docs/data-sources.md`, with terms checked. | R1 | ✅ web search row in `docs/data-sources.md` (owner to confirm source types, §6 Q6) · #119 |
-| S3.8 | As the owner I want stock-specific value models (e.g. `/jet2-value`) called from research when they exist, so news is turned into earnings impact. | R2 | ✅ `config/value_models.toml` register; research Step 3b runs the model, scores `value` · #127 |
+| S3.8 | As the owner I want stock-specific value models called from research when they exist, so news is turned into earnings impact. | R2 | ✅ `config/value_models.toml` register; research Step 3b runs the model, scores `value` · #127 |
 | S3.9 | As the owner I want the prior week's research for a stock reused as background and only the delta researched, so repeat candidates are cheap. | R2 | ✅ research delta mode (prior ≤ 35 days: carry 1, 4-7; search since `retrieved_to`) · #127 |
 | S3.10 | As the owner I want a sector / macro note shared across the week's candidates (the same headwind researched once). | R3 | ✅ `/macro --run N`: one `macro` verdict per `_SECTOR:<name>` group; research references it; runner job before research · #140 |
 

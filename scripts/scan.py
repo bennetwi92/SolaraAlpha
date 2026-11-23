@@ -1,6 +1,6 @@
 """Run the weekly pipeline: the universe, some stocks, or one toolkit on one stock.
 
-uv run python scripts/scan.py                          # config/watchlist.toml + research_universe.toml
+uv run python scripts/scan.py                          # config/watchlist.toml (the Nasdaq 100)
 uv run python scripts/scan.py JET2.L                   # these stocks through the pipeline
 uv run python scripts/scan.py JET2.L --toolkit technical [--param entry_date=2025-03-14]
 uv run python scripts/scan.py --list                   # stages, toolkits and their bands

@@ -77,3 +77,14 @@ carry over. Attention-driven moves are known to give part of the gain back once 
 fades, so quick exits and daily review are part of the strategy, not an extra. Momentum wins
 roughly half the time and makes its money on the size of the winners, so stopped-out losers
 are expected even when it works. The shadow book (ADR 0028) gets new baselines for this trade.
+
+**Amendment (2026-11-23): AIM removed.** The AIM-only code, configs, research scripts and data
+are deleted: the Jet2 value model and skill, commodity futures, the AIM research universe and the
+FCA Official List reader, the issuer register (`config/issuers.toml`), `config/sectors.toml`, the
+leavers ledger, the director-dealing and placing parsers, `scripts/research/` and the research
+label files, the FTSE watchlist tools and `nsm-test.yml`. The watchlist is the Nasdaq-100 (hand
+snapshot from Wikipedia, 2026-11-23) and `config/benchmarks.toml` holds each stock's ICB sector
+and sector ETF. Kept as the record, not as data: the ADRs and the research notes in
+`docs/research/`. Still AIM-shaped until their slices: the NSM filings reader (no ticker resolves
+until SEC EDGAR), GBX currency handling, London market hours and `config/portfolio.toml`. The
+fresh book starts when the `db` branch is deleted: the next `db.py pull` starts an empty DB.

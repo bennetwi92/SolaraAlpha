@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       ticker:
-        description: Yahoo ticker, e.g. JET2.L
+        description: Yahoo ticker, e.g. NVDA
         required: true
       toolkit:
         description: Toolkit id (scripts/scan.py --list); leave blank to run the pipeline

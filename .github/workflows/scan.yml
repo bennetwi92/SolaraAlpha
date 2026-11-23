@@ -1,4 +1,4 @@
-# Weekly pipeline: every stock in config/watchlist.toml and config/research_universe.toml
+# Weekly pipeline: every stock in config/watchlist.toml (the Nasdaq 100)
 # (ADR 0038, ~578 stocks) through the stages in
 # solaraalpha.pipeline (scripts/scan.py), one stage at a time. Results go to the job summary
 # and the results DB (data/solara.db, pulled from and pushed back to the db branch, ADR 0042),

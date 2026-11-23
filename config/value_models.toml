@@ -3,9 +3,9 @@
 # and the script that does the arithmetic. Research runs the script (with the shocks the
 # skill's guidance implies from the catalysts), adds a `value` score and a "Valuation"
 # sub-section to section 8 of the note. No entry = no value model: research says so and
-# scores value as unknown.
-
-["JET2.L"]
-skill = "jet2-value"
-script = "scripts/jet2_value.py"
-note = "consensus-calibrated FY27/FY28 driver P&L, live fuel curve and FX (ADR 0009)"
+# scores value as unknown. None today: the Jet2 model went with the AIM strategy (ADR 0043).
+#
+# ["TICKER"]
+# skill = "skill-name"
+# script = "scripts/script.py"
+# note = "what it models"

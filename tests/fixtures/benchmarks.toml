@@ -1,0 +1,13 @@
+# Test copy of config/benchmarks.toml: the sectors the offline tests' made-up books use
+# (tests/conftest.py points portfolio.risk.sector_of at it).
+[market]
+".L" = "^FTAS"
+
+[stocks."JET2.L"]
+sector = "Travel & Leisure"
+
+[stocks."EZJ.L"]
+sector = "Travel & Leisure"
+
+[stocks."ABDP.L"]
+sector = "Automobiles & Parts"
