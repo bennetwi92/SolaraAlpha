@@ -37,3 +37,10 @@ beta, is a question for the test and the owner. It is not a change made from one
 **Consequences.** The weekly pipeline still runs the AIM-era weekly toolkits beside this one
 until the daily scan (ADR 0040 slice 3). The test in step 3 fixes its pass bar and holdout
 before it looks at forward returns.
+
+**Amendment (2026-11-23): failed its test.** Research 0017 (pre-registered) tested the score and
+both variants on 737 in-sample signal dates: the variants are the score standing aside on
+risk-off days, and strength net of beta. All four fail. The mean 10-session rank IC is -0.01
+(t about -0.6), and the top 10 trailed the equal-weight universe by 0.2–0.3% a trade after
+cost. The rank stays as it is, still labelled unvalidated (`fit.RANK_NOTE`). It is a wide net
+for the agents, not an edge. The owner chooses the next signal to test.

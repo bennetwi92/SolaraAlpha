@@ -76,6 +76,47 @@ about 0.15 a day, so a t of 2.5 needs a mean IC of about **0.045** or more. A to
 10-session excess varies by about 3–4%, so a t of 2 needs about **0.8% a trade** or more. A
 fail means "not shown above these sizes", not "no effect".
 
-## Result
+## Result (in-sample, 2026-11-23): all four variants fail
 
-*Filled in after the in-sample run; the holdout stays locked.*
+Run on 737 signal dates (2022-11-23 to 2025-10-31), 99 stocks scored (two listings are too
+young), 44 of the dates risk-off. The script matched its frozen hash. The holdout was not
+computed and stays locked, since no variant passed.
+
+| variant | mean IC (10 sessions) | t (NW) | blocks positive | top-10 net, per trade | universe | excess | t (NW) | excess, best 3 dropped | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| A as built | -0.013 | -0.60 | 2/6 | +0.96% | +1.16% | -0.20% | -0.63 | -0.48% | fail |
+| B risk-off gate | (A's) | | | +0.92% | +1.16% | -0.24% | -0.76 | -0.52% | fail |
+| C net of beta | -0.010 | -0.51 | 2/6 | +0.89% | +1.16% | -0.26% | -0.91 | -0.52% | fail |
+| D both | (C's) | | | +0.85% | +1.16% | -0.31% | -1.03 | -0.56% | fail |
+
+Mean IC by year (as built / net of beta): 2022 (from 23 Nov) +0.064 / +0.069; 2023 -0.065 /
+-0.062; 2024 +0.019 / +0.024; 2025 +0.002 / +0.002. At 5 and 15 sessions the IC is the same
+sign and size (-0.006 to -0.011). The best contributors were SNDK, RKLB, APP and MSTR.
+
+**What it means.** The crowd score does not rank Nasdaq-100 stocks by their next 1–3 weeks.
+The top ten made money in absolute terms (+0.9% per 10 sessions after cost, in a rising
+market), but less than simply holding the whole index equally (+1.2%), so the ranking cost
+returns. Standing aside on risk-off days did not help. After those 44 days the market bounced:
+the universe gained +3.7% over the next 10 sessions on average, and the top ten +0.8% after
+cost. Sitting in cash gave that up. Taking beta out made no difference. Nothing here is close to the bar.
+The effect is not shown above an IC of about 0.045 or 0.8% a trade, and the point estimates
+are slightly negative.
+
+This fits what is documented elsewhere. In US large caps, momentum earns over 3–12 months and
+skips the latest month, while over days to weeks the latest winners tend to *reverse*
+(Jegadeesh 1990; Lehmann 1990). A price-only "already going up on volume" score buys exactly
+that short-term reversal. The same pattern showed on AIM (research 0001, 0015).
+
+**What it does not test.** The agents' judgement of the story, and the trade management (the
+entry level, the stop, the partial, the trail) are not tested here. A ranking with no edge can
+still be the pool the agents pick from, but nothing here says the top of it is a better pool
+than the rest.
+
+**Next candidates (each needs its own pre-registration).** Effects documented at the 3–15
+session horizon that fit "narrative backed by technicals":
+1. **Earnings and news gaps:** a large gap up on several times normal volume (a price-and-volume
+   proxy for a news day, testable on prices alone), followed by drift. This is post-earnings-
+   announcement drift, the best-documented short-horizon effect, and the crowd plus narrative
+   trade in its plainest form.
+2. **Pullbacks inside strong trends:** buy a short dip in a stock with strong 6–12 month
+   momentum. This uses the short-term reversal rather than fighting it.
