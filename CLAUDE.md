@@ -95,7 +95,8 @@ Current state:
   amendment #192): past a sanity floor (no ERROR, `min_adv_gbp`), stocks are ranked by
   `portfolio.fit.rank_score`, the momentum card's **`crowd`** score (ADR 0045: trend, nearness
   to the 52-week high, volume, strength vs `^NDX` on daily bars; `scripts/momentum.py` prints
-  the ranking); the top `shortlist_size` (12, owner 2026-10-27) plus up to `shortlist_catalysts` (6, owner 2026-11-01) with a
+  the ranking; **failed its pre-registered test**, research 0017: no edge over 5–15 sessions,
+  with or without a risk-off gate or beta netting, so it is a wide net, not an edge); the top `shortlist_size` (12, owner 2026-10-27) plus up to `shortlist_catalysts` (6, owner 2026-11-01) with a
   fresh **tier-1 information filing** (`solaraalpha.catalysts.fresh_catalysts`: new filings,
   headlines naming the company, scheduled events, tiered information > scheduled > discovery >
   warnings only, #222; only tier 1 takes a slot, `pipeline.SLOT_TIER`, best rank first; ADR 0014
@@ -150,7 +151,9 @@ Current state:
   table (`portfolio/shadow.py`) records what fixed rules would have done (top 5 by rank, random 2
   from the shortlist, breakout entry, 2-ATR / levels stops, chandelier trail, flat 2%), written
   once per full weekly scan by `scan.py --save` (screen baselines) and `plan.py` (agent-paired).
-  Never traded; a later simulator replays it. **Research protocol** (docs/decisions/0029): target
+  Never traded; a later simulator replays it. **US research protocol** (research 0017): every
+  session a signal date, entry at the next open, the 10-session forward return, a pass bar and
+  minimum detectable effect fixed first, a **locked holdout from 2025-11-24**. **AIM research protocol** (docs/decisions/0029): target
   `burst_10w`, a pass bar fixed in advance, and a **locked holdout** (signal Fridays 2025-10-24
   to 2026-10-16): never look at it until the owner signs off a candidate.
 - **Agents run unattended when the owner adds a Claude secret** (docs/decisions/0019):
@@ -277,6 +280,7 @@ Current state:
 | Run a script | `uv run python scripts/<name>.py` |
 | Stock prices + quality report | `uv run python scripts/stock_prices.py JET2.L` |
 | Crowd-momentum ranking of the watchlist (daily bars; the screen rank, ADR 0045) | `uv run python scripts/momentum.py [TICKERS...] [--top N]` |
+| Research 0017 crowd momentum on the Nasdaq-100 (failed in-sample; holdout from 2025-11-24 locked): fetch, the pre-registered test | `uv run python scripts/research/r15_crowd_momentum.py fetch\|run DIR [--holdout]` |
 | Technical scorecard | `uv run python scripts/technical.py JET2.L [--entry-date D]` |
 | Levels + trade plan | `uv run python scripts/levels.py JET2.L [--short]` |
 | Fundamentals scorecard | `uv run python scripts/fundamentals.py JET2.L [--as-of D]` |

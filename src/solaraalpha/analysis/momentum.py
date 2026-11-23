@@ -158,3 +158,56 @@ def momentum_card(
         extended=bool(ext > EXTENDED_ATR) if not math.isnan(ext) else False,
         sessions=len(d),
     )
+
+
+BETA_N = 120  # sessions of daily returns behind the beta in the net-of-beta variant (research 0017)
+
+
+def _clip_s(s: pd.Series) -> pd.Series:
+    return s.clip(-1.0, 1.0)
+
+
+def crowd_panel(daily: pd.DataFrame, market: pd.Series | None = None) -> pd.DataFrame:
+    """:func:`momentum_card`'s four parts and ``crowd`` for **every** session of one stock at
+    once (rows with fewer than :data:`MIN_SESSIONS` sessions behind them are NaN), each row
+    from that session and earlier only: the backtest's fast path, tested equal to the card.
+
+    Also ``strength_beta`` / ``crowd_beta``: strength net of beta (return minus beta x market
+    return over 20 and 60 sessions, beta from the prior :data:`BETA_N` sessions' daily returns),
+    research 0017's variant C."""
+    d = daily.dropna(subset=["close"])
+    close = d["close"]
+    n = pd.Series(np.arange(1, len(d) + 1), index=d.index)
+    sma20, sma50 = close.rolling(20).mean(), close.rolling(50).mean()
+    votes = [
+        np.where(close > sma20, 1.0, -1.0),
+        np.where(sma20 > sma50, 1.0, -1.0),
+        np.where(sma50 > sma50.shift(20), 1.0, -1.0),
+    ]
+    v200 = pd.Series(np.where(close > close.rolling(200).mean(), 1.0, -1.0), index=d.index)
+    trend = pd.Series(np.mean(votes, axis=0), index=d.index)
+    trend = trend.where(n < 200, (trend * 3 + v200) / 4)
+
+    pct = close / close.rolling(YEAR, min_periods=1).max() - 1
+    high = _clip_s(1 + pct / HIGH_SCALE)
+
+    vol = d["volume"].astype(float)
+    base = vol.shift(VOL_RECENT).rolling(VOL_BASE, min_periods=1).median()
+    rvol = vol.rolling(VOL_RECENT).mean() / base.where(base > 0)
+    volume = _clip_s(pd.Series(np.log2(rvol.where(rvol > 0)), index=d.index))
+
+    out = pd.DataFrame({"trend": trend, "high": high, "volume": volume}, index=d.index)
+    if market is not None:
+        m = market.reindex(d.index, method="ffill")
+        ex = {k: close / close.shift(k) - 1 - (m / m.shift(k) - 1) for k in (20, 60)}
+        out["strength"] = _clip_s(pd.concat(ex.values(), axis=1).mean(axis=1) / RS_SCALE)
+        r, rm = close.pct_change(), m.pct_change()
+        beta = r.rolling(BETA_N).cov(rm) / rm.rolling(BETA_N).var()
+        net = {k: close / close.shift(k) - 1 - beta * (m / m.shift(k) - 1) for k in (20, 60)}
+        out["strength_beta"] = _clip_s(pd.concat(net.values(), axis=1).mean(axis=1) / RS_SCALE)
+    else:
+        out["strength"] = np.nan
+        out["strength_beta"] = np.nan
+    out["crowd"] = out[["trend", "high", "volume", "strength"]].mean(axis=1)
+    out["crowd_beta"] = out[["trend", "high", "volume", "strength_beta"]].mean(axis=1)
+    return out.where(n >= MIN_SESSIONS)
