@@ -2,7 +2,7 @@
 # entries (scripts/daily.py), weekday evenings after the London close; every open
 # position and pending entry gets a daily_review for the monitor agent (agents.yml,
 # docs/decisions/0040). Writes a
-# `daily` run with the triggers to the results DB (the db branch, ADR 0041) and the
+# `daily` run with the triggers to the results DB (the db branch, ADR 0042) and the
 # report to the job summary. Shares the `book` concurrency group with scan.yml so the two never
 # write at once (docs/decisions/0017). Posts to the GitHub issue labelled `inbox` only when the
 # run needs the owner (docs/decisions/0021).
@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write  # db.py push to the db branch (ADR 0041)
+  contents: write  # db.py push to the db branch (ADR 0042)
   issues: write
 
 env:
@@ -37,7 +37,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -91,7 +91,7 @@ jobs:
             !data/solara.db*
           if-no-files-found: ignore
           retention-days: 30
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}

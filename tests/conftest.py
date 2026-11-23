@@ -51,5 +51,5 @@ def local_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 @pytest.fixture
 def db_backend(tmp_path: Path) -> Path | None:
-    """The ``path`` to pass to store functions: a ``tmp_path`` SQLite file (ADR 0041)."""
+    """The ``path`` to pass to store functions: a ``tmp_path`` SQLite file (ADR 0042)."""
     return tmp_path / "solara.db"

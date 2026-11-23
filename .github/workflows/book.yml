@@ -1,5 +1,5 @@
 # Book from GitHub, without a local checkout: one book.py command against the hosted results
-# DB (the db branch, ADR 0041), e.g. `cash deposit 5000 --note "paper start"`, `approve 3`, `tickets`; or re-plan a
+# DB (the db branch, ADR 0042), e.g. `cash deposit 5000 --note "paper start"`, `approve 3`, `tickets`; or re-plan a
 # saved run (plan.py `--run 8`, weekly_pack.py `--run 8`). The book view (scripts/portfolio.py)
 # follows in the job summary.
 name: Book
@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write  # db.py push to the db branch (ADR 0041)
+  contents: write  # db.py push to the db branch (ADR 0042)
 
 jobs:
   book:
@@ -33,7 +33,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -58,7 +58,7 @@ jobs:
         run: |
           uv run --no-sync python scripts/portfolio.py | tee portfolio.txt
           { echo '### Portfolio'; echo '```'; cat portfolio.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}

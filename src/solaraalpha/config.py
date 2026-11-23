@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     data_dir: Path = REPO_ROOT / "data"
     log_level: str = "INFO"
-    # Passphrase of the encrypted results DB on the `db` branch (ADR 0041; scripts/db.py).
+    # Passphrase of the encrypted results DB on the `db` branch (ADR 0042; scripts/db.py).
     db_key: SecretStr = SecretStr("")
     # Trading212 API (ADR 0030, 0031). Unset: no broker reconcile, no tradable check, no orders.
     t212_key: SecretStr = SecretStr("")

@@ -1,6 +1,6 @@
-# 0041 — The results DB is an encrypted SQLite file on the `db` branch
+# 0042 — The results DB is an encrypted SQLite file on the `db` branch
 
-**Status:** accepted (owner, 2026-11-23, #321; numbered 0041 because 0040, daily decisions, landed the same day): start a fresh DB, create the key, force-push
+**Status:** accepted (owner, 2026-11-23, #321; numbered 0042: 0040 and 0041 were taken the same day): start a fresh DB, create the key, force-push
 to `db` only, every job paused until the owner restarts the desk. Supersedes ADR 0013 (hosted results DB on Turso) once built;
 amends ADR 0007 (results DB) and the "never commit data" hard rule.
 
@@ -70,7 +70,7 @@ The constraints:
   this ADR. A shorter large-cap scan is the fix.
 - Live SQL from anywhere is gone. Every reader pulls a copy.
 - The hard rule becomes "never commit data or secrets, except the encrypted results DB on the
-  `db` branch (ADR 0041)".
+  `db` branch (ADR 0042)".
 - **Migration:** `db.py pull` from Turso needs reads. Either wait for Turso's monthly reset, or
   start a fresh DB and rebuild the book from Trading212 (`book.py reconcile --book`), losing the
   run, card and agent history. The owner chooses.

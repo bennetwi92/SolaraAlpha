@@ -41,7 +41,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write  # db.py push to the db branch (ADR 0041)
+  contents: write  # db.py push to the db branch (ADR 0042)
   issues: write
 
 env:
@@ -107,7 +107,7 @@ jobs:
           enable-cache: true
       - run: uv sync --no-default-groups
         if: steps.gate.outputs.go == 'true'
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         if: steps.gate.outputs.go == 'true'
         env:
@@ -152,7 +152,7 @@ jobs:
             echo "risk=[]" >> "$GITHUB_OUTPUT"
             echo "postmortem=[]" >> "$GITHUB_OUTPUT"
           fi
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -165,7 +165,7 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      max-parallel: 1  # one DB writer at a time (ADR 0041)
+      max-parallel: 1  # one DB writer at a time (ADR 0042)
       matrix:
         ticker: ${{ fromJson(needs.gate.outputs.validate) }}
     env:
@@ -175,7 +175,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -209,7 +209,7 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -229,14 +229,14 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
         run: uv run --no-sync python scripts/db.py pull
       - id: queue
         run: echo "groups=$(uv run --no-sync python scripts/record.py queue --run "${{ needs.gate.outputs.run }}" --stage macro | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -249,7 +249,7 @@ jobs:
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      max-parallel: 1  # one DB writer at a time (ADR 0041)
+      max-parallel: 1  # one DB writer at a time (ADR 0042)
       matrix:
         group: ${{ fromJson(needs.macro-groups.outputs.groups) }}
     env:
@@ -259,7 +259,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -293,7 +293,7 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -313,7 +313,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -321,7 +321,7 @@ jobs:
       - run: uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage validate >> "$GITHUB_STEP_SUMMARY" || true
       - id: queue
         run: echo "tickers=$(uv run --no-sync python scripts/record.py queue --run "${{ needs.gate.outputs.run }}" --stage research | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -334,7 +334,7 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      max-parallel: 1  # one DB writer at a time (ADR 0041)
+      max-parallel: 1  # one DB writer at a time (ADR 0042)
       matrix:
         ticker: ${{ fromJson(needs.research.outputs.tickers) }}
     env:
@@ -344,7 +344,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -378,7 +378,7 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -400,7 +400,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -434,7 +434,7 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -454,14 +454,14 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
         run: uv run --no-sync python scripts/db.py pull
       - id: queue
         run: echo "areas=$(uv run --no-sync python scripts/record.py queue --run "${{ needs.gate.outputs.run }}" --stage retro | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -474,7 +474,7 @@ jobs:
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      max-parallel: 1  # one DB writer at a time (ADR 0041)
+      max-parallel: 1  # one DB writer at a time (ADR 0042)
       matrix:
         area: ${{ fromJson(needs.retro-areas.outputs.areas) }}
     env:
@@ -484,7 +484,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -518,7 +518,7 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -536,7 +536,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -579,7 +579,7 @@ jobs:
             !data/solara.db*
           if-no-files-found: ignore
           retention-days: 90
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -592,7 +592,7 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      max-parallel: 1  # one DB writer at a time (ADR 0041)
+      max-parallel: 1  # one DB writer at a time (ADR 0042)
       matrix:
         position: ${{ fromJson(needs.gate.outputs.monitor) }}
     env:
@@ -602,7 +602,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -628,20 +628,20 @@ jobs:
           ticker=$(uv run --no-sync python -c "from solaraalpha.portfolio import book; c = book.connect(); print(book.position_state(c, ${{ matrix.position }}).ticker)")
           uv run --no-sync python scripts/record.py error "$ticker" --run "${{ needs.gate.outputs.run }}" --stage monitor --if-missing \
             --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }}, position ${{ matrix.position }})" || true
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
         run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
 
   postmortem:
-    needs: [gate, monitor]  # after the monitors, not beside them: one DB writer (ADR 0041)
+    needs: [gate, monitor]  # after the monitors, not beside them: one DB writer (ADR 0042)
     if: needs.gate.outputs.go == 'true' && needs.gate.outputs.mode == 'daily' && needs.gate.outputs.postmortem != '[]' && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      max-parallel: 1  # one DB writer at a time (ADR 0041)
+      max-parallel: 1  # one DB writer at a time (ADR 0042)
       matrix:
         position: ${{ fromJson(needs.gate.outputs.postmortem) }}
     env:
@@ -651,7 +651,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -678,7 +678,7 @@ jobs:
           uv run --no-sync python scripts/record.py error "$ticker" --run "${{ needs.gate.outputs.run }}" --stage postmortem --if-missing \
             --position "${{ matrix.position }}" \
             --reason "claude-code-action failed or hit the turn limit (job ${{ github.run_id }}, position ${{ matrix.position }})" || true
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -698,7 +698,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -740,7 +740,7 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -760,7 +760,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -802,7 +802,7 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -820,7 +820,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -853,7 +853,7 @@ jobs:
         run: |
           uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage monitor
           uv run --no-sync python scripts/record.py outcome --run "${{ needs.gate.outputs.run }}" --stage postmortem
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}

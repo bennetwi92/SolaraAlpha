@@ -42,7 +42,7 @@ average cost and every open order from its date; a corporate close is a syntheti
 every share at the offer (or 0) with reason `corporate_action`.
 
 Every command is one transaction in the results DB (data/solara.db, pulled from the
-`db` branch, ADR 0041; --db PATH another file). State changes are new event rows, never updates
+`db` branch, ADR 0042; --db PATH another file). State changes are new event rows, never updates
 (solaraalpha.portfolio.book). An illegal transition prints one line and exits 2.
 """
 

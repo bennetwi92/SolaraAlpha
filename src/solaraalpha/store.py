@@ -31,7 +31,7 @@ A run can cover many tickers (a weekly scan is one run): :func:`start_run`, then
 
 The DB is the local file ``settings.db_path`` (or ``path``). Between jobs it lives encrypted on
 the ``db`` branch: ``scripts/db.py pull`` before, ``push`` after (:mod:`solaraalpha.dbsync`,
-docs/decisions/0007, 0041). Read frames with :func:`query`.
+docs/decisions/0007, 0042). Read frames with :func:`query`.
 """
 
 from __future__ import annotations
@@ -165,7 +165,7 @@ Conn = sqlite3.Connection
 
 def connect(path: Path | None = None) -> Conn:
     """Open (creating tables if needed) the results database: the local file at ``path``, else
-    ``settings.db_path`` (pulled from the ``db`` branch by ``scripts/db.py``, ADR 0041)."""
+    ``settings.db_path`` (pulled from the ``db`` branch by ``scripts/db.py``, ADR 0042)."""
     conn = sqlite3.connect(path or settings.db_path)
     conn.executescript(SCHEMA)
     if "node" in _columns(conn, "steps"):  # 0008 layout: node (= toolkit id), no stage

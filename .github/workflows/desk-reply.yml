@@ -12,11 +12,11 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: book  # it writes the desk thread: one DB writer at a time (ADR 0041)
+  group: book  # it writes the desk thread: one DB writer at a time (ADR 0042)
   cancel-in-progress: false
 
 permissions:
-  contents: write  # db.py push to the db branch (ADR 0041)
+  contents: write  # db.py push to the db branch (ADR 0042)
 
 env:
   SOLARA_TELEGRAM_TOKEN: ${{ secrets.SOLARA_TELEGRAM_TOKEN }}
@@ -53,7 +53,7 @@ jobs:
           enable-cache: true
       - run: uv sync --no-default-groups
         if: steps.gate.outputs.go == 'true'
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         if: steps.gate.outputs.go == 'true'
         env:
@@ -92,7 +92,7 @@ jobs:
             uv run --no-sync python scripts/chat.py post --as agent:pm "I couldn't answer that just now (the run failed: see the desk-errors issue). Ask again and I'll pick it up."
           fi
           exit 1
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}

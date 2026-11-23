@@ -1,6 +1,6 @@
 # 0013 — Hosted results DB on Turso, over HTTP with our own thin client
 
-**Status:** superseded by ADR 0041 (2026-11-23): `turso.py` is gone; the DB is an encrypted
+**Status:** superseded by ADR 0042 (2026-11-23): `turso.py` is gone; the DB is an encrypted
 SQLite file on the `db` branch.
 
 **Context.** 0007 kept the results DB as a local SQLite file and planned a hosted SQLite for

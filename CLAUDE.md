@@ -49,13 +49,13 @@ Current state:
 - **Results DB**: scripts' `--save` records the run, model cards and input snapshots in an
   append-only SQLite DB (the **book** — positions, orders, fills, cash — lives in the same DB,
   `portfolio/book.py`: state changes are new event rows, never updates) — the local
-  `data/solara.db`, kept between jobs **encrypted on the `db` branch** (ADR 0041; the repo is
+  `data/solara.db`, kept between jobs **encrypted on the `db` branch** (ADR 0042; the repo is
   public, the branch holds only ciphertext, key `SOLARA_DB_KEY`). Every workflow job that
   touches it runs `db.py pull` first and `db.py push` last (even after a failed step), inside the
   `book` concurrency group: one writer at a time, so the agents' matrix jobs run one by one. A
   push is leased on the commit it pulled (a second writer is refused, never merged). A chat
   session runs `db.py pull` to read; writes go through the workflows (`book.yml`). Never upload
-  the decrypted file (`data/` artifacts exclude `data/solara.db*`). See docs/decisions/0007, 0041.
+  the decrypted file (`data/` artifacts exclude `data/solara.db*`). See docs/decisions/0007, 0042.
 - **Desk paused** (owner, 2026-11-23, #321): every schedule and `workflow_run` trigger is
   commented out; only manual runs. Restarting is the owner's call.
 - Price history: fetch the **last 5 years** (default), then cut per stock to the span after
@@ -249,7 +249,7 @@ Current state:
   tier with a key is fine (key goes in `.env`). If a source's terms are unclear, flag it before
   building on it. Record every source used in `docs/data-sources.md`.
 - **Never commit data or secrets.** `data/` and `.env` are gitignored. The one exception is
-  the encrypted results DB on the `db` branch (ADR 0041). Keys are read through
+  the encrypted results DB on the `db` branch (ADR 0042). Keys are read through
   `solaraalpha.config.settings`, never hard-coded.
 - **No look-ahead.** Any analysis over time-series must use only information available at each
   point in time. Be explicit about timestamps, timezones and publication lags.
@@ -344,7 +344,7 @@ src/solaraalpha/        importable package — all reusable code lives here
                         save_run / save_label / load_results / load_steps / load_labels /
                         shortlist / latest / load_prices — see docs/decisions/0007
   dbsync.py             the results DB on the `db` branch: gpg-encrypted, one orphan commit, pull /
-                        push leased on the pulled commit, integrity-checked — 0041
+                        push leased on the pulled commit, integrity-checked — 0042
   agents.py             Verdict / Evidence / KillCriterion models, record_verdict (labels row +
                         card + evidence, downgrade-only), prior — see docs/decisions/0016
   validation.py         the validator's pack from the DB: independent cards, steps, label, price

@@ -1,4 +1,4 @@
-"""The results DB on the ``db`` branch (docs/decisions/0041).
+"""The results DB on the ``db`` branch (docs/decisions/0042).
 
 The DB is one SQLite file, encrypted with ``gpg`` (AES-256, passphrase ``SOLARA_DB_KEY``) and
 kept as ``solara.db.gpg`` on an orphan branch that always holds a single commit. The repo is

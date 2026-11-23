@@ -1,4 +1,4 @@
-"""Results DB on the `db` branch (docs/decisions/0041): pull it, see it, push it back.
+"""Results DB on the `db` branch (docs/decisions/0042): pull it, see it, push it back.
 
 uv run python scripts/db.py pull [--force]        # fetch + decrypt the branch -> data/solara.db
 uv run python scripts/db.py status                # local file, rows per table, pulled vs branch

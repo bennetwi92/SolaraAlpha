@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write  # db.py push to the db branch (ADR 0041)
+  contents: write  # db.py push to the db branch (ADR 0042)
 
 jobs:
   run:
@@ -31,7 +31,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -57,7 +57,7 @@ jobs:
             !data/solara.db*
           if-no-files-found: ignore
           retention-days: 90
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}

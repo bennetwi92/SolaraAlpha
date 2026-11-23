@@ -30,7 +30,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write  # db.py push to the db branch (ADR 0041)
+  contents: write  # db.py push to the db branch (ADR 0042)
   issues: write
 
 env:
@@ -78,7 +78,7 @@ jobs:
           enable-cache: true
       - run: uv sync --no-default-groups
         if: steps.gate.outputs.go == 'true'
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         if: steps.gate.outputs.go == 'true'
         env:
@@ -132,7 +132,7 @@ jobs:
           path: ${{ steps.agent.outputs.execution_file }}
           if-no-files-found: ignore
           retention-days: 14
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}

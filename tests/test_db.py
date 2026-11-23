@@ -1,4 +1,4 @@
-"""The results DB on the db branch (ADR 0041), against a local bare repo standing in for GitHub."""
+"""The results DB on the db branch (ADR 0042), against a local bare repo standing in for GitHub."""
 
 from __future__ import annotations
 

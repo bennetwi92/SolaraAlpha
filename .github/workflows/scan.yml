@@ -1,7 +1,7 @@
 # Weekly pipeline: every stock in config/watchlist.toml and config/research_universe.toml
 # (ADR 0038, ~578 stocks) through the stages in
 # solaraalpha.pipeline (scripts/scan.py), one stage at a time. Results go to the job summary
-# and the results DB (data/solara.db, pulled from and pushed back to the db branch, ADR 0041),
+# and the results DB (data/solara.db, pulled from and pushed back to the db branch, ADR 0042),
 # then the weekly pack for the saved run (scripts/weekly_pack.py) is appended
 # to the summary. data/ (event packs, packs/; never the DB) is kept as an artifact (docs/decisions/0007,
 # 0010, 0013, 0014, 0015).
@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write  # db.py push to the db branch (ADR 0041)
+  contents: write  # db.py push to the db branch (ADR 0042)
   issues: write
 
 env:
@@ -40,7 +40,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-default-groups
-      - name: Pull the results DB (db branch, ADR 0041)
+      - name: Pull the results DB (db branch, ADR 0042)
         id: dbpull
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
@@ -112,12 +112,12 @@ jobs:
             !data/solara.db*
           if-no-files-found: ignore
           retention-days: 90
-      - name: Push the results DB (even after a failed step, ADR 0041)
+      - name: Push the results DB (even after a failed step, ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         env:
           SOLARA_DB_KEY: ${{ secrets.SOLARA_DB_KEY }}
         run: uv run --no-sync python scripts/db.py push --message "$GITHUB_WORKFLOW / $GITHUB_JOB / run $GITHUB_RUN_ID"
-      - name: Back up the encrypted DB as pushed (ADR 0041)
+      - name: Back up the encrypted DB as pushed (ADR 0042)
         if: always() && steps.dbpull.outcome == 'success'
         run: |
           mkdir -p db-backup
